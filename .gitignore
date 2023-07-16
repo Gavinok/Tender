@@ -1,0 +1,13 @@
+frontend/bower_components/
+frontend/node_modules/
+frontend/.pulp-cache/
+frontend/.log/
+frontend/output/
+frontend/generated-docs/
+frontend/.psc-package/
+frontend/.psc*
+frontend/.purs*
+frontend/.psa*
+frontend/.spago
+backend/.envrc
+backend/test.db
