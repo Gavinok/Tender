@@ -1,0 +1,25 @@
+* Why
+
+For when you and your friends can't decide where to eat. This applies
+a similar approach to tinder but for finding an agreed upon place to eat.
+
+* WARNING
+
+This is an active work in progress. Expect regular breakage, changes
+
+
+* Running this project
+You will need a [[https://www.yelp.com/developers/v3/manage_app][Yelp API key]]
+
+To run this project export the API key as shown and execute default make targets for both the front and backend
+
+#+begin_src sh
+  export YELP_KEY="<your-key-here>"
+  cd frontend
+  make
+  cd ..
+  cd backend
+  make
+#+end_src
+
+This will start both the front and backend for you
