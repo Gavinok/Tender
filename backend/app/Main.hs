@@ -57,11 +57,11 @@ import qualified User as U
 import Yelp
 
 -- Something like that maybe ?
-sessionId :: Int -> (UUID, StdGen)
-sessionId seed = random $ mkStdGen seed
+-- sessionId :: Int -> (UUID, StdGen)
+-- sessionId seed = random $ mkStdGen seed
 
--- sessionId :: IO UUID
--- sessionId = nextRandom
+sessionId :: IO UUID
+sessionId = nextRandom
 
 {- | A preset version of cors with added OPTIONS method and
    Content-Type, Authorization headers
@@ -154,8 +154,8 @@ server = do
             options "/newsession" $ text "success"
             get "/newsession" $ do
                 liftIO $ putStrLn "Getting Session"
-                let (uid, _) = sessionId 10
-                    (session, _) = sessionId 11
+                uid <- liftIO sessionId
+                session <- liftIO sessionId
                 liftIO $ addUserToDb (U.User uid session)
                 json uid
 
