@@ -4,7 +4,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE StandaloneDeriving #-}
 
-module Db (addImgToDb, storeInDB, inDB, setupDb, addUserToDb, addLikeToDb, Like (..)) where
+module Db (addImgToDb, storeInDB, inDB, setupDb, addUserToDb, addLikeToDb, likedResturants, Like (..), dbClear, getUser) where
 
 import Data.UUID (UUID, toText)
 import Database.SQLite.Simple (
@@ -25,6 +25,7 @@ import Database.SQLite.Simple.ToField (ToField (toField))
 import GHC.Generics (Generic)
 import Restaurant
 import qualified User as U
+import qualified System.Posix.Types as U
 
 data Open
 data Closed
@@ -42,7 +43,6 @@ dbClose (DbConnection connection) = do
     pure $ DbConnection connection
 
 newtype ClosedDbConnection = ClosedDbConnection () deriving (Show)
-newtype InitializedDb = InitializedDb Connection
 
 setupDb :: IO (DbConnection Open)
 setupDb = do
@@ -82,10 +82,15 @@ addUserToDb :: U.User -> IO (DbConnection Closed)
 addUserToDb (U.User i s) = do
     conn <- setupDb
     execute (connection conn) "INSERT INTO users (userId, session) VALUES (?, ?)" (i, s)
-    putStrLn $ "adding User " ++ show i ++ " with session " ++ (show s)
+    putStrLn $ "adding User " ++ show i ++ " with session " ++ show s
     dbClose conn
-addUserToDb _ = fail "invalid input to update"
 
+addUserToSession :: U.User -> IO (DbConnection Closed)
+addUserToSession (U.User i s) = do
+    conn <- setupDb
+    execute (connection conn) "INSERT INTO users (userId, session) VALUES (?, ?)" (i, s)
+    putStrLn $ "adding User " ++ show i ++ " with session " ++ show s
+    dbClose conn
 data Like = Like
     { userId :: String
     , resturantId :: String
@@ -104,24 +109,40 @@ addLikeToDb (Like u r) = do
 newtype LikedResturant = LikedResturant {toString :: String} deriving (Generic, Show)
 deriving anyclass instance FromRow LikedResturant
 
-likedResturants :: U.Session -> IO ((DbConnection Closed), [LikedResturant])
-likedResturants s = do
+getUser :: String -> IO (DbConnection Closed, [Maybe U.User])
+getUser u = do
     conn <- setupDb
     r <-
         query
             (connection conn)
             ( mconcat
-                [ "SELECT resturantId "
+                [ "SELECT * "
+                , "FROM users "
+                , "WHERE userId = ?"
+                ]
+            )
+            [u] ::
+            IO [Maybe U.User]
+    c <- dbClose conn
+    pure (c, r)
+
+likedResturants :: U.Session -> IO (DbConnection Closed, [Resturant])
+likedResturants u = do
+    conn <- setupDb
+    r <-
+        query
+            (connection conn)
+            ( mconcat
+                [ "SELECT resturants.id, resturants.url, resturants.name, resturants.rating, resturants.price, resturants.hours, resturants.imagelink, resturants.latitude, resturants.longitude "
                 , "FROM users JOIN likes "
                 , "ON users.userId = likes.userId "
                 , "JOIN resturants "
                 , "ON likes.resturantId = resturants.id "
-                , "WHERE session = ?"
+                , "WHERE users.session = ?"
                 ]
             )
-            (s) ::
-            IO [LikedResturant]
-    c <- (dbClose conn)
+            [u]
+    c <- dbClose conn
     pure (c, r)
 
 storeInDB :: [Resturant] -> IO (DbConnection Closed)
@@ -141,7 +162,6 @@ inDB l = do
     pure $ case r of
         [] -> Nothing
         x -> Just x
-
 dbCheck :: IO (DbConnection Closed)
 dbCheck = do
     conn <- setupDb
@@ -170,13 +190,13 @@ db :: IO (DbConnection Closed)
 db = do
     conn <- setupDb
     let c = connection conn
-    storeInDB
+    _ <- storeInDB
         [ Resturant
             (Business "ll" "http://" "name" 10 (Just "$$") [Hours True])
             (Just "https...")
             (Loc 1 2)
         ]
-    storeInDB
+    _ <- storeInDB
         [ Resturant
             (Business "lt" "http://" "lame" 10 (Just "4") [Hours True])
             (Just "https...")

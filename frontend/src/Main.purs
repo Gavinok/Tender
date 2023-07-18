@@ -13,7 +13,7 @@ module Main
   ) where
 
 import Prelude
-import Data.Array (cons)
+import Data.Array (cons, last)
 import Data.Either (Either(..))
 import Data.Maybe (Maybe(..))
 import Effect (Effect)
@@ -27,6 +27,10 @@ import Flame as F
 import Flame.Html.Attribute as HA
 import Flame.Html.Element as HE
 import Yoga.JSON as JSON
+import Web.HTML (window)
+import Web.HTML.Window (location)
+import Web.HTML.Location (href)
+import Data.String
 
 foreign import _geolocation
   :: forall a
@@ -38,7 +42,18 @@ foreign import _geolocation
 createSession :: Aff (Maybe UserId)
 createSession = do
   { status, text } <-
-    fetch "http://localhost:5000/newsession"
+    fetch "http://localhost:5001/newsession"
+      { method: GET
+      , headers: { "Content-Type": "application/json" }
+      }
+  case status of
+    200 -> JSON.readJSON_ <$> text
+    _ -> pure Nothing
+
+joinSession :: String → Aff (Maybe UserId)
+joinSession s = do
+  { status, text } <-
+    fetch ("http://localhost:5001/addtosession/" <> s)
       { method: GET
       , headers: { "Content-Type": "application/json" }
       }
@@ -95,10 +110,10 @@ type ResturantDecision =
   }
 
 apiUrl :: Url
-apiUrl = "http://localhost:5000/gavin"
+apiUrl = "http://localhost:5001/gavin"
 
 updateUrl :: Url
-updateUrl = "http://localhost:5000/liked"
+updateUrl = "http://localhost:5001/liked"
 
 readApi :: String -> Maybe Resturant
 readApi = JSON.readJSON_
@@ -154,13 +169,24 @@ update model = case _ of
   -- Events coming from the UI
   StartSwiping -> model :>
     [ Just <$> do
-        sess <- createSession
-        show sess # liftEffect <<< log
-        case sess of
-          Just s -> do
-            loc <- geolocation
-            pure $ NextResturant loc s
-          Nothing -> pure $ StartSwiping
+        s ← liftEffect $ do
+          w ← window
+          l ← location w
+          h <- href l
+          let extension = (last (split (Pattern "/") h))
+          case extension of
+                  Nothing → pure Nothing
+                  Just "" → pure Nothing
+                  Just _ → pure extension
+                       -- pure u
+        loc <- geolocation
+        user ← case s of
+                 Just session -> joinSession session
+                 Nothing -> createSession
+        show user # liftEffect <<< log
+        pure $ case user of
+          Just u → NextResturant loc u
+          Nothing → StartSwiping
     ]
   -- TODO Send if they liked the restaurant
   Like ->
@@ -170,7 +196,8 @@ update model = case _ of
             <$> case model of
               Swiping r l u -> do
                 maybeMatch <- sendLiked u (Just r.id)
-                "liked " <> show r.id # liftEffect <<< log
+                "liked " <> show r # liftEffect <<< log
+                "got " <> show maybeMatch # liftEffect <<< log
                 pure case maybeMatch of
                   (Just m) -> Matched m
                   Nothing -> NextResturant l u
@@ -181,7 +208,7 @@ update model = case _ of
       :>
         [ Just
             <$> case model of
-              Swiping r l u -> sendLiked u Nothing *> (pure $ NextResturant l u)
+              Swiping _ l u -> sendLiked u Nothing *> (pure $ NextResturant l u)
               _ -> pure $ FailedToLoad "Attempted to dislike while not swiping"
         ]
   -- Change this to match the yelp API

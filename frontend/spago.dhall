@@ -29,6 +29,7 @@ to generate this file without the comments in this block.
   , "strings"
   , "transformers"
   , "tuples"
+  , "web-html"
   , "yoga-json"
   ]
 , packages = ./packages.dhall

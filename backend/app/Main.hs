@@ -39,6 +39,7 @@ import Web.Scotty (
     post,
     scotty,
     text,
+    param,
  )
 
 import Data.Aeson (FromJSON)
@@ -47,7 +48,7 @@ import Data.ByteString (putStr)
 
 -- import Data.ByteString.Char8 (putStrLn)
 import qualified Data.ByteString.Lazy as L
-import Data.UUID (UUID, fromText, toText)
+import Data.UUID (UUID, toText)
 import Data.UUID.V4 (nextRandom)
 import Db
 import qualified GHC.Base as Data.ByteString
@@ -139,6 +140,12 @@ wasMatch pick usr = do
     pure $ case matches of
         [] -> Nothing
         (x : _) -> Just x
+firstElem :: [a] -> Maybe a
+firstElem xs = case xs of
+  [] -> Nothing
+  -- Remember to put parantheses around this pattern-match else
+  -- the compiler will throw a parse-error
+  (x:_) -> Just x
 
 -- curl -X POST -d"{\"latitude\": 48, \"longitude\": -122}" \
 --             http://localhost:5000/hello/gavin
@@ -147,7 +154,7 @@ server = do
     keyMaybe <- getEnv "YELP_KEY"
     case keyMaybe of
         Nothing -> fail "Failed to find Yelp Key"
-        Just key -> scotty 5000 $ do
+        Just key -> scotty 5001 $ do
             let k = YelpAPIKey key
             middleware (cors $ const $ Just apiCors)
 
@@ -159,16 +166,37 @@ server = do
                 liftIO $ addUserToDb (U.User uid session)
                 json uid
 
+            options "/addtosession/:session" $ text "success"
+            get "/addtosession/:session" $ do
+                                    liftIO $ putStrLn "Adding To Session"
+                                    sessionString <- param "session"
+                                    -- liftIO $ putStrLn "Adding To Session " + sessionString
+                                    uid <- liftIO sessionId
+                                    let session = U.fromText sessionString
+                                    case session of
+                                      Nothing -> json uid
+                                      Just s -> do _ <- liftIO $ addUserToDb (U.User uid s)
+                                                   json uid
+
             options "/liked" $ text "success"
             post "/liked" $ do
                 d <- jsonData
                 liftIO $ print (d :: ResturantDecision)
                 case d of
                     (ResturantDecision i (Just l)) -> do
-                        liftAndCatchIO $
-                            addLikeToDb $
-                                (Db.Like i l)
-                        json (Just l)
+                        r <- liftAndCatchIO $ do
+                                    _ <- addLikeToDb $ Db.Like i l
+                                    (_, maybeU) <- getUser i
+                                    case head maybeU of
+                                      (Just (U.User _ s)) -> do
+                                                        (_, matches ) <- likedResturants s
+                                                        print "matches where"
+                                                        print matches
+                                                        mapM_ print matches
+                                                        print $ " sending " <> (show $ Just $ head matches)
+                                                        pure $ Just $ head matches
+                                      Nothing -> pure Nothing
+                        json r
                     _ -> json (Nothing :: Maybe Resturant)
 
             options "/gavin" $ text "success"

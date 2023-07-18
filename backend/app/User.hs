@@ -1,10 +1,13 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# OPTIONS_GHC -Wno-orphans #-}
+{-# LANGUAGE StandaloneDeriving #-}
 
-module User (User (..), Session (..), ToField, ToField) where
+module User (User (..), Session, ToField, fromText) where
 
-import Data.UUID (UUID, fromText, toText)
+import Data.UUID (UUID, toText)
+import qualified Data.UUID as UID
 import Database.SQLite.Simple (
     FromRow,
     ToRow,
@@ -15,8 +18,12 @@ import Database.SQLite.Simple (
 import Database.SQLite.Simple.FromField (FromField (fromField))
 import Database.SQLite.Simple.ToField (ToField (toField))
 import GHC.Generics (Generic)
+import Data.Text
 
 type Session = UUID
+
+fromText :: Text -> Maybe Session
+fromText = UID.fromText
 
 instance ToRow Session where
     toRow s = [toField $ toText s]
@@ -26,7 +33,7 @@ instance ToField UUID where
 
 instance {-# OVERLAPS #-} FromField (Maybe UUID) where
     fromField s = do
-        fromText <$> fromField s
+        UID.fromText <$> fromField s
 
 data User = User
     { userId :: UUID
