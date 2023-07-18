@@ -30,7 +30,7 @@ import Yoga.JSON as JSON
 import Web.HTML (window)
 import Web.HTML.Window (location)
 import Web.HTML.Location (href)
-import Data.String
+import Data.String (split, Pattern(..))
 
 foreign import _geolocation
   :: forall a
