@@ -1,16 +1,19 @@
 module Main
-  ( Message(..)
-  , ErrorMessage
+  ( ErrorMessage
+  , Loc
+  , Message(..)
   , Model
   , Price
   , Resturant
-  , UserId
+  , SessionId
   , Url
-  , Loc
+  , UserId
+  , btn
   , init
   , main
   , view
-  ) where
+  )
+  where
 
 import Prelude
 import Data.Array (cons, last)
@@ -24,6 +27,7 @@ import Effect.Console (log)
 import Fetch (Method(..), fetch)
 import Flame (QuerySelector(..), Html, (:>), ListUpdate)
 import Flame as F
+import Flame.Subscription.Window as FSW
 import Flame.Html.Attribute as HA
 import Flame.Html.Element as HE
 import Yoga.JSON as JSON
@@ -39,7 +43,7 @@ foreign import _geolocation
   -> (a -> Effect Unit)
   -> Effect Unit
 
-createSession :: Aff (Maybe UserId)
+createSession :: Aff (Maybe SessionId)
 createSession = do
   { status, text } <-
     fetch "http://localhost:5001/newsession"
@@ -50,7 +54,7 @@ createSession = do
     200 -> JSON.readJSON_ <$> text
     _ -> pure Nothing
 
-joinSession :: String → Aff (Maybe UserId)
+joinSession :: SessionId → Aff (Maybe UserId)
 joinSession s = do
   { status, text } <-
     fetch ("http://localhost:5001/addtosession/" <> s)
@@ -71,21 +75,25 @@ type ErrorMessage = String
 
 -- | This datatype is used to signal events to `update`
 data Message
-  = StartSwiping
+  = DeterminSession
+  | JoinSession SessionId
+  | StartSwiping
   | Like
   | Dislike
   | FailedToLoad ErrorMessage
   | NextResturant Loc UserId
-  | Matched Resturant
+  | Matched Resturant Loc UserId
   | Finish Resturant Loc UserId
 
 type UserId = String
+type SessionId = String
 
 -- | The model represents the state of the app
 data Model
-  = QR
+  = Loading
+  | QR SessionId
   | Swiping Resturant Loc UserId
-  | Match Resturant
+  | Match Resturant Loc UserId
   | ServerError ErrorMessage
 
 type Url = String
@@ -110,7 +118,7 @@ type ResturantDecision =
   }
 
 apiUrl :: Url
-apiUrl = "http://localhost:5001/gavin"
+apiUrl = "http://localhost:5001/resturant"
 
 updateUrl :: Url
 updateUrl = "http://localhost:5001/liked"
@@ -120,7 +128,7 @@ readApi = JSON.readJSON_
 
 -- | Initial state of the app
 init :: Model
-init = QR
+init = Loading
 
 skipDuplicateResturant :: Model -> Resturant -> Message
 skipDuplicateResturant (Swiping ogr loc sess) newr =
@@ -165,28 +173,39 @@ update model = case _ of
   -- Final states that updtate the model
   FailedToLoad e -> ServerError e :> []
   Finish resturant loc userId -> (Swiping resturant loc userId) :> []
-  Matched x -> Match x :> []
+  Matched r l u -> Match r l u :> []
+  JoinSession session → (QR session) :> []
   -- Events coming from the UI
+  DeterminSession → model :>
+                    [
+                     Just <$> do
+                       s ← liftEffect $ do
+                                w ← window
+                                l ← location w
+                                h <- href l
+                                let extension = (last (split (Pattern "/") h))
+                                case extension of
+                                  Nothing → pure Nothing
+                                  Just "" → pure Nothing
+                                  Just _ → pure extension
+                       case s of
+                         Just session -> pure $ JoinSession session
+                         Nothing -> do
+                                session <- createSession
+                                case session of
+                                  Nothing → pure $ FailedToLoad "Could not get a session from server"
+                                  Just session → pure $ JoinSession session
+                    ]
   StartSwiping -> model :>
-    [ Just <$> do
-        s ← liftEffect $ do
-          w ← window
-          l ← location w
-          h <- href l
-          let extension = (last (split (Pattern "/") h))
-          case extension of
-                  Nothing → pure Nothing
-                  Just "" → pure Nothing
-                  Just _ → pure extension
-                       -- pure u
-        loc <- geolocation
-        user ← case s of
-                 Just session -> joinSession session
-                 Nothing -> createSession
-        show user # liftEffect <<< log
-        pure $ case user of
-          Just u → NextResturant loc u
-          Nothing → StartSwiping
+    [ Just <$> case model of
+                 (QR session ) → do
+                   loc <- geolocation
+                   user ← joinSession session
+                   show user # liftEffect <<< log
+                   pure $ case user of
+                            Just u → NextResturant loc u
+                            Nothing → StartSwiping
+                 _ → pure $ FailedToLoad "StartSwiping Can only be entered from QR"
     ]
   -- TODO Send if they liked the restaurant
   Like ->
@@ -199,7 +218,7 @@ update model = case _ of
                 "liked " <> show r # liftEffect <<< log
                 "got " <> show maybeMatch # liftEffect <<< log
                 pure case maybeMatch of
-                  (Just m) -> Matched m
+                  (Just m) -> Matched m l u
                   Nothing -> NextResturant l u
               _ -> pure $ FailedToLoad "Attempted to like while not swiping"
         ]
@@ -223,7 +242,9 @@ update model = case _ of
               $ case maybeRes of
                   Nothing -> FailedToLoad "API did not return a resturant"
                   Just res -> case model of
-                    QR -> Finish res loc s
+                    Loading -> Finish res loc s
+                    QR _ →  Finish res loc s
+                    Match _ _ _ →  Finish res loc s
                     Swiping _ _ _ -> skipDuplicateResturant model res
                     _ -> FailedToLoad
                       "Attempted to find next resturant when not swiping or starting a session"
@@ -274,24 +295,55 @@ btn m t c =
         Nothing -> attrs
       t
 
+grey ∷ Maybe String
+grey = (Just "bg-gray-900 hover:bg-gray-800")
+
+footer content =  HE.div [ HA.class' "fill flex items-center justify-between mb-3lcontainer mx-auto rounded" ]
+                 content
+
 -- TODO Implement QR Code prompt
 -- | `view` updates the app markup whenever the model is updated
 view :: Model -> Html Message
 view (ServerError e) = HE.main "main" [ HE.text $ "Error: " <> e ]
 
-view QR =
+view Loading =
   HE.main "main"
     [ HE.div [ HA.class' "flex flex-col items-center justify-center " ]
-        [ HE.text "Replace with QR code"
-        , HE.div_
-            [ btn StartSwiping "Start Swiping"
-                (Just "bg-gray-900 hover:bg-gray-800")
-            ]
-        ]
+        [ HE.text "LOADING…"]
     ]
 
-view (Match { name }) = HE.main "main" [ HE.text ("Yay you got a match on" <> name) ]
+view (QR session) =
+  HE.main "main"
+    [ HE.div [ HA.class' "flex flex-col items-center justify-center " ]
+                 [ HE.div [ HA.class' "purple fill" ] [HE.a [ HA.href session, HA.value "Join Session"] "Join Session"]
+                 -- TODO replace localhost url with our real url
+                 , HE.img [ HA.src $ "https://api.qrserver.com/v1/create-qr-code/?data="<> "http://localhost:1234/" <> session
+                         , HA.alt ""]
+                 , HE.div_
+                  [ btn (StartSwiping) "Start Swiping" grey
+                  ]
+                 ]
+    ]
 
+view (Match r loc id) = HE.main "main"
+                        [ HE.div
+                          [ HA.class' "flex flex-col items-center justify-center" ]
+                          [ HE.text "Yay You Got A Match!"
+                          , HE.div_ [ header r.name
+                                    , image r.imageLink
+                                    ]
+                          , footer [
+                             HE.ul_
+                               let
+                                   ratings = " Rating: " <> (show r.rating)
+                               in
+                                 map HE.li_ case r.price of
+                                              Nothing -> [ ratings ]
+                                              (Just p) -> [ " Price: " <> p, ratings ]
+                            ]
+                          , btn (NextResturant loc id) "Continue Anyways" grey
+                          ]
+                        ]
 view (Swiping apiResults _ _) =
   HE.main "main"
     [ HE.div [ HA.class' "my-0 fill bg-gray-100" ]
@@ -303,18 +355,18 @@ view (Swiping apiResults _ _) =
             ]
         , HE.div_
             [ HE.div [ HA.class' "bg-white py-2 shadow-lg px-2 rounded-lg mx-2" ]
-                [ HE.div [ HA.class' "fill flex items-center justify-between mb-3lcontainer mx-auto rounded" ]
-                    [ HE.div [ HA.class' "items-left" ]
-                        $ btn Dislike "-" (Just "bg-red-900 hover:bg-red-800")
-                    , HE.ul_
-                        let
-                          ratings = " Rating: " <> (show apiResults.rating)
-                        in
-                          map HE.li_ case apiResults.price of
-                            Nothing -> [ ratings ]
-                            (Just p) -> [ " Price: " <> p, ratings ]
-                    , HE.div [ HA.class' "right-0" ]
-                        $ btn Like "+" (Just "bg-green-900 hover:bg-green-800")
+                [
+                 footer  [ HE.div [ HA.class' "items-left" ]
+                                      $ btn Dislike "-" (Just "bg-red-900 hover:bg-red-800")
+                         , HE.ul_
+                           let
+                               ratings = " Rating: " <> (show apiResults.rating)
+                           in
+                             map HE.li_ case apiResults.price of
+                                          Nothing -> [ ratings ]
+                                          (Just p) -> [ " Price: " <> p, ratings ]
+                         , HE.div [ HA.class' "right-0" ]
+                                      $ btn Like "+" (Just "bg-green-900 hover:bg-green-800")
                     ]
                 ]
             ]
@@ -326,7 +378,7 @@ main :: Effect Unit
 main =
   F.mount_ (QuerySelector "body")
     { init: init :> []
-    , subscribe: [] -- [ FSW.onLoad NextResturant ] -- Load resturant on startup
+    , subscribe: [  FSW.onLoad DeterminSession ] -- [ FSW.onLoad NextResturant ] -- Load resturant on startup
     , update
     , view
     }

@@ -161,10 +161,10 @@ server = do
             options "/newsession" $ text "success"
             get "/newsession" $ do
                 liftIO $ putStrLn "Getting Session"
-                uid <- liftIO sessionId
+                -- uid <- liftIO sessionId
                 session <- liftIO sessionId
-                liftIO $ addUserToDb (U.User uid session)
-                json uid
+                -- liftIO $ addUserToDb (U.User uid session)
+                json session
 
             options "/addtosession/:session" $ text "success"
             get "/addtosession/:session" $ do
@@ -189,18 +189,21 @@ server = do
                                     (_, maybeU) <- getUser i
                                     case head maybeU of
                                       (Just (U.User _ s)) -> do
+                                                        print "getting matches"
                                                         (_, matches ) <- likedResturants s
                                                         print "matches where"
                                                         print matches
-                                                        mapM_ print matches
-                                                        print $ " sending " <> (show $ Just $ head matches)
-                                                        pure $ Just $ head matches
+                                                        if (length matches) > 1 then
+                                                            do mapM_ print matches
+                                                               pure $ Just $ head matches
+                                                        else pure Nothing
                                       Nothing -> pure Nothing
-                        json r
+                        liftAndCatchIO $ print $ " sending " <> (show r)
+                        json $ (r :: Maybe Resturant)
                     _ -> json (Nothing :: Maybe Resturant)
 
-            options "/gavin" $ text "success"
-            post "/gavin" $ do
+            options "/resturant" $ text "success"
+            post "/resturant" $ do
                 liftIO $ print "Getting res"
                 loc <- jsonData
                 case loc of

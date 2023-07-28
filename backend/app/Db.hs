@@ -4,9 +4,8 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE StandaloneDeriving #-}
 
-module Db (addImgToDb, storeInDB, inDB, setupDb, addUserToDb, addLikeToDb, likedResturants, Like (..), dbClear, getUser) where
+module Db (addImgToDb, storeInDB, inDB, setupDb, addUserToDb, addLikeToDb, likedResturants, LikedResturant(..), Like (..), dbClear, getUser) where
 
-import Data.UUID (UUID, toText)
 import Database.SQLite.Simple (
     Connection (..),
     FromRow,
@@ -25,7 +24,6 @@ import Database.SQLite.Simple.ToField (ToField (toField))
 import GHC.Generics (Generic)
 import Restaurant
 import qualified User as U
-import qualified System.Posix.Types as U
 
 data Open
 data Closed
@@ -38,9 +36,9 @@ dbConnect = do
     pure (DbConnection conn)
 
 dbClose :: DbConnection Open -> IO (DbConnection Closed)
-dbClose (DbConnection connection) = do
-    close connection
-    pure $ DbConnection connection
+dbClose (DbConnection conn) = do
+    close conn
+    pure $ DbConnection conn
 
 newtype ClosedDbConnection = ClosedDbConnection () deriving (Show)
 
@@ -68,7 +66,7 @@ setupDb = do
             [ "CREATE TABLE IF NOT EXISTS likes "
             , "(userId TEXT, resturantId TEXT)"
             ]
-    pure $ conn
+    pure conn
 
 addImgToDb :: Resturant -> IO (DbConnection Closed)
 addImgToDb (Resturant b (Just i) _) = do
@@ -126,8 +124,24 @@ getUser u = do
     c <- dbClose conn
     pure (c, r)
 
+getFriends :: U.Session -> IO (DbConnection Closed, [Maybe U.User])
+getFriends s = do
+    conn <- setupDb
+    r <-
+        query
+            (connection conn)
+            ( mconcat
+                [ "SELECT userId, session "
+                , "FROM users "
+                , "WHERE users.session = ?"
+                ]
+            )
+            [s]
+    c <- dbClose conn
+    pure (c, r)
+
 likedResturants :: U.Session -> IO (DbConnection Closed, [Resturant])
-likedResturants u = do
+likedResturants s = do
     conn <- setupDb
     r <-
         query
@@ -135,13 +149,16 @@ likedResturants u = do
             ( mconcat
                 [ "SELECT resturants.id, resturants.url, resturants.name, resturants.rating, resturants.price, resturants.hours, resturants.imagelink, resturants.latitude, resturants.longitude "
                 , "FROM users JOIN likes "
-                , "ON users.userId = likes.userId "
+                , "ON users.userId IS likes.userId "
                 , "JOIN resturants "
-                , "ON likes.resturantId = resturants.id "
+                , "ON likes.resturantId is resturants.id "
                 , "WHERE users.session = ?"
+                , "GROUP BY likes.resturantId "
+                , "HAVING count(resturants.Id) > 1 "
                 ]
             )
-            [u]
+            [s]
+    print "resturant"
     c <- dbClose conn
     pure (c, r)
 
