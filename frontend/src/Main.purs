@@ -16,9 +16,11 @@ module Main
   where
 
 import Prelude
+
 import Data.Array (cons, last)
 import Data.Either (Either(..))
 import Data.Maybe (Maybe(..))
+import Data.String (split, Pattern(..))
 import Effect (Effect)
 import Effect.Aff (Error, makeAff, Aff)
 import Effect.Aff.Class (class MonadAff, liftAff)
@@ -27,14 +29,13 @@ import Effect.Console (log)
 import Fetch (Method(..), fetch)
 import Flame (QuerySelector(..), Html, (:>), ListUpdate)
 import Flame as F
-import Flame.Subscription.Window as FSW
 import Flame.Html.Attribute as HA
 import Flame.Html.Element as HE
-import Yoga.JSON as JSON
+import Flame.Subscription.Window as FSW
 import Web.HTML (window)
-import Web.HTML.Window (location)
 import Web.HTML.Location (href)
-import Data.String (split, Pattern(..))
+import Web.HTML.Window (location, sessionStorage)
+import Yoga.JSON as JSON
 
 foreign import _geolocation
   :: forall a
@@ -70,6 +71,10 @@ geolocation =
   liftAff
     $ makeAff \cb ->
         _geolocation Right Left cb $> mempty
+
+-- TODO replace localhost url with our real url
+sessionUrl∷ String → String
+sessionUrl session = "http://localhost:1234/" <> session
 
 type ErrorMessage = String
 
@@ -301,7 +306,6 @@ grey = (Just "bg-gray-900 hover:bg-gray-800")
 footer content =  HE.div [ HA.class' "fill flex items-center justify-between mb-3lcontainer mx-auto rounded" ]
                  content
 
--- TODO Implement QR Code prompt
 -- | `view` updates the app markup whenever the model is updated
 view :: Model -> Html Message
 view (ServerError e) = HE.main "main" [ HE.text $ "Error: " <> e ]
@@ -316,8 +320,7 @@ view (QR session) =
   HE.main "main"
     [ HE.div [ HA.class' "flex flex-col items-center justify-center " ]
                  [ HE.div [ HA.class' "purple fill" ] [HE.a [ HA.href session, HA.value "Join Session"] "Join Session"]
-                 -- TODO replace localhost url with our real url
-                 , HE.img [ HA.src $ "https://api.qrserver.com/v1/create-qr-code/?data="<> "http://localhost:1234/" <> session
+                 , HE.img [ HA.src $ "https://api.qrserver.com/v1/create-qr-code/?data="<> sessionUrl session
                          , HA.alt ""]
                  , HE.div_
                   [ btn (StartSwiping) "Start Swiping" grey

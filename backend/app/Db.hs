@@ -13,14 +13,11 @@ import Database.SQLite.Simple (
     close,
     execute,
     execute_,
-    field,
-    fromRow,
     open,
     query,
     query_,
     toRow,
  )
-import Database.SQLite.Simple.ToField (ToField (toField))
 import GHC.Generics (Generic)
 import Restaurant
 import qualified User as U
@@ -158,7 +155,6 @@ likedResturants s = do
                 ]
             )
             [s]
-    print "resturant"
     c <- dbClose conn
     pure (c, r)
 
