@@ -411,7 +411,7 @@ main :: Effect Unit
 main =
   F.mount_ (QuerySelector "body")
     { init: init :> []
-    , subscribe: [  FSW.onLoad DeterminSession ] -- [ FSW.onLoad NextResturant ] -- Load resturant on startup
+    , subscribe: [  FSW.onLoad DeterminSession ] -- Load resturant on startup
     , update
     , view
     }
