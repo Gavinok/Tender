@@ -43,15 +43,11 @@ import Web.Scotty (
  )
 
 import Data.Aeson (FromJSON)
-import qualified Data.Aeson as A
-import Data.ByteString (putStr)
 
 -- import Data.ByteString.Char8 (putStrLn)
-import qualified Data.ByteString.Lazy as L
-import Data.UUID (UUID, toText)
+import Data.UUID (UUID)
 import Data.UUID.V4 (nextRandom)
 import Db
-import qualified GHC.Base as Data.ByteString
 import Restaurant
 import System.Random
 import qualified User as U
@@ -96,20 +92,20 @@ getRes k loc = do
                     maybeImg <- reqIMG k $ bid b
                     case maybeImg of
                         Was i -> do
-                            addImgToDb (Resturant b (Just i) l)
+                            _ <- addImgToDb (Resturant b (Just i) l)
                             pure $ Right (Resturant b (Just i) l)
                         _ -> pure $ Left $ "Failed to get resturants image " ++ show maybeImg
         Nothing -> do
             apiRes <- reqRes k loc
             case apiRes of
                 Was (Series res) -> do
-                    storeInDB $ (\x -> Resturant x Nothing loc) <$> res
+                    _ <- storeInDB $ (\x -> Resturant x Nothing loc) <$> res
                     b <- randomIndex res
                     maybeImg <- reqIMG k $ bid b
                     case maybeImg of
                         Was i -> do
                             let r = Resturant b (Just i) loc
-                            addImgToDb r
+                            _ <- addImgToDb r
                             pure $ Right r
                         _ -> pure $ Left $ "Failed to get resturants image " ++ show maybeImg
                 _ -> pure $ Left $ "Failed to: get resturants at location " ++ show loc ++ "with error " ++ show apiRes
@@ -127,19 +123,6 @@ instance FromJSON ResturantDecision
 
 type Match = Business
 
-addLiked :: ResturantDecision -> U.User -> IO ()
-addLiked pick user = undefined
-
-compareLiked :: U.Session -> IO [Match]
-compareLiked sesh = undefined
-
-wasMatch :: ResturantDecision -> U.User -> IO (Maybe Match)
-wasMatch pick usr = do
-    addLiked pick usr
-    matches <- compareLiked $ U.session usr
-    pure $ case matches of
-        [] -> Nothing
-        (x : _) -> Just x
 firstElem :: [a] -> Maybe a
 firstElem xs = case xs of
   [] -> Nothing
@@ -187,19 +170,18 @@ server = do
                         r <- liftAndCatchIO $ do
                                     _ <- addLikeToDb $ Db.Like i l
                                     (_, maybeU) <- getUser i
-                                    case head maybeU of
-                                      (Just (U.User _ s)) -> do
+                                    case maybeU of
+                                      ((Just (U.User _ s)):_) -> do
                                                         print "getting matches"
                                                         (_, matches ) <- likedResturants s
-                                                        print "matches where"
-                                                        print matches
-                                                        if (length matches) > 1 then
-                                                            do mapM_ print matches
-                                                               pure $ Just $ head matches
+                                                        print $ "matches where" <> show matches
+                                                        if not (null matches) then
+                                                            do pure $ Just $ head matches
                                                         else pure Nothing
-                                      Nothing -> pure Nothing
-                        liftAndCatchIO $ print $ " sending " <> (show r)
-                        json $ (r :: Maybe Resturant)
+                                      (Nothing:_) -> pure Nothing
+                                      [] -> pure Nothing
+                        liftAndCatchIO $ print $ " sending " <> show r
+                        json (r :: Maybe Resturant)
                     _ -> json (Nothing :: Maybe Resturant)
 
             options "/resturant" $ text "success"
@@ -212,6 +194,7 @@ server = do
                         liftAndCatchIO $ putStrLn "Getting res"
                         liftAndCatchIO $ print l
                         eitherRes <- liftAndCatchIO $ getRes k l
+                        liftAndCatchIO $ print eitherRes
                         case eitherRes of
                             Left e -> fail e
                             Right r -> json r

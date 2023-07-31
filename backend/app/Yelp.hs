@@ -28,6 +28,7 @@ newtype YelpAPIKey = YelpAPIKey String
 fromKey :: YelpAPIKey -> String
 fromKey (YelpAPIKey s) = s
 
+-- curl -X POST -H "Authorization: Bearer $YELP_KEY" -H "Content-Type: application/graphql" https://api.yelp.com/v3/graphql --data graphQLQuery
 graphQLQuery :: L8.ByteString -> L8.ByteString -> L8.ByteString
 graphQLQuery lat long =
     "{\
@@ -45,6 +46,7 @@ graphQLQuery lat long =
            \url \
            \name \
            \rating \
+           \categories { title } \
            \price \
            \hours{ \
            \is_open_now\

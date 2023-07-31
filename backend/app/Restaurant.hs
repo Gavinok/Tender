@@ -4,15 +4,16 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE StandaloneDeriving #-}
 
-module Restaurant (Series (..), Hours (..), Business (..), Resturant (..), Loc (..), bid) where
+module Restaurant (Category (..), Series (..), Hours (..), Business (..), Resturant (..), Loc (..), bid) where
 
 import Data.Aeson (FromJSON, ToJSON, parseJSON, (.:), (.=))
 import qualified Data.Aeson as A
+import Data.List (intercalate)
 import Data.Maybe (listToMaybe)
 import Database.SQLite.Simple (
     FromRow (..),
     ResultError (ConversionFailed),
-    SQLData (SQLInteger, SQLNull),
+    SQLData (SQLInteger, SQLNull, SQLText),
     ToRow (..),
     field,
  )
@@ -36,6 +37,15 @@ instance FromField [Hours] where
     fromField (I.Field SQLNull _) = Ok [Hours False]
     fromField f = returnError ConversionFailed f "Hours must an SQLInteger"
 
+newtype Category = Category
+    { title :: String
+    } deriving (Generic, Show)
+instance FromJSON Category
+instance FromField [Category] where
+    fromField (I.Field (SQLText b) _) = Ok [Category $ show b]
+    fromField (I.Field SQLNull _) = Ok []
+    fromField f = returnError ConversionFailed f "Category must a SQLText"
+
 data Business = Business
     { id :: String
     , url :: String
@@ -43,14 +53,14 @@ data Business = Business
     , rating :: Float
     , price :: Maybe String
     , hours :: [Hours]
+    , categories :: [Category]
     }
     deriving stock (Generic, Show)
 
 bid :: Business -> String
-bid (Business id_ _ _ _ _ _) = id_
+bid (Business id_ _ _ _ _ _ _) = id_
 
 instance FromJSON Business
-deriving anyclass instance FromRow Business
 
 newtype Series = Series [Business] deriving (Show)
 
@@ -65,13 +75,15 @@ data Resturant = Resturant
     }
     deriving (Generic, Show)
 instance ToJSON Resturant where
-    toJSON (Resturant (Business ident _ rname rrating rprice _) imgLink _) =
+    toJSON (Resturant (Business ident rurl rname rrating rprice _ cat) imgLink _) =
         A.object
             [ "id" .= (ident :: String)
             , "name" .= (rname :: String)
+            , "url" .= (rurl :: String)
             , "price" .= (rprice :: Maybe String)
             , "rating" .= (rrating :: Float)
             , "imageLink" .= (imgLink :: Maybe String)
+            , "category" .= (Just (intercalate ", " $ title <$> cat) :: Maybe String)
             ]
 instance FromRow Resturant where
     fromRow =
@@ -82,12 +94,15 @@ instance FromRow Resturant where
                     <*> field
                     <*> field
                     <*> field
+                    <*> field
                 )
                 <*> field
                 <*> (Loc <$> field <*> field)
+
 instance ToRow Resturant where
     toRow (Resturant b i l) =
-        [ toField $ bid b
+        [
+          toField $ bid b
         , toField $ url b
         , toField $ name b
         , toField $ rating b
@@ -95,6 +110,9 @@ instance ToRow Resturant where
         , case listToMaybe $ hours b of
             Nothing -> SQLNull
             Just (Hours h) -> toField h
+        , case categories b of
+            [] -> SQLNull
+            x ->  toField (intercalate ", " $ title <$> x :: String)
         , toField i
         , toField $ latitude l
         , toField $ longitude l

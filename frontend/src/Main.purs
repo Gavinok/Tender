@@ -30,8 +30,10 @@ import Fetch (Method(..), fetch)
 import Flame (QuerySelector(..), Html, (:>), ListUpdate)
 import Flame as F
 import Flame.Html.Attribute as HA
+import Flame.Html.Element (class ToNode)
 import Flame.Html.Element as HE
 import Flame.Subscription.Window as FSW
+import Flame.Types (NodeData)
 import Web.HTML (window)
 import Web.HTML.Location (href)
 import Web.HTML.Window (location, sessionStorage)
@@ -44,10 +46,12 @@ foreign import _geolocation
   -> (a -> Effect Unit)
   -> Effect Unit
 
+backendUrl = "http://localhost:5001/"
+
 createSession :: Aff (Maybe SessionId)
 createSession = do
   { status, text } <-
-    fetch "http://localhost:5001/newsession"
+    fetch (backendUrl <> "newsession")
       { method: GET
       , headers: { "Content-Type": "application/json" }
       }
@@ -58,7 +62,7 @@ createSession = do
 joinSession :: SessionId → Aff (Maybe UserId)
 joinSession s = do
   { status, text } <-
-    fetch ("http://localhost:5001/addtosession/" <> s)
+    fetch (backendUrl <> "addtosession/" <> s)
       { method: GET
       , headers: { "Content-Type": "application/json" }
       }
@@ -108,9 +112,11 @@ type Price = Maybe String
 type Resturant =
   { id :: String
   , name :: String
+  , url ∷ String
   , price :: Price
   , rating :: Number
   , imageLink :: Url
+  , category :: Maybe String
   }
 
 -- | Location of the current user
@@ -123,10 +129,10 @@ type ResturantDecision =
   }
 
 apiUrl :: Url
-apiUrl = "http://localhost:5001/resturant"
+apiUrl = backendUrl <> "resturant"
 
 updateUrl :: Url
-updateUrl = "http://localhost:5001/liked"
+updateUrl = backendUrl <> "liked"
 
 readApi :: String -> Maybe Resturant
 readApi = JSON.readJSON_
@@ -148,16 +154,19 @@ newtype JsonString = JsonString String
 
 post :: JsonString -> Url -> Aff (Maybe Resturant)
 post (JsonString x) url = do
-  liftEffect $ log "post"
   { status, text } <-
     fetch url
       { method: POST
       , headers: { "Content-Type": "application/json" }
       , body: x
       }
+  liftEffect $ log $ "post got a " <> (show status)
   case status of
     200 -> readApi <$> text
-    _ -> pure Nothing
+    _ -> do
+      t  <- text
+      liftEffect $ log $ t
+      pure Nothing
 
 sendLiked :: UserId -> (Maybe String) -> Aff (Maybe Resturant)
 sendLiked id liked_ =
@@ -171,35 +180,34 @@ sendLiked id liked_ =
 getResturant :: Loc -> Aff (Maybe Resturant)
 getResturant loc = post (JsonString $ JSON.writeJSON loc) apiUrl
 
--- TODO Render QR code for users to join
 -- | `update` is called to handle events
 update :: ListUpdate Model Message
 update model = case _ of
   -- Final states that updtate the model
   FailedToLoad e -> ServerError e :> []
-  Finish resturant loc userId -> (Swiping resturant loc userId) :> []
+  Finish resturant loc userId -> Swiping resturant loc userId :> []
   Matched r l u -> Match r l u :> []
-  JoinSession session → (QR session) :> []
+  JoinSession session → QR session :> []
   -- Events coming from the UI
   DeterminSession → model :>
                     [
                      Just <$> do
-                       s ← liftEffect $ do
+                       existingSession ← liftEffect $ do
                                 w ← window
                                 l ← location w
                                 h <- href l
-                                let extension = (last (split (Pattern "/") h))
-                                case extension of
-                                  Nothing → pure Nothing
-                                  Just "" → pure Nothing
-                                  Just _ → pure extension
-                       case s of
+                                let extension = last (split (Pattern "/") h)
+                                pure case extension of
+                                       Nothing → Nothing
+                                       Just "" → Nothing
+                                       Just _ → extension
+                       case existingSession of
                          Just session -> pure $ JoinSession session
                          Nothing -> do
                                 session <- createSession
-                                case session of
-                                  Nothing → pure $ FailedToLoad "Could not get a session from server"
-                                  Just session → pure $ JoinSession session
+                                pure case session of
+                                  Nothing → FailedToLoad "Could not get a session from server"
+                                  Just s →  JoinSession s
                     ]
   StartSwiping -> model :>
     [ Just <$> case model of
@@ -212,7 +220,7 @@ update model = case _ of
                             Nothing → StartSwiping
                  _ → pure $ FailedToLoad "StartSwiping Can only be entered from QR"
     ]
-  -- TODO Send if they liked the restaurant
+
   Like ->
     model
       :>
@@ -223,7 +231,7 @@ update model = case _ of
                 "liked " <> show r # liftEffect <<< log
                 "got " <> show maybeMatch # liftEffect <<< log
                 pure case maybeMatch of
-                  (Just m) -> Matched m l u
+                  Just m -> Matched m l u
                   Nothing -> NextResturant l u
               _ -> pure $ FailedToLoad "Attempted to like while not swiping"
         ]
@@ -286,11 +294,28 @@ image link =
         ]
     ]
 
+resturantStats :: forall a. Resturant -> Html a
+resturantStats r = HE.ul_
+                   let
+                       ratings = [" Rating: " <> (show r.rating)]
+                       pricing = case r.price of
+                                   Nothing -> []
+                                   Just p -> [" Price: " <> p]
+                       category = case r.category of
+                                    Nothing -> []
+                                    Just c -> [" Category: " <> c]
+                   in
+                     map HE.li_ $ category <> ratings <> pricing
+
+
+buttonShape :: forall a278. NodeData a278
+buttonShape = HA.class' "block py-2 px-10 fill text-white shadow-md rounded hover:shadow-lg"
+
 btn :: Message -> String -> Maybe Color -> Html Message
 btn m t c =
   let
     attrs =
-      [ HA.class' "block py-2 px-10 fill text-white shadow-md rounded hover:shadow-lg"
+      [ buttonShape
       , HA.onClick m
       ]
   in
@@ -303,9 +328,21 @@ btn m t c =
 grey ∷ Maybe String
 grey = (Just "bg-gray-900 hover:bg-gray-800")
 
-footer content =  HE.div [ HA.class' "fill flex items-center justify-between mb-3lcontainer mx-auto rounded" ]
-                 content
+centered :: forall a. NodeData a
+centered = HA.class' "py-5 flex flex-col items-center justify-center fill pt-3"
 
+footer :: forall a b. ToNode b a Html => b -> Html a
+footer content =
+    HE.div [ HA.class' "bg-white py-2 shadow-lg px-2 rounded-lg mx-2" ]
+                [
+                HE.div [ HA.class' "fill flex items-center justify-between mb-3lcontainer mx-auto rounded" ] content
+    ]
+
+yelplink :: forall a. Resturant -> Html a
+yelplink r = HE.div [ centered ] [
+                  HE.div [buttonShape , HA.class' "bg-green-300" ]
+                        [HE.a [ HA.href r.url, HA.value "Yelp Page"] "Yelp Page"]
+                 ]
 -- | `view` updates the app markup whenever the model is updated
 view :: Model -> Html Message
 view (ServerError e) = HE.main "main" [ HE.text $ "Error: " <> e ]
@@ -329,23 +366,21 @@ view (QR session) =
     ]
 
 view (Match r loc id) = HE.main "main"
-                        [ HE.div
-                          [ HA.class' "flex flex-col items-center justify-center" ]
-                          [ HE.text "Yay You Got A Match!"
-                          , HE.div_ [ header r.name
-                                    , image r.imageLink
-                                    ]
-                          , footer [
-                             HE.ul_
-                               let
-                                   ratings = " Rating: " <> (show r.rating)
-                               in
-                                 map HE.li_ case r.price of
-                                              Nothing -> [ ratings ]
-                                              (Just p) -> [ " Price: " <> p, ratings ]
-                            ]
-                          , btn (NextResturant loc id) "Continue Anyways" grey
-                          ]
+                        [ HE.div [ HA.class' "my-0 fill"]
+                                     [ HE.div [ HA.class' "justify-center pt-3"]
+                                              [ HE.text "Yay You Got A Match!"
+                                              , header r.name
+                                              , image r.imageLink
+                                              ]
+                                     , HE.div_ [ yelplink r ]
+                                     , HE.div_ [footer [
+                                                 HE.div [ HA.class' "items-left" ] $ HE.text ""
+                                                , resturantStats r
+                                                ,HE.div [ HA.class' "right-0" ] $ HE.text ""
+                                                ]
+                                               ]
+                                     , HE.div  [centered] [btn (NextResturant loc id) "Continue Anyways" grey]
+                                 ]
                         ]
 view (Swiping apiResults _ _) =
   HE.main "main"
@@ -356,22 +391,17 @@ view (Swiping apiResults _ _) =
                 , image apiResults.imageLink
                 ]
             ]
+        , HE.div_ [ yelplink apiResults ]
         , HE.div_
-            [ HE.div [ HA.class' "bg-white py-2 shadow-lg px-2 rounded-lg mx-2" ]
-                [
-                 footer  [ HE.div [ HA.class' "items-left" ]
+            [ footer
+                  [ HE.div [ HA.class' "items-left" ]
                                       $ btn Dislike "-" (Just "bg-red-900 hover:bg-red-800")
-                         , HE.ul_
-                           let
-                               ratings = " Rating: " <> (show apiResults.rating)
-                           in
-                             map HE.li_ case apiResults.price of
-                                          Nothing -> [ ratings ]
-                                          (Just p) -> [ " Price: " <> p, ratings ]
-                         , HE.div [ HA.class' "right-0" ]
-                                      $ btn Like "+" (Just "bg-green-900 hover:bg-green-800")
+
+                        , resturantStats apiResults
+
+                        , HE.div [ HA.class' "right-0" ]
+                                     $ btn Like "+" (Just "bg-green-900 hover:bg-green-800")
                     ]
-                ]
             ]
         ]
     ]

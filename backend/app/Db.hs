@@ -47,9 +47,10 @@ setupDb = do
     ex $
         mconcat
             [ "CREATE TABLE IF NOT EXISTS resturants "
-            , "(id TEXT PRIMARY KEY, url TEXT, name Text, rating FLOAT, price TEXT, hours INTEGER,"
+            , "(id TEXT PRIMARY KEY, url TEXT, name Text, rating FLOAT, price TEXT, hours INTEGER, category TEXT,"
             , " imagelink TEXT,"
-            , " latitude FLOAT, longitude FLOAT)"
+            , " latitude FLOAT, longitude FLOAT"
+            , " )"
             ]
     -- Users
     ex $
@@ -144,14 +145,16 @@ likedResturants s = do
         query
             (connection conn)
             ( mconcat
-                [ "SELECT resturants.id, resturants.url, resturants.name, resturants.rating, resturants.price, resturants.hours, resturants.imagelink, resturants.latitude, resturants.longitude "
-                , "FROM users JOIN likes "
-                , "ON users.userId IS likes.userId "
+                [
+                 "WITH l AS (SELECT DISTINCT likes.userId, likes.resturantId FROM likes) "
+                , "SELECT resturants.id, resturants.url, resturants.name, resturants.rating, resturants.price, resturants.hours, resturants.category, resturants.imagelink, resturants.latitude, resturants.longitude "
+                , "FROM users JOIN l "
+                , "ON users.userId IS l.userId "
                 , "JOIN resturants "
-                , "ON likes.resturantId is resturants.id "
-                , "WHERE users.session = ?"
-                , "GROUP BY likes.resturantId "
-                , "HAVING count(resturants.Id) > 1 "
+                , "ON l.resturantId is resturants.id "
+                , "WHERE users.session = ? "
+                , "GROUP BY l.resturantId "
+                , "HAVING count(l.resturantId) > 1 "
                 ]
             )
             [s]
@@ -162,7 +165,7 @@ storeInDB :: [Resturant] -> IO (DbConnection Closed)
 storeInDB b = do
     conn <- setupDb
     mapM_
-        (execute (connection conn) "INSERT INTO resturants (id, url, name, rating, price, hours, imagelink, latitude, longitude) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
+        (execute (connection conn) "INSERT OR IGNORE INTO resturants (id, url, name, rating, price, hours, category, imagelink, latitude, longitude) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
         b
     dbClose conn
 
@@ -194,7 +197,7 @@ dbClear :: IO (DbConnection Closed)
 dbClear = do
     conn <- setupDb
     let c = connection conn
-    execute_ c "DELETE FROM resturants WHERE latitude > 0"
+    execute_ c "DROP TABLE resturants"
     execute_ c "DELETE FROM users"
     execute_ c "DELETE FROM likes"
     dbClose conn
@@ -205,13 +208,13 @@ db = do
     let c = connection conn
     _ <- storeInDB
         [ Resturant
-            (Business "ll" "http://" "name" 10 (Just "$$") [Hours True])
+            (Business "ll" "http://" "name" 10 (Just "$$") [Hours True] [Category "hello"])
             (Just "https...")
             (Loc 1 2)
         ]
     _ <- storeInDB
         [ Resturant
-            (Business "lt" "http://" "lame" 10 (Just "4") [Hours True])
+            (Business "lt" "http://" "lame" 10 (Just "4") [Hours True] [Category "hello"])
             (Just "https...")
             (Loc 1 8)
         ]
