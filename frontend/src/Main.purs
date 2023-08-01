@@ -36,7 +36,7 @@ import Flame.Subscription.Window as FSW
 import Flame.Types (NodeData)
 import Web.HTML (window)
 import Web.HTML.Location (href)
-import Web.HTML.Window (location, sessionStorage)
+import Web.HTML.Window (location)
 import Yoga.JSON as JSON
 
 foreign import _geolocation
@@ -46,6 +46,7 @@ foreign import _geolocation
   -> (a -> Effect Unit)
   -> Effect Unit
 
+backendUrl :: String
 backendUrl = "http://localhost:5001/"
 
 createSession :: Aff (Maybe SessionId)
@@ -264,30 +265,27 @@ update model = case _ of
         ]
 
 type Color = String
-
-header :: String -> Html Message
-header text =
-  HE.header
-    [ HA.class'
-        "relative flex items-center shadow-md justify-center mx-2 rounded-lg"
-    ]
-    [ HE.h1
+headerText text = HE.h1
         [ HA.class'
-            "text-3xl lg:text-3xl font-bold mb-2"
+            "header-text"
         ]
         text
+
+header :: forall a b. ToNode a b Html => a -> Html b
+header content =
+  HE.header
+    [ HA.class'
+        "header-body"
     ]
+  content
 
 image :: String -> Html Message
 image link =
   HE.div
-    [ HA.class'
-        "py-5 flex flex-col items-center justify-center"
-    ]
-    [ HE.figure
-        [ HA.class' "flex flex-row justify-center" ]
+    [ HA.class' "image-frame" ]
+    [ HE.figure [ HA.class' "" ]
         [ HE.img
-            [ HA.class' "is-cropped rounded overflow-hidden shadow-lg"
+            [ HA.class' "image"
             , HA.src link
             , HA.alt "Resturant Image"
             ]
@@ -295,7 +293,7 @@ image link =
     ]
 
 resturantStats :: forall a. Resturant -> Html a
-resturantStats r = HE.ul_
+resturantStats r = HE.div [HA.class' "text-center" ] $ HE.ul_
                    let
                        ratings = [" Rating: " <> (show r.rating)]
                        pricing = case r.price of
@@ -308,10 +306,10 @@ resturantStats r = HE.ul_
                      map HE.li_ $ category <> ratings <> pricing
 
 
-buttonShape :: forall a278. NodeData a278
-buttonShape = HA.class' "block py-2 px-10 fill text-white shadow-md rounded hover:shadow-lg"
+buttonShape :: forall a. NodeData a
+buttonShape = HA.class' "button"
 
-btn :: Message -> String -> Maybe Color -> Html Message
+btn :: forall a b. ToNode a b Html => b -> a -> Array (NodeData b) -> Html b
 btn m t c =
   let
     attrs =
@@ -319,92 +317,82 @@ btn m t c =
       , HA.onClick m
       ]
   in
-    HE.button
-      case c of
-        Just color -> cons (HA.class' color) attrs
-        Nothing -> attrs
-      t
+    HE.button (attrs <> c) t
 
-grey ∷ Maybe String
-grey = (Just "bg-gray-900 hover:bg-gray-800")
+
+grey = [HA.class' "bg-gray-900 hover:bg-gray-800"]
 
 centered :: forall a. NodeData a
-centered = HA.class' "py-5 flex flex-col items-center justify-center fill pt-3"
+centered = HA.class' "flex justify-center"
 
 footer :: forall a b. ToNode b a Html => b -> Html a
 footer content =
-    HE.div [ HA.class' "bg-white py-2 shadow-lg px-2 rounded-lg mx-2" ]
+    HE.div [ HA.class' "footer-body" ]
                 [
-                HE.div [ HA.class' "fill flex items-center justify-between mb-3lcontainer mx-auto rounded" ] content
+                HE.div [ HA.class' "footer-content" ] content
     ]
 
 yelplink :: forall a. Resturant -> Html a
-yelplink r = HE.div [ centered ] [
-                  HE.div [buttonShape , HA.class' "bg-green-300" ]
-                        [HE.a [ HA.href r.url, HA.value "Yelp Page"] "Yelp Page"]
-                 ]
+yelplink r =  HE.div [HA.class' "yelp-link" ]
+              [HE.a [ HA.href r.url, HA.value "Yelp Page"] "Yelp Page"]
+
 -- | `view` updates the app markup whenever the model is updated
 view :: Model -> Html Message
 view (ServerError e) = HE.main "main" [ HE.text $ "Error: " <> e ]
 
 view Loading =
   HE.main "main"
-    [ HE.div [ HA.class' "flex flex-col items-center justify-center " ]
+    [ HE.div [ HA.class' "loading-main" ]
         [ HE.text "LOADING…"]
     ]
 
 view (QR session) =
   HE.main "main"
-    [ HE.div [ HA.class' "flex flex-col items-center justify-center " ]
-                 [ HE.div [ HA.class' "purple fill" ] [HE.a [ HA.href session, HA.value "Join Session"] "Join Session"]
+    [ HE.div [ HA.class' "qr-main" ]
+                 [ HE.div [ HA.class' "join-button" ]
+                              [HE.a [ HA.href session, HA.value "Join Session"] "Join Session"]
                  , HE.img [ HA.src $ "https://api.qrserver.com/v1/create-qr-code/?data="<> sessionUrl session
                          , HA.alt ""]
-                 , HE.div_
+                 , HE.div [ HA.class' "my-2" ]
                   [ btn (StartSwiping) "Start Swiping" grey
                   ]
                  ]
     ]
 
-view (Match r loc id) = HE.main "main"
-                        [ HE.div [ HA.class' "my-0 fill"]
-                                     [ HE.div [ HA.class' "justify-center pt-3"]
-                                              [ HE.text "Yay You Got A Match!"
-                                              , header r.name
-                                              , image r.imageLink
-                                              ]
-                                     , HE.div_ [ yelplink r ]
-                                     , HE.div_ [footer [
-                                                 HE.div [ HA.class' "items-left" ] $ HE.text ""
-                                                , resturantStats r
-                                                ,HE.div [ HA.class' "right-0" ] $ HE.text ""
-                                                ]
-                                               ]
-                                     , HE.div  [centered] [btn (NextResturant loc id) "Continue Anyways" grey]
-                                 ]
-                        ]
 view (Swiping apiResults _ _) =
   HE.main "main"
-    [ HE.div [ HA.class' "my-0 fill bg-gray-100" ]
-        [ HE.div [ HA.class' "justify-center pt-3" ]
-            [ HE.div_
-                [ header apiResults.name
-                , image apiResults.imageLink
-                ]
-            ]
-        , HE.div_ [ yelplink apiResults ]
+    [ HE.div_
+        [ header $ headerText apiResults.name
+        , HE.div [HA.class' "main-background" ] [ image apiResults.imageLink
+                                                , HE.div [centered] $ yelplink apiResults]
         , HE.div_
             [ footer
-                  [ HE.div [ HA.class' "items-left" ]
-                                      $ btn Dislike "-" (Just "bg-red-900 hover:bg-red-800")
+                  [ HE.div [ HA.class' "footer-item" ]
+                                      $ btn Dislike "-" [ HA.class' "bg-red-900 hover:bg-red-800"]
 
-                        , resturantStats apiResults
+                  , HE.div [ HA.class' "footer-item" ] $ resturantStats apiResults
 
-                        , HE.div [ HA.class' "right-0" ]
-                                     $ btn Like "+" (Just "bg-green-900 hover:bg-green-800")
+                  , HE.div [ HA.class' "footer-item" ]
+                               $ btn Like "+" [HA.class' "bg-green-900 hover:bg-green-800"]
                     ]
             ]
         ]
     ]
+view (Match r loc id) =
+    HE.main "main"
+          [ HE.div_
+            [  HE.div [HA.class' "flex justify-center"] $ headerText "Yay You Got A Match!"
+            , header [ headerText r.name ]
+            , HE.div [HA.class' "main-background" ] [ image r.imageLink
+                                                    , HE.div [centered] $ yelplink r]
+            , HE.div_
+              [ footer
+                [ HE.div [HA.class' "footer-item col-start-2"] $ resturantStats r
+                , HE.div [HA.class' "footer-item"] $ btn (NextResturant loc id) "Continue Anyways" grey
+                ]
+              ]
+            ]
+          ]
 
 -- | Mount the application on the given selector
 main :: Effect Unit
