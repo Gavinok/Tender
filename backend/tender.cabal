@@ -34,4 +34,6 @@ executable tender
     hs-source-dirs:   app
     default-language: Haskell2010
     default-extensions: OverloadedStrings
-    ghc-options: -Wall
+    ghc-options: -Wall -O2
+    optimization: 2
+    profiling: True
