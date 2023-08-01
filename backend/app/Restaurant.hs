@@ -22,6 +22,7 @@ import qualified Database.SQLite.Simple.Internal as I
 import Database.SQLite.Simple.Ok (Ok (Ok))
 import Database.SQLite.Simple.ToField (ToField (toField))
 import GHC.Generics (Generic)
+import Data.Text (unpack)
 
 newtype Hours = Hours
     { is_open_now :: Bool
@@ -37,12 +38,14 @@ instance FromField [Hours] where
     fromField (I.Field SQLNull _) = Ok [Hours False]
     fromField f = returnError ConversionFailed f "Hours must an SQLInteger"
 
+-- TODO look into another way to store categories since making it into
+-- a long string makes supporting excessively long categories difficult
 newtype Category = Category
     { title :: String
     } deriving (Generic, Show)
 instance FromJSON Category
 instance FromField [Category] where
-    fromField (I.Field (SQLText b) _) = Ok [Category $ show b]
+    fromField (I.Field (SQLText b) _) = Ok [Category $ unpack b]
     fromField (I.Field SQLNull _) = Ok []
     fromField f = returnError ConversionFailed f "Category must a SQLText"
 
