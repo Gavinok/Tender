@@ -52,6 +52,7 @@ import Restaurant
 import System.Random
 import qualified User as U
 import Yelp
+import Data.List (find)
 
 -- Something like that maybe ?
 -- sessionId :: Int -> (UUID, StdGen)
@@ -71,6 +72,10 @@ apiCors =
         , corsRequestHeaders = simpleHeaders
         }
 
+safeHead :: [a] -> Maybe a
+safeHead [] = Nothing
+safeHead (x:_) = Just x
+
 randomIndex :: [a] -> IO a
 randomIndex lst = do
     newnum <- getStdRandom $ randomR (0, Prelude.length lst - 1)
@@ -78,16 +83,19 @@ randomIndex lst = do
     pure $ lst !! abs newnum
 
 -- TODO modify to restrict to never be a maybe URL past this point
-getRes :: YelpAPIKey -> Loc -> IO (Either String Resturant)
-getRes k loc = do
+getRes :: YelpAPIKey -> Loc -> Maybe String -> IO (Either String Resturant)
+getRes k loc resturantId = do
     maybeDbRes <- inDB loc
     case maybeDbRes of
         Just dbr -> do
             putStrLn "Found in db"
-            r <- randomIndex dbr
+            let r = case resturantId of
+                      Just rid -> safeHead . dropWhile (\res -> bid (bus res) /= rid) $ dbr
+                      Nothing ->  safeHead dbr
             case r of
-                (Resturant _ (Just _) _) -> pure $ Right r
-                (Resturant b Nothing l) -> do
+                Nothing -> pure $ Left "No resturants came back from the db"
+                (Just ressy@(Resturant _ (Just _) _)) -> pure $ Right ressy
+                (Just (Resturant b Nothing l)) -> do
                     putStrLn "Looking up"
                     maybeImg <- reqIMG k $ bid b
                     case maybeImg of
@@ -173,7 +181,7 @@ server = do
                                     case maybeU of
                                       ((Just (U.User _ s)):_) -> do
                                                         print "getting matches"
-                                                        (_, matches ) <- likedResturants s
+                                                        (_, matches) <- likedResturants s
                                                         print $ "matches where" <> show matches
                                                         if not (null matches) then
                                                             do pure $ Just $ head matches
@@ -187,13 +195,13 @@ server = do
             options "/resturant" $ text "success"
             post "/resturant" $ do
                 liftIO $ print "Getting res"
-                loc <- jsonData
-                case loc of
+                resturantReq <- jsonData
+                case resturantReq of
                     Nothing -> fail "bad"
-                    (Just l) -> do
+                    (Just (NextResturant l rId)) -> do
                         liftAndCatchIO $ putStrLn "Getting res"
                         liftAndCatchIO $ print l
-                        eitherRes <- liftAndCatchIO $ getRes k l
+                        eitherRes <- liftAndCatchIO $ getRes k l rId
                         liftAndCatchIO $ print eitherRes
                         case eitherRes of
                             Left e -> fail e
