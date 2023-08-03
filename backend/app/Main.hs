@@ -4,9 +4,9 @@
 {-# LANGUAGE EmptyCase #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE UnicodeSyntax #-}
-
 module Main where
 
+import Control.Monad.Except
 import Control.Monad.IO.Class (liftIO)
 import Database.SQLite.Simple (
     FromRow (..),
@@ -52,6 +52,8 @@ import Restaurant
 import System.Random
 import qualified User as U
 import Yelp
+import Data.List (find)
+import Control.Applicative ((<|>))
 
 -- Something like that maybe ?
 -- sessionId :: Int -> (UUID, StdGen)
@@ -71,23 +73,43 @@ apiCors =
         , corsRequestHeaders = simpleHeaders
         }
 
+safeHead :: [a] -> Maybe a
+safeHead [] = Nothing
+safeHead (x:_) = Just x
+
+-- TODO Determin how to propigate these errors rather than using a maybe
+yelpAndStore :: YelpAPIKey -> Loc -> IO (Either String [Resturant])
+yelpAndStore k l = do
+  apiRes <- reqRes k l
+  case apiRes of
+    Was (Series []) -> pure $ Left "No resturant from api"
+    Was (Series b) -> do
+                let res =  (\x -> Resturant x Nothing l) <$> b
+                _ <- storeInDB res
+                pure $ Right res
+    x -> pure $ Left $ show x
+
 randomIndex :: [a] -> IO a
 randomIndex lst = do
     newnum <- getStdRandom $ randomR (0, Prelude.length lst - 1)
     putStrLn $ "Looking this up now" ++ show newnum
     pure $ lst !! abs newnum
 
+
 -- TODO modify to restrict to never be a maybe URL past this point
-getRes :: YelpAPIKey -> Loc -> IO (Either String Resturant)
-getRes k loc = do
-    maybeDbRes <- inDB loc
+getRes :: YelpAPIKey -> Loc -> Maybe String -> IO (Either String Resturant)
+getRes k loc resturantId = do
+    maybeDbRes <- (<|>) <$> inDB loc <*> yelpAndStore k loc
     case maybeDbRes of
-        Just dbr -> do
-            putStrLn "Found in db"
-            r <- randomIndex dbr
+        Left e -> pure $ Left $ "Failed to: get resturants at location " ++ show loc ++ "with error " ++ e
+        Right dbr -> do
+            let r = case resturantId of
+                      Just rid -> safeHead . tail . dropWhile (\res -> bid (bus res) /= rid) $ dbr
+                      Nothing ->  safeHead dbr
             case r of
-                (Resturant _ (Just _) _) -> pure $ Right r
-                (Resturant b Nothing l) -> do
+                Nothing -> pure $ Left $ "No resturants came back from the db" <> show dbr
+                Just ressy@(Resturant _ (Just _) _) -> pure $ Right ressy
+                Just (Resturant b Nothing l) -> do
                     putStrLn "Looking up"
                     maybeImg <- reqIMG k $ bid b
                     case maybeImg of
@@ -95,20 +117,6 @@ getRes k loc = do
                             _ <- addImgToDb (Resturant b (Just i) l)
                             pure $ Right (Resturant b (Just i) l)
                         _ -> pure $ Left $ "Failed to get resturants image " ++ show maybeImg
-        Nothing -> do
-            apiRes <- reqRes k loc
-            case apiRes of
-                Was (Series res) -> do
-                    _ <- storeInDB $ (\x -> Resturant x Nothing loc) <$> res
-                    b <- randomIndex res
-                    maybeImg <- reqIMG k $ bid b
-                    case maybeImg of
-                        Was i -> do
-                            let r = Resturant b (Just i) loc
-                            _ <- addImgToDb r
-                            pure $ Right r
-                        _ -> pure $ Left $ "Failed to get resturants image " ++ show maybeImg
-                _ -> pure $ Left $ "Failed to: get resturants at location " ++ show loc ++ "with error " ++ show apiRes
 
 data ResturantDecision = ResturantDecision
     { id :: String
@@ -173,7 +181,7 @@ server = do
                                     case maybeU of
                                       ((Just (U.User _ s)):_) -> do
                                                         print "getting matches"
-                                                        (_, matches ) <- likedResturants s
+                                                        (_, matches) <- likedResturants s
                                                         print $ "matches where" <> show matches
                                                         if not (null matches) then
                                                             do pure $ Just $ head matches
@@ -187,13 +195,13 @@ server = do
             options "/resturant" $ text "success"
             post "/resturant" $ do
                 liftIO $ print "Getting res"
-                loc <- jsonData
-                case loc of
+                resturantReq <- jsonData
+                case resturantReq of
                     Nothing -> fail "bad"
-                    (Just l) -> do
+                    (Just (NextResturant l rId)) -> do
                         liftAndCatchIO $ putStrLn "Getting res"
                         liftAndCatchIO $ print l
-                        eitherRes <- liftAndCatchIO $ getRes k l
+                        eitherRes <- liftAndCatchIO $ getRes k l rId
                         liftAndCatchIO $ print eitherRes
                         case eitherRes of
                             Left e -> fail e

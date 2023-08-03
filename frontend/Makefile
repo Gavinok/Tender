@@ -1,4 +1,4 @@
-all: serve
+all: build serve
 
 build:
 	npm install
@@ -7,7 +7,7 @@ build:
 watch:
 	NODE_OPTIONS=--experimental-fetch spago bundle-app --main Main --to assets/app.js --watch
 
-serve: build
+serve:
 	npx parcel serve assets/index.html
 
 clean:

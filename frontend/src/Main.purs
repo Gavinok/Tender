@@ -5,6 +5,7 @@ module Main
   , Model
   , Price
   , Resturant
+  , ResturantId
   , SessionId
   , Url
   , UserId
@@ -83,6 +84,7 @@ sessionUrl session = "http://localhost:1234/" <> session
 
 type ErrorMessage = String
 
+type ResturantId = String
 -- | This datatype is used to signal events to `update`
 data Message
   = DeterminSession
@@ -91,7 +93,7 @@ data Message
   | Like
   | Dislike
   | FailedToLoad ErrorMessage
-  | NextResturant Loc UserId
+  | NextResturant Loc UserId (Maybe ResturantId)
   | Matched Resturant Loc UserId
   | Finish Resturant Loc UserId
 
@@ -145,7 +147,7 @@ init = Loading
 skipDuplicateResturant :: Model -> Resturant -> Message
 skipDuplicateResturant (Swiping ogr loc sess) newr =
   if ogr == newr then
-    NextResturant loc sess
+    NextResturant loc sess (Just ogr.id)
   else
     Finish newr loc sess
 
@@ -178,8 +180,8 @@ sendLiked id liked_ =
     post (JsonString $ JSON.writeJSON des)
       updateUrl
 
-getResturant :: Loc -> Aff (Maybe Resturant)
-getResturant loc = post (JsonString $ JSON.writeJSON loc) apiUrl
+getResturant :: Loc → Maybe ResturantId -> Aff (Maybe Resturant)
+getResturant loc rid = post (JsonString $ JSON.writeJSON {loc: loc, resturantId: rid}) apiUrl
 
 -- | `update` is called to handle events
 update :: ListUpdate Model Message
@@ -217,7 +219,7 @@ update model = case _ of
                    user ← joinSession session
                    show user # liftEffect <<< log
                    pure $ case user of
-                            Just u → NextResturant loc u
+                            Just u → NextResturant loc u Nothing
                             Nothing → StartSwiping
                  _ → pure $ FailedToLoad "StartSwiping Can only be entered from QR"
     ]
@@ -233,7 +235,7 @@ update model = case _ of
                 "got " <> show maybeMatch # liftEffect <<< log
                 pure case maybeMatch of
                   Just m -> Matched m l u
-                  Nothing -> NextResturant l u
+                  Nothing -> NextResturant l u (Just r.id)
               _ -> pure $ FailedToLoad "Attempted to like while not swiping"
         ]
   Dislike ->
@@ -241,16 +243,16 @@ update model = case _ of
       :>
         [ Just
             <$> case model of
-              Swiping _ l u -> sendLiked u Nothing *> (pure $ NextResturant l u)
+              Swiping r l u -> sendLiked u Nothing *> (pure $ NextResturant l u (Just r.id))
               _ -> pure $ FailedToLoad "Attempted to dislike while not swiping"
         ]
   -- Change this to match the yelp API
   -- For some reason this seems to be using options rather than GET
-  NextResturant loc s ->
+  NextResturant loc s rid ->
     model
       :>
         [ Just <$> do
-            maybeRes <- getResturant loc
+            maybeRes <- getResturant loc rid
             "nextresturant" <> show maybeRes # liftEffect <<< log
             pure
               $ case maybeRes of
@@ -388,7 +390,7 @@ view (Match r loc id) =
             , HE.div_
               [ footer
                 [ HE.div [HA.class' "footer-item col-start-2"] $ resturantStats r
-                , HE.div [HA.class' "footer-item"] $ btn (NextResturant loc id) "Continue Anyways" grey
+                , HE.div [HA.class' "footer-item"] $ btn (NextResturant loc id (Just r.id)) "Continue Anyways" grey
                 ]
               ]
             ]

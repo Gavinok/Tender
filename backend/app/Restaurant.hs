@@ -4,7 +4,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE StandaloneDeriving #-}
 
-module Restaurant (Category (..), Series (..), Hours (..), Business (..), Resturant (..), Loc (..), bid) where
+module Restaurant (Category (..), Series (..), Hours (..), Business (..), Resturant (..), Loc (..), NextResturant(..), bid) where
 
 import Data.Aeson (FromJSON, ToJSON, parseJSON, (.:), (.=))
 import qualified Data.Aeson as A
@@ -120,6 +120,13 @@ instance ToRow Resturant where
         , toField $ latitude l
         , toField $ longitude l
         ]
+
+data NextResturant = NextResturant
+    { loc :: Loc
+    , resturantId :: Maybe String
+    } deriving (Generic, Show)
+
+instance FromJSON NextResturant
 
 data Loc = Loc
     { latitude :: Float
