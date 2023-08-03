@@ -170,14 +170,19 @@ storeInDB b = do
     dbClose conn
 
 -- TODO Use freemonads to mark this DB connection as needing to be closed
-inDB :: Loc -> IO (Maybe [Resturant])
+inDB :: Loc ->  IO (Either String [Resturant])
 inDB l = do
     conn <- setupDb
-    r <- query (connection conn) "SELECT * FROM resturants Where latitude is ? and longitude is ?" (latitude l, longitude l) :: IO [Resturant]
+    let range = 2
+        baseQuery = "SELECT * FROM resturants WHERE (latitude BETWEEN ? AND ?) AND (longitude BETWEEN ? AND ?)"
+    r <- query (connection conn) baseQuery (latitude l + range, latitude l - range, longitude l + range, longitude l - range) :: IO [Resturant]
     dbClose conn
-    pure $ case r of
-        [] -> Nothing
-        x -> Just x
+    case r of
+        [] -> pure $ Left "Not in DB"
+        x -> do
+           putStrLn "Found in db"
+           pure $ Right x
+
 dbCheck :: IO (DbConnection Closed)
 dbCheck = do
     conn <- setupDb

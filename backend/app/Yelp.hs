@@ -28,6 +28,7 @@ newtype YelpAPIKey = YelpAPIKey String
 fromKey :: YelpAPIKey -> String
 fromKey (YelpAPIKey s) = s
 
+-- TODO store resturant's location and use that to pin point resturants
 -- curl -X POST -H "Authorization: Bearer $YELP_KEY" -H "Content-Type: application/graphql" https://api.yelp.com/v3/graphql --data graphQLQuery
 graphQLQuery :: L8.ByteString -> L8.ByteString -> L8.ByteString
 graphQLQuery lat long =
@@ -38,6 +39,9 @@ graphQLQuery lat long =
         <> ",  \
            \longitude: "
         <> long
+        <> ", \
+            \ limit: "
+        <> "50"
         <> ") \
            \{ \
            \total \
@@ -95,6 +99,7 @@ reqRes key loc = do
     let req = lookupRes loc (defYelpRequest key)
     print req
     resp <- httpJSON req :: IO (Response (Maybe Series))
+    _ <- print resp
     pure $ case getResponseStatusCode resp of
         200 ->
             maybe
