@@ -31,13 +31,13 @@ to generate this file without the comments in this block.
   , "tuples"
   , "web-html"
   , "yoga-json"
-  , arraybuffer-types
-  , debug
-  , integers
-  , pipes
-  , psci-support
-  , transformers
-  , tuples
+  , "arraybuffer-types"
+  , "debug"
+  , "integers"
+  , "pipes"
+  , "psci-support"
+  , "transformers"
+  , "tuples"
   ]
 , packages = ./packages.dhall
 , sources = [ "src/**/*.purs", "test/**/*.purs" ]
