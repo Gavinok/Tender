@@ -9,8 +9,10 @@
   },
   "dependencies": {
     "big-integer": "^1.6.51",
+    "esbuild": "^0.19.10",
     "postcss-cli": "^10.1.0",
     "postcss-import": "^15.1.0",
-    "postcss-preset-env": "^9.1.0"
+    "postcss-preset-env": "^9.1.0",
+    "spago": "^0.21.0"
   }
 }
