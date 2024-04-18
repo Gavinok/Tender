@@ -23,28 +23,28 @@
     @apply button bg-green-300 my-2;
   }
   .join-button {
-    @apply button bg-blue-100 my-2 text-black
+    @apply button bg-blue-100 my-2 text-black;
   }
   .image-frame {
     @apply py-5 flex flex-col items-center justify-center;
   }
   .image {
-    @apply is-cropped rounded overflow-hidden shadow-lg
+    @apply is-cropped rounded overflow-hidden shadow-lg;
   }
   .qr-main {
     @apply flex flex-col items-center justify-center;
   }
   .loading-main {
-    @apply flex flex-col items-center justify-center ;
+    @apply flex flex-col items-center justify-center;
   }
   .footer-body {
     @apply bg-white py-2 shadow-lg px-2 rounded-lg mx-2;
   }
   .footer-content {
     @apply grid grid-rows-1 grid-cols-3 items-center rounded;
-  }  /* ... */
+  } /* ... */
   .footer-item {
-    @apply flex justify-center
+    @apply flex justify-center;
   }
   .centered {
     @apply py-5 flex flex-col items-center justify-center pt-3;
