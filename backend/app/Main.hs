@@ -82,7 +82,7 @@ yelpAndStore :: YelpAPIKey -> Loc -> IO (Either String [Resturant])
 yelpAndStore k l = do
   apiRes <- reqRes k l
   case apiRes of
-    Was (Series []) -> pure $ Left "No resturant from api"
+    Was (Series []) -> pure $ Left "No restaurant from API"
     Was (Series b) -> do
                 let res =  (\x -> Resturant x Nothing l) <$> b
                 _ <- storeInDB res
@@ -101,13 +101,13 @@ getRes :: YelpAPIKey -> Loc -> Maybe String -> IO (Either String Resturant)
 getRes k loc resturantId = do
     maybeDbRes <- (<|>) <$> inDB loc <*> yelpAndStore k loc
     case maybeDbRes of
-        Left e -> pure $ Left $ "Failed to: get resturants at location " ++ show loc ++ "with error " ++ e
+        Left e -> pure $ Left $ "Failed to: get restaurants at location " ++ show loc ++ "with error " ++ e
         Right dbr -> do
             let r = case resturantId of
                       Just rid -> safeHead . tail . dropWhile (\res -> bid (bus res) /= rid) $ dbr
                       Nothing ->  safeHead dbr
             case r of
-                Nothing -> pure $ Left $ "No resturants came back from the db" <> show dbr
+                Nothing -> pure $ Left $ "No restaurants came back from the db" <> show dbr
                 Just ressy@(Resturant _ (Just _) _) -> pure $ Right ressy
                 Just (Resturant b Nothing l) -> do
                     putStrLn "Looking up"

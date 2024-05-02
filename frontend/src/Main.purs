@@ -151,7 +151,7 @@ skipDuplicateResturant (Swiping match ogr loc sess) newr =
   else
     Finish newr loc sess
 
-skipDuplicateResturant _ _ = FailedToLoad "Attempted to determin resturant when no resturant is set"
+skipDuplicateResturant _ _ = FailedToLoad "Attempted to determine restaurant when no restaurant is set"
 
 newtype JsonString = JsonString String
 
@@ -265,14 +265,14 @@ update model = case _ of
             "nextresturant" <> show maybeRes # liftEffect <<< log
             pure
               $ case maybeRes of
-                  Nothing -> FailedToLoad "API did not return a resturant"
+                  Nothing -> FailedToLoad "API did not return a restaurant"
                   Just res -> case model of
                     Loading -> Finish res loc s
                     QR _ → Finish res loc s
                     Match _ _ _ _ → Finish res loc s
                     Swiping _ _ _ _ -> skipDuplicateResturant model res
                     _ -> FailedToLoad
-                      "Attempted to find next resturant when not swiping or starting a session"
+                      "Attempted to find next restaurant when not swiping or starting a session"
         ]
 
 type Color = String
@@ -300,7 +300,7 @@ image link =
         [ HE.img
             [ HA.class' "image"
             , HA.src link
-            , HA.alt "Resturant Image"
+            , HA.alt "Restaurant Image"
             ]
         ]
     ]
