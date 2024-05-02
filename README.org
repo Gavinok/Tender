@@ -5,7 +5,7 @@ a similar approach to tinder but for finding an agreed upon place to eat.
 
 * WARNING
 
-This is an active work in progress. Expect regular breakage, changes
+This is an active work in progress. Expect regular breaking changes
 
 * Running this project
 ** Haskell versioning
