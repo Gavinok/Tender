@@ -380,7 +380,7 @@ view (Swiping matches apiResults _ _) =
             [ image apiResults.imageLink
             , HE.div [ centered ] $ yelplink apiResults
             , HE.div [ centered ] $ (show $ length matches) <>
-                if (length matches) ≡ 1 then " Match"
+                if (length matches) == 1 then " Match"
                 else " Matches"
             ]
         , HE.div_
