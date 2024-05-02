@@ -90,7 +90,7 @@ yelpAndStore k l = do
 -- TODO modify to restrict to never be a maybe URL past this point
 getRes :: YelpAPIKey -> Loc -> Maybe String -> IO (Either String Resturant)
 getRes k loc resturantId = do
-    maybeDbRes <- (<|>) <$> inDB loc <*> yelpAndStore k loc
+    maybeDbRes <- do inDB loc >>= either (\x -> yelpAndStore k loc) (return . Right)
     case maybeDbRes of
         Left e -> pure $ Left $ "Failed to: get restaurants at location " ++ show loc ++ "with error " ++ e
         Right dbr -> do
