@@ -36,8 +36,8 @@ instance {-# OVERLAPS #-} FromField (Maybe UUID) where
         UID.fromText <$> fromField s
 
 data User = User
-    { userId :: UUID
-    , session :: Session
+    { userId :: !UUID
+    , session :: !Session
     }
     deriving (Generic, Show)
 

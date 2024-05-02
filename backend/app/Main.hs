@@ -119,8 +119,8 @@ getRes k loc resturantId = do
                         _ -> pure $ Left $ "Failed to get resturants image " ++ show maybeImg
 
 data ResturantDecision = ResturantDecision
-    { id :: String
-    , likedResturant :: Maybe String
+    { id :: !String
+    , likedResturant :: !(Maybe String)
     }
     deriving (Generic, Show)
     deriving anyclass (ToRow)

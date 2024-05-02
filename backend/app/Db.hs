@@ -88,8 +88,8 @@ addUserToSession (U.User i s) = do
     putStrLn $ "adding User " ++ show i ++ " with session " ++ show s
     dbClose conn
 data Like = Like
-    { userId :: String
-    , resturantId :: String
+    { userId :: !String
+    , resturantId :: !String
     }
     deriving (Show, Generic)
     deriving anyclass (ToRow)
