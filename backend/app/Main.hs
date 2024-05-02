@@ -8,12 +8,11 @@ module Main where
 
 import Control.Monad.Except
 import Control.Monad.IO.Class (liftIO)
+import Data.List (uncons)
 import Database.SQLite.Simple (
     FromRow (..),
-    ToRow (..),
-    field,
+    ToRow (..)
  )
-import Database.SQLite.Simple.ToField (ToField (toField))
 import GHC.Generics (Generic)
 import Network.Wai.Middleware.Cors (
     CorsResourcePolicy (corsMethods, corsOrigins, corsRequestHeaders),
@@ -33,13 +32,11 @@ import Web.Scotty (
     get,
     json,
     jsonData,
-    liftAndCatchIO,
     middleware,
     options,
     post,
     scotty,
     text,
-    param,
  )
 
 import Data.Aeson (FromJSON)
@@ -52,8 +49,8 @@ import Restaurant
 import System.Random
 import qualified User as U
 import Yelp
-import Data.List (find)
 import Control.Applicative ((<|>))
+import Web.Scotty.Trans (pathParam)
 
 -- Something like that maybe ?
 -- sessionId :: Int -> (UUID, StdGen)
@@ -89,12 +86,6 @@ yelpAndStore k l = do
                 pure $ Right res
     x -> pure $ Left $ show x
 
-randomIndex :: [a] -> IO a
-randomIndex lst = do
-    newnum <- getStdRandom $ randomR (0, Prelude.length lst - 1)
-    putStrLn $ "Looking this up now" ++ show newnum
-    pure $ lst !! abs newnum
-
 
 -- TODO modify to restrict to never be a maybe URL past this point
 getRes :: YelpAPIKey -> Loc -> Maybe String -> IO (Either String Resturant)
@@ -104,19 +95,21 @@ getRes k loc resturantId = do
         Left e -> pure $ Left $ "Failed to: get restaurants at location " ++ show loc ++ "with error " ++ e
         Right dbr -> do
             let r = case resturantId of
-                      Just rid -> safeHead . tail . dropWhile (\res -> bid (bus res) /= rid) $ dbr
+                      Just rid -> case uncons . dropWhile (\res -> bid (bus res) /= rid) $ dbr of
+                                    Just (_, x:_) -> Just x
+                                    Just (_, []) -> Nothing
+                                    Nothing -> Nothing
                       Nothing ->  safeHead dbr
             case r of
                 Nothing -> pure $ Left $ "No restaurants came back from the db" <> show dbr
                 Just ressy@(Resturant _ (Just _) _) -> pure $ Right ressy
                 Just (Resturant b Nothing l) -> do
-                    putStrLn "Looking up"
                     maybeImg <- reqIMG k $ bid b
                     case maybeImg of
                         Was i -> do
                             _ <- addImgToDb (Resturant b (Just i) l)
                             pure $ Right (Resturant b (Just i) l)
-                        _ -> pure $ Left $ "Failed to get resturants image " ++ show maybeImg
+                        _ -> pure $ Left $ "Failed to get restaurants image " ++ show maybeImg
 
 data ResturantDecision = ResturantDecision
     { id :: !String
@@ -134,8 +127,6 @@ type Match = Business
 firstElem :: [a] -> Maybe a
 firstElem xs = case xs of
   [] -> Nothing
-  -- Remember to put parantheses around this pattern-match else
-  -- the compiler will throw a parse-error
   (x:_) -> Just x
 
 -- curl -X POST -d"{\"latitude\": 48, \"longitude\": -122}" \
@@ -160,7 +151,7 @@ server = do
             options "/addtosession/:session" $ text "success"
             get "/addtosession/:session" $ do
                                     liftIO $ putStrLn "Adding To Session"
-                                    sessionString <- param "session"
+                                    sessionString <- pathParam "session"
                                     -- liftIO $ putStrLn "Adding To Session " + sessionString
                                     uid <- liftIO sessionId
                                     let session = U.fromText sessionString
@@ -175,20 +166,21 @@ server = do
                 liftIO $ print (d :: ResturantDecision)
                 case d of
                     (ResturantDecision i (Just l)) -> do
-                        r <- liftAndCatchIO $ do
+                        r <- liftIO $ do
                                     _ <- addLikeToDb $ Db.Like i l
                                     (_, maybeU) <- getUser i
                                     case maybeU of
                                       ((Just (U.User _ s)):_) -> do
-                                                        print "getting matches"
+                                                        putStr "getting matches"
                                                         (_, matches) <- likedResturants s
                                                         print $ "matches where" <> show matches
-                                                        if not (null matches) then
-                                                            do pure $ Just $ head matches
-                                                        else pure Nothing
+                                                        pure $ case matches of
+                                                          [x] -> Just x
+                                                          (x:_) -> Just x
+                                                          [] -> Nothing
                                       (Nothing:_) -> pure Nothing
                                       [] -> pure Nothing
-                        liftAndCatchIO $ print $ " sending " <> show r
+                        liftIO $ print $ " sending " <> show r
                         json (r :: Maybe Resturant)
                     _ -> json (Nothing :: Maybe Resturant)
 
@@ -199,10 +191,10 @@ server = do
                 case resturantReq of
                     Nothing -> fail "bad"
                     (Just (NextResturant l rId)) -> do
-                        liftAndCatchIO $ putStrLn "Getting res"
-                        liftAndCatchIO $ print l
-                        eitherRes <- liftAndCatchIO $ getRes k l rId
-                        liftAndCatchIO $ print eitherRes
+                        liftIO $ putStrLn "Getting res"
+                        liftIO $ print l
+                        eitherRes <- liftIO $ getRes k l rId
+                        liftIO $ print eitherRes
                         case eitherRes of
                             Left e -> fail e
                             Right r -> json r
