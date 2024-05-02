@@ -175,7 +175,7 @@ inDB l = do
     conn <- setupDb
     let range = 2
         baseQuery = "SELECT * FROM resturants WHERE (latitude BETWEEN ? AND ?) AND (longitude BETWEEN ? AND ?)"
-    r <- query (connection conn) baseQuery (latitude l + range, latitude l - range, longitude l + range, longitude l - range) :: IO [Resturant]
+    r <- query (connection conn) baseQuery (latitude l - range, latitude l + range, longitude l - range, longitude l + range) :: IO [Resturant]
     dbClose conn
     case r of
         [] -> pure $ Left "Not in DB"
