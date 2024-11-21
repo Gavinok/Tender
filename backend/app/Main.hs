@@ -7,7 +7,6 @@
 module Main where
 
 import Control.Monad.Except
-import Control.Monad.IO.Class (liftIO)
 import Data.List (uncons)
 import Database.SQLite.Simple (
     FromRow (..),
@@ -22,12 +21,6 @@ import Network.Wai.Middleware.Cors (
     simpleMethods,
  )
 import System.Environment.Blank (getEnv)
-import System.Random (
-    Random (randomR),
-    RandomGen,
-    StdGen,
-    getStdRandom,
- )
 import Web.Scotty (
     get,
     json,
@@ -46,15 +39,9 @@ import Data.UUID (UUID)
 import Data.UUID.V4 (nextRandom)
 import Db
 import Restaurant
-import System.Random
 import qualified User as U
 import Yelp
-import Control.Applicative ((<|>))
 import Web.Scotty.Trans (pathParam)
-
--- Something like that maybe ?
--- sessionId :: Int -> (UUID, StdGen)
--- sessionId seed = random $ mkStdGen seed
 
 sessionId :: IO UUID
 sessionId = nextRandom
@@ -74,27 +61,28 @@ safeHead :: [a] -> Maybe a
 safeHead [] = Nothing
 safeHead (x:_) = Just x
 
--- TODO Determin how to propigate these errors rather than using a maybe
-yelpAndStore :: YelpAPIKey -> Loc -> IO (Either String [Resturant])
+-- TODO Determine how to propagate these errors rather than using a maybe
+yelpAndStore :: YelpAPIKey -> Loc -> IO (Either String [Restaurant])
 yelpAndStore k l = do
   apiRes <- reqRes k l
   case apiRes of
     Was (Series []) -> pure $ Left "No restaurant from API"
     Was (Series b) -> do
-                let res =  (\x -> Resturant x Nothing l) <$> b
+                let res =  (\x -> Restaurant x Nothing l) <$> b
                 _ <- storeInDB res
                 pure $ Right res
     x -> pure $ Left $ show x
 
 
 -- TODO modify to restrict to never be a maybe URL past this point
-getRes :: YelpAPIKey -> Loc -> Maybe String -> IO (Either String Resturant)
-getRes k loc resturantId = do
-    maybeDbRes <- do inDB loc >>= either (\x -> yelpAndStore k loc) (return . Right)
+getRes :: YelpAPIKey -> Loc -> Maybe String -> IO (Either String Restaurant)
+getRes k loc restaurantId = do
+    -- Check the DB for this location. If nothing is there ask the API
+    maybeDbRes <- inDB loc >>= either (const $ yelpAndStore k loc) (return . Right)
     case maybeDbRes of
         Left e -> pure $ Left $ "Failed to: get restaurants at location " ++ show loc ++ "with error " ++ e
         Right dbr -> do
-            let r = case resturantId of
+            let r = case restaurantId of
                       Just rid -> case uncons . dropWhile (\res -> bid (bus res) /= rid) $ dbr of
                                     Just (_, x:_) -> Just x
                                     Just (_, []) -> Nothing
@@ -102,25 +90,27 @@ getRes k loc resturantId = do
                       Nothing ->  safeHead dbr
             case r of
                 Nothing -> pure $ Left $ "No restaurants came back from the db" <> show dbr
-                Just ressy@(Resturant _ (Just _) _) -> pure $ Right ressy
-                Just (Resturant b Nothing l) -> do
+                -- Restaurant already has a image URL
+                Just res@(Restaurant _ (Just _) _) -> pure $ Right res
+                -- Image URL is missing
+                Just (Restaurant b Nothing l) -> do
                     maybeImg <- reqIMG k $ bid b
                     case maybeImg of
                         Was i -> do
-                            _ <- addImgToDb (Resturant b (Just i) l)
-                            pure $ Right (Resturant b (Just i) l)
+                            _ <- addImgToDb (Restaurant b (Just i) l)
+                            pure $ Right (Restaurant b (Just i) l)
                         _ -> pure $ Left $ "Failed to get restaurants image " ++ show maybeImg
 
-data ResturantDecision = ResturantDecision
+data RestaurantDecision = RestaurantDecision
     { id :: !String
-    , likedResturant :: !(Maybe String)
+    , likedRestaurant :: !(Maybe String)
     }
     deriving (Generic, Show)
     deriving anyclass (ToRow)
 
-deriving anyclass instance FromRow ResturantDecision
+deriving anyclass instance FromRow RestaurantDecision
 
-instance FromJSON ResturantDecision
+instance FromJSON RestaurantDecision
 
 type Match = Business
 
@@ -145,6 +135,7 @@ server = do
                 liftIO $ putStrLn "Getting Session"
                 -- uid <- liftIO sessionId
                 session <- liftIO sessionId
+                liftIO $ print "hello"
                 -- liftIO $ addUserToDb (U.User uid session)
                 json session
 
@@ -163,16 +154,16 @@ server = do
             options "/liked" $ text "success"
             post "/liked" $ do
                 d <- jsonData
-                liftIO $ print (d :: ResturantDecision)
+                liftIO $ print (d :: RestaurantDecision)
                 case d of
-                    (ResturantDecision i (Just l)) -> do
+                    (RestaurantDecision i (Just l)) -> do
                         r <- liftIO $ do
                                     _ <- addLikeToDb $ Db.Like i l
                                     (_, maybeU) <- getUser i
                                     case maybeU of
                                       ((Just (U.User _ s)):_) -> do
                                                         putStr "getting matches"
-                                                        (_, matches) <- likedResturants s
+                                                        (_, matches) <- likedRestaurants s
                                                         print $ "matches where" <> show matches
                                                         pure $ case matches of
                                                           [x] -> Just x
@@ -181,16 +172,16 @@ server = do
                                       (Nothing:_) -> pure Nothing
                                       [] -> pure Nothing
                         liftIO $ print $ " sending " <> show r
-                        json (r :: Maybe Resturant)
-                    _ -> json (Nothing :: Maybe Resturant)
+                        json (r :: Maybe Restaurant)
+                    _ -> json (Nothing :: Maybe Restaurant)
 
-            options "/resturant" $ text "success"
-            post "/resturant" $ do
+            options "/restaurant" $ text "success"
+            post "/restaurant" $ do
                 liftIO $ print "Getting res"
-                resturantReq <- jsonData
-                case resturantReq of
+                restaurantReq <- jsonData
+                case restaurantReq of
                     Nothing -> fail "bad"
-                    (Just (NextResturant l rId)) -> do
+                    (Just (NextRestaurant l rId)) -> do
                         liftIO $ putStrLn "Getting res"
                         liftIO $ print l
                         eitherRes <- liftIO $ getRes k l rId

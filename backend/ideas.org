@@ -1,3 +1,65 @@
 we can store a buisness
 
 we need the location
+
+#+begin_src sqlite :db ./test.db :colnames no 
+SELECT * FROM restaurants ;
+#+end_src
+
+#+RESULTS:
+
+#+begin_src sqlite :db ./test.db :colnames no :header on
+SELECT users.userId, session, restaurantId FROM users JOIN likes ON users.userId = likes.userId JOIN restaurants ON restaurantId = id  ;
+#+end_src
+
+
+#+RESULTS:
+| Parse error near line 2: no such column: restaurantId |         |                                                  |
+| SELECT users.userId                                   | session | restaurantId FROM users JOIN likes ON users.user |
+| error here ---^                                       |         |                                                  |
+| [ Babel evaluation exited with code 1 ]               |         |                                                  |
+
+
+#+name: tbltest
+| who   | task            |
+|-------+-----------------|
+| Gavin | "Make Video"    |
+| Jim   | "Be Cool"       |
+| Tim   | "Do Your Thing" |
+
+#+begin_src sqlite :db /tmp/test-sqlite.db :colnames no :var sometable=tbltest :header on
+DROP TABLE IF EXISTS mytable;
+.import $sometable mytable
+
+SELECT who FROM mytable GROUP BY who;
+#+end_src
+
+#+RESULTS:
+| who   |
+| Gavin |
+| Jim   |
+| Tim   |
+
+
+#+name: testtable
+| who   | task |
+| gavin |    1 |
+| jim   |    1 |
+| tim   |    1 |
+
+- NOTE: we are setting the value of the variable ~sometable~ to be our testtable
+
+#+begin_src sqlite :db /tmp/test-sqlite.db :var sometable=testtable  :header on
+DROP TABLE IF EXISTS ntable;
+.import $sometable ntable
+
+SELECT who, task FROM ntable GROUP BY who;
+#+end_src
+
+#+RESULTS:
+| who   | task |
+| gavin |    1 |
+| jim   |    1 |
+| tim   |    1 |
+* New API to try
+[[https://developers.google.com/maps/documentation/places/web-service/search-nearby?_gl=1*1hegcxb*_up*MQ..*_ga*NTY4NDcyNjM1LjE3MTQ2MDQ2MjQ.*_ga_NRWSTWS78N*MTcxNDYwNDYyMy4xLjAuMTcxNDYwNDYyMy4wLjAuMA..][Nearby Search  |  Places API  |  Google for Developers]]

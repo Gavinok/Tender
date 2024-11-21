@@ -4,7 +4,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE StandaloneDeriving #-}
 
-module Restaurant (Category (..), Series (..), Hours (..), Business (..), Resturant (..), Loc (..), NextResturant(..), bid) where
+module Restaurant (Category (..), Series (..), Hours (..), Business (..), Restaurant (..), Loc (..), NextRestaurant(..), bid) where
 
 import Data.Aeson (FromJSON, ToJSON, parseJSON, (.:), (.=))
 import qualified Data.Aeson as A
@@ -71,14 +71,14 @@ instance FromJSON Series where
     parseJSON (A.Object o) = o .: "data" >>= (.: "search") >>= (.: "business") >>= fmap Series . A.parseJSON
     parseJSON x = fail $ "Unexpected json: " ++ show x
 
-data Resturant = Resturant
+data Restaurant = Restaurant
     { bus :: Business
     , imageLink :: Maybe String
     , location :: Loc
     }
     deriving (Generic, Show)
-instance ToJSON Resturant where
-    toJSON (Resturant (Business ident rurl rname rrating rprice _ cat) imgLink _) =
+instance ToJSON Restaurant where
+    toJSON (Restaurant (Business ident rurl rname rrating rprice _ cat) imgLink _) =
         A.object
             [ "id" .= (ident :: String)
             , "name" .= (rname :: String)
@@ -88,9 +88,9 @@ instance ToJSON Resturant where
             , "imageLink" .= (imgLink :: Maybe String)
             , "category" .= (Just (intercalate ", " $ title <$> cat) :: Maybe String)
             ]
-instance FromRow Resturant where
+instance FromRow Restaurant where
     fromRow =
-        Resturant
+        Restaurant
             <$> ( Business <$> field
                     <*> field
                     <*> field
@@ -102,8 +102,8 @@ instance FromRow Resturant where
                 <*> field
                 <*> (Loc <$> field <*> field)
 
-instance ToRow Resturant where
-    toRow (Resturant b i l) =
+instance ToRow Restaurant where
+    toRow (Restaurant b i l) =
         [
           toField $ bid b
         , toField $ url b
@@ -121,12 +121,12 @@ instance ToRow Resturant where
         , toField $ longitude l
         ]
 
-data NextResturant = NextResturant
+data NextRestaurant = NextRestaurant
     { loc :: Loc
-    , resturantId :: Maybe String
+    , restaurantId :: Maybe String
     } deriving (Generic, Show)
 
-instance FromJSON NextResturant
+instance FromJSON NextRestaurant
 
 data Loc = Loc
     { latitude :: Float

@@ -28,7 +28,7 @@ newtype YelpAPIKey = YelpAPIKey String
 fromKey :: YelpAPIKey -> String
 fromKey (YelpAPIKey s) = s
 
--- TODO store resturant's location and use that to pin point resturants
+-- TODO store restaurant's location and use that to pin point restaurants
 -- curl -X POST -H "Authorization: Bearer $YELP_KEY" -H "Content-Type: application/graphql" https://api.yelp.com/v3/graphql --data graphQLQuery
 graphQLQuery :: L8.ByteString -> L8.ByteString -> L8.ByteString
 graphQLQuery lat long =

@@ -4,7 +4,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE StandaloneDeriving #-}
 
-module Db (addImgToDb, storeInDB, inDB, setupDb, addUserToDb, addLikeToDb, likedResturants, LikedResturant(..), Like (..), dbClear, getUser) where
+module Db (addImgToDb, storeInDB, inDB, setupDb, addUserToDb, addLikeToDb, likedRestaurants, LikedRestaurant(..), Like (..), dbClear, getUser) where
 
 import Database.SQLite.Simple (
     Connection (..),
@@ -46,7 +46,7 @@ setupDb = do
     -- Restaurants
     ex $
         mconcat
-            [ "CREATE TABLE IF NOT EXISTS resturants "
+            [ "CREATE TABLE IF NOT EXISTS restaurants "
             , "(id TEXT PRIMARY KEY, url TEXT, name Text, rating FLOAT, price TEXT, hours INTEGER, category TEXT,"
             , " imagelink TEXT,"
             , " latitude FLOAT, longitude FLOAT"
@@ -62,15 +62,15 @@ setupDb = do
     ex $
         mconcat
             [ "CREATE TABLE IF NOT EXISTS likes "
-            , "(userId TEXT, resturantId TEXT)"
+            , "(userId TEXT, restaurantId TEXT)"
             ]
     pure conn
 
-addImgToDb :: Resturant -> IO (DbConnection Closed)
-addImgToDb (Resturant b (Just i) _) = do
+addImgToDb :: Restaurant -> IO (DbConnection Closed)
+addImgToDb (Restaurant b (Just i) _) = do
     putStrLn $ "adding image for " ++ show (bid b)
     conn <- setupDb
-    execute (connection conn) "UPDATE resturants SET imagelink = ? WHERE id = ?" (Just i, bid b)
+    execute (connection conn) "UPDATE restaurants SET imagelink = ? WHERE id = ?" (Just i, bid b)
     dbClose conn
 addImgToDb _ = fail "invalid input to update"
 
@@ -89,7 +89,7 @@ addUserToSession (U.User i s) = do
     dbClose conn
 data Like = Like
     { userId :: !String
-    , resturantId :: !String
+    , restaurantId :: !String
     }
     deriving (Show, Generic)
     deriving anyclass (ToRow)
@@ -97,13 +97,13 @@ deriving anyclass instance FromRow Like
 
 addLikeToDb :: Like -> IO (DbConnection Closed)
 addLikeToDb (Like u r) = do
-    putStrLn $ "adding Like for User " ++ show u ++ " Resturant " ++ show r
+    putStrLn $ "adding Like for User " ++ show u ++ " Restaurant " ++ show r
     conn <- setupDb
-    execute (connection conn) "INSERT INTO likes (userId, resturantId) VALUES (?, ?)" (u, r)
+    execute (connection conn) "INSERT INTO likes (userId, restaurantId) VALUES (?, ?)" (u, r)
     dbClose conn
 
-newtype LikedResturant = LikedResturant {toString :: String} deriving (Generic, Show)
-deriving anyclass instance FromRow LikedResturant
+newtype LikedRestaurant = LikedRestaurant {toString :: String} deriving (Generic, Show)
+deriving anyclass instance FromRow LikedRestaurant
 
 getUser :: String -> IO (DbConnection Closed, [Maybe U.User])
 getUser u = do
@@ -138,47 +138,50 @@ getFriends s = do
     c <- dbClose conn
     pure (c, r)
 
-likedResturants :: U.Session -> IO (DbConnection Closed, [Resturant])
-likedResturants s = do
+likedRestaurants :: U.Session -> IO (DbConnection Closed, [Restaurant])
+likedRestaurants s = do
     conn <- setupDb
     r <-
         query
             (connection conn)
             ( mconcat
                 [
-                 "WITH l AS (SELECT DISTINCT likes.userId, likes.resturantId FROM likes) "
-                , "SELECT resturants.id, resturants.url, resturants.name, resturants.rating, resturants.price, resturants.hours, resturants.category, resturants.imagelink, resturants.latitude, resturants.longitude "
+                 "WITH l AS (SELECT DISTINCT likes.userId, likes.restaurantId FROM likes) "
+                , "SELECT restaurants.id, restaurants.url, restaurants.name, restaurants.rating, restaurants.price, restaurants.hours, restaurants.category, restaurants.imagelink, restaurants.latitude, restaurants.longitude "
                 , "FROM users JOIN l "
                 , "ON users.userId IS l.userId "
-                , "JOIN resturants "
-                , "ON l.resturantId is resturants.id "
+                , "JOIN restaurants "
+                , "ON l.restaurantId is restaurants.id "
                 , "WHERE users.session = ? "
-                , "GROUP BY l.resturantId "
-                , "HAVING count(l.resturantId) > 1 "
+                , "GROUP BY l.restaurantId "
+                , "HAVING count(l.restaurantId) > 1 "
                 ]
             )
             [s]
     c <- dbClose conn
     pure (c, r)
 
-storeInDB :: [Resturant] -> IO (DbConnection Closed)
+storeInDB :: [Restaurant] -> IO (DbConnection Closed)
 storeInDB b = do
     conn <- setupDb
     mapM_
-        (execute (connection conn) "INSERT OR IGNORE INTO resturants (id, url, name, rating, price, hours, category, imagelink, latitude, longitude) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+        (execute (connection conn) "INSERT OR IGNORE INTO restaurants (id, url, name, rating, price, hours, category, imagelink, latitude, longitude) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
         b
     dbClose conn
 
 -- TODO Use freemonads to mark this DB connection as needing to be closed
-inDB :: Loc ->  IO (Either String [Resturant])
+inDB :: Loc ->  IO (Either String [Restaurant])
 inDB l = do
     conn <- setupDb
     let range = 2
-        baseQuery = "SELECT * FROM resturants WHERE (latitude BETWEEN ? AND ?) AND (longitude BETWEEN ? AND ?)"
-    r <- query (connection conn) baseQuery (latitude l - range, latitude l + range, longitude l - range, longitude l + range) :: IO [Resturant]
+        baseQuery = "SELECT * FROM restaurants WHERE (latitude BETWEEN ? AND ?) AND (longitude BETWEEN ? AND ?)"
+    r <- query (connection conn) baseQuery (latitude l - range, latitude l + range, longitude l - range, longitude l + range) :: IO [Restaurant]
     dbClose conn
     case r of
-        [] -> pure $ Left "Not in DB"
+        [] -> do
+            putStrLn $ "at " ++ show l
+            putStrLn "Not found in db"
+            pure $ Left "Not in DB"
         x -> do
            putStrLn "Found in db"
            pure $ Right x
@@ -187,7 +190,7 @@ dbCheck :: IO (DbConnection Closed)
 dbCheck = do
     conn <- setupDb
     let c = connection conn
-    r <- query_ c "SELECT * FROM resturants" :: IO [Resturant]
+    r <- query_ c "SELECT * FROM restaurants" :: IO [Restaurant]
     print r
     print $ length r
     u <- query_ c "SELECT * FROM users" :: IO [Maybe U.User]
@@ -202,7 +205,7 @@ dbClear :: IO (DbConnection Closed)
 dbClear = do
     conn <- setupDb
     let c = connection conn
-    execute_ c "DROP TABLE resturants"
+    execute_ c "DROP TABLE restaurants"
     execute_ c "DELETE FROM users"
     execute_ c "DELETE FROM likes"
     dbClose conn
@@ -212,20 +215,20 @@ db = do
     conn <- setupDb
     let c = connection conn
     _ <- storeInDB
-        [ Resturant
+        [ Restaurant
             (Business "ll" "http://" "name" 10 (Just "$$") [Hours True] [Category "hello"])
             (Just "https...")
             (Loc 1 2)
         ]
     _ <- storeInDB
-        [ Resturant
+        [ Restaurant
             (Business "lt" "http://" "lame" 10 (Just "4") [Hours True] [Category "hello"])
             (Just "https...")
             (Loc 1 8)
         ]
-    b <- query_ c "SELECT * FROM resturants WHERE latitude > 0 " :: IO [Resturant]
+    b <- query_ c "SELECT * FROM restaurants WHERE latitude > 0 " :: IO [Restaurant]
     print b
-    execute_ c "DELETE FROM resturants WHERE latitude > 0"
-    v <- query_ c "SELECT * FROM resturants WHERE latitude > 0 " :: IO [Resturant]
+    execute_ c "DELETE FROM restaurants WHERE latitude > 0"
+    v <- query_ c "SELECT * FROM restaurants WHERE latitude > 0 " :: IO [Restaurant]
     print v
     dbClose conn

@@ -34,6 +34,14 @@ make targets for both the front and backend
 This will start both the front and backend for you
 
 * Example UI
+
+** How it works
+1. Display a QR code for adding friends to a session
+2. Click "Start Swiping" to view close buy restaurants
+3. Prompt the user with a series of restaurants near them to Like and Dislike
+4. When two users in the same session like the same restaurant the
+   match displayed so both users know where to grab a bite.
+** How it looks
 [[https://www.engr.uvic.ca/~gavinfre/tender_demo.png]]
 
 
