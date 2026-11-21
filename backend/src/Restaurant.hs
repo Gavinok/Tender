@@ -86,7 +86,9 @@ instance ToJSON Restaurant where
             , "price" .= (rprice :: Maybe String)
             , "rating" .= (rrating :: Float)
             , "imageLink" .= (imgLink :: Maybe String)
-            , "category" .= (Just (intercalate ", " $ title <$> cat) :: Maybe String)
+            , "category" .= case cat of
+                [] -> Nothing
+                _ -> Just (intercalate ", " $ title <$> cat)
             ]
 instance FromRow Restaurant where
     fromRow =
