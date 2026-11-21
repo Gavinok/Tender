@@ -8,24 +8,22 @@ a similar approach to tinder but for finding an agreed upon place to eat.
 This is an active work in progress. Expect regular breaking changes
 
 * Running this project
-** Haskell versioning
-Haskell tooling is a little picky on versioning so be sure to use
-[[https://www.haskell.org/ghcup/][GHCup]] to ensure you are using the correct versions.
-=backend/cabal.project= builds with =ghc-9.4.8=, so it only needs to be
-installed, not set as the default.
+** Toolchain
+The tools are pinned in =mise.toml=. With [[https://mise.jdx.dev][mise]] installed run
 #+begin_src bash
-  ghcup install ghc 9.4.8
-  ghcup set cabal 3.10.2.1
-  ghcup set hls 2.5.0.0 # for dev
+  mise trust
+  mise install
 #+end_src
+GHC and HLS are installed through ghcup so that HLS matches the GHC
+build exactly.
 ** Running Tender
 You will need a [[https://www.yelp.com/developers/v3/manage_app][Yelp API key]]
 
-To run this project export the API key as shown and execute default
-make targets for both the front and backend
+The backend reads the key from =YELP_KEY=, or from =pass show YELP_KEY=
+if that isn't set. Run the default make targets for both the front and
+backend
 
 #+begin_src sh
-  export YELP_KEY="<your-key-here>"
   cd frontend
   make
   cd ..
