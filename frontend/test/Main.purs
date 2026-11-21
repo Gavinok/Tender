@@ -92,7 +92,7 @@ main = runSpecAndExitProcess [ consoleReporter ] do
       renders (QR (SessionId "s") "http://example.com/s") "href=\"http://example.com/s\""
     it "shows the restaurant while swiping" do
       renders (Active swiper (Swiping (restaurant "Pho Real"))) "Pho Real"
-      renders (Active swiper (Swiping (restaurant "Pho Real"))) "0 Matches"
+      renders (Active swiper (Swiping (restaurant "Pho Real"))) "aria-label=\"0 matches\""
     it "celebrates a match" do
       renders (Active swiper (Matched (restaurant "a"))) "Match!"
     it "says when there is nothing left" do
