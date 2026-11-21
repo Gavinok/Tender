@@ -10,6 +10,7 @@ import Flame.Html.Element (class ToNode)
 import Flame.Html.Element as HE
 import Flame.Types (NodeData)
 import Tender.App (Message(..), Model(..), Screen(..))
+import Tender.QR (qrDataUrl)
 import Tender.Types (Restaurant)
 
 headerText :: forall a b. ToNode a b Html => a -> Html b
@@ -101,8 +102,9 @@ view (QR _ link) =
         [ HE.div [ HA.class' "join-button" ]
             [ HE.a [ HA.href link, HA.value "Join Session" ] "Join Session" ]
         , HE.img
-            [ HA.src $ "https://api.qrserver.com/v1/create-qr-code/?data=" <> link
-            , HA.alt ""
+            [ HA.src $ qrDataUrl link
+            , HA.alt "QR code for the session link"
+            , HA.class' "w-64 h-64"
             ]
         , HE.div [ HA.class' "my-2" ]
             [ btn StartSwiping "Start Swiping" grey
