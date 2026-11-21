@@ -4,6 +4,7 @@ import Prelude
 
 import Effect (Effect)
 import Flame as F
+import Flame.Subscription.Document as FSD
 import Flame.Subscription.Window as FSW
 import Tender.App (Message(..), init, update)
 import Tender.View (view)
@@ -14,7 +15,7 @@ main :: Effect Unit
 main =
   F.mount_ (QuerySelector "body")
     { model: init
-    , subscribe: [ FSW.onLoad DetermineSession ]
+    , subscribe: [ FSW.onLoad DetermineSession, FSD.onKeydown KeyPressed ]
     , update
     , view
     }

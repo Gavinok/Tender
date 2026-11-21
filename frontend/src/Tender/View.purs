@@ -10,7 +10,8 @@ import Flame.Html.Element as HE
 import Tender.App (Message(..), Model(..), Screen(..))
 import Tender.QR (qrDataUrl)
 import Tender.Types (Restaurant)
-import Tender.View.Button (Variant(..), button, linkButton, roundButton)
+import Tender.View.Button (Variant(..), button, linkButton)
+import Tender.View.Card (actionBar, restaurantCard)
 import Tender.View.Icon (Icon(..))
 import Tender.View.Layout (centred, page)
 
@@ -19,18 +20,6 @@ heading text = HE.h1 [ HA.class' "text-4xl font-black leading-tight" ] [ HE.text
 
 blurb :: forall a. String -> Html a
 blurb text = HE.p [ HA.class' "text-lg text-ink/70" ] [ HE.text text ]
-
-restaurantStats :: forall a. Restaurant -> Html a
-restaurantStats r = HE.ul [ HA.class' "text-center text-ink/70" ] $
-  map (HE.li_ <<< pure <<< HE.text) $ category <> ratings <> pricing
-  where
-  ratings = [ "Rating: " <> show r.rating ]
-  pricing = case r.price of
-    Nothing -> []
-    Just p -> [ "Price: " <> p ]
-  category = case r.category of
-    Nothing -> []
-    Just c -> [ c ]
 
 photo :: forall a. Restaurant -> Html a
 photo r =
@@ -81,14 +70,9 @@ view (Active { matches } NoneLeft) =
 
 view (Active { matches } (Swiping r)) =
   page (Just (length matches))
-    [ HE.div [ HA.class' "flex flex-1 flex-col gap-4" ]
-        [ photo r
-        , HE.h2 [ HA.class' "text-3xl font-black" ] [ HE.text r.name ]
-        , restaurantStats r
-        , HE.div [ HA.class' "mt-auto flex items-center justify-center gap-8" ]
-            [ roundButton { label: "Nope", icon: Close, classes: "h-16 w-16 bg-white text-ink/60" } Dislike
-            , roundButton { label: "Like", icon: Heart, classes: "h-20 w-20 bg-tomato-500 text-white" } Like
-            ]
+    [ HE.div [ HA.class' "flex max-h-[52rem] flex-1 flex-col gap-6" ]
+        [ restaurantCard r
+        , actionBar { nope: Dislike, like: Like }
         ]
     ]
 

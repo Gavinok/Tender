@@ -60,6 +60,14 @@ main = runSpecAndExitProcess [ consoleReporter ] do
       step (Active swiper (Swiping (restaurant "a"))) Dislike
         `shouldEqual` Tuple (Active swiper (Swiping (restaurant "a"))) 1
 
+    it "likes with the right arrow key" do
+      step (Active swiper (Swiping (restaurant "a"))) (KeyPressed "ArrowRight")
+        `shouldEqual` Tuple (Active swiper (Swiping (restaurant "a"))) 1
+
+    it "ignores other keys" do
+      step (Active swiper (Swiping (restaurant "a"))) (KeyPressed "x")
+        `shouldEqual` Tuple (Active swiper (Swiping (restaurant "a"))) 0
+
     it "ignores a like when not looking at a restaurant" do
       step (Active swiper Fetching) Like `shouldEqual` Tuple (Active swiper Fetching) 0
 

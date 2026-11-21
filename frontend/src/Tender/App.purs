@@ -62,6 +62,8 @@ data Message
   | Started UserId Loc
   | Like
   | Dislike
+  -- | A key pressed anywhere on the page
+  | KeyPressed String
   -- | Skip past the current match and keep swiping
   | Continue
   | Show Restaurant
@@ -127,6 +129,9 @@ update model = case model, _ of
         Left e -> pure $ Just $ failed e
         Right _ -> nextRestaurant swiper.loc (Just r.id)
     ]
+  Active _ (Swiping _), KeyPressed "ArrowRight" -> update model Like
+  Active _ (Swiping _), KeyPressed "ArrowLeft" -> update model Dislike
+
   Active swiper (Matched r), Continue -> model /\
     [ nextRestaurant swiper.loc (Just r.id) ]
 
