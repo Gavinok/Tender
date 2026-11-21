@@ -32,3 +32,13 @@ executable tender
     hs-source-dirs:   app
     main-is:          Main.hs
     build-depends:    tender
+
+test-suite spec
+    import:           shared
+    type:             exitcode-stdio-1.0
+    hs-source-dirs:   test
+    main-is:          Spec.hs
+    build-depends:    tender
+                    , aeson
+                    , hspec         >=2.10  && <2.12
+                    , sqlite-simple

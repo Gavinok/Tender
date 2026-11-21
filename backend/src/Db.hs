@@ -2,7 +2,7 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DerivingStrategies #-}
 
-module Db (initDb, withDb, setImage, storeInDB, inDB, addUserToDb, addLikeToDb, matchedRestaurant, Like (..), getUser) where
+module Db (initDb, initSchema, withDb, setImage, storeInDB, inDB, addUserToDb, addLikeToDb, matchedRestaurant, Like (..), getUser) where
 
 import Database.SQLite.Simple (
     Connection,
@@ -31,8 +31,12 @@ withDb path act = withConnection path $ \conn -> do
 -- | Create the schema. Run once at startup.
 initDb :: FilePath -> IO ()
 initDb path = withDb path $ \conn -> do
+    execute_ conn "PRAGMA journal_mode = WAL"
+    initSchema conn
+
+initSchema :: Connection -> IO ()
+initSchema conn = do
     let ex = execute_ conn
-    ex "PRAGMA journal_mode = WAL"
     -- Restaurants
     ex $
         mconcat
