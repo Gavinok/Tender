@@ -36,6 +36,17 @@ This will start both the front and backend for you
 The backend stores restaurants, sessions and likes in =test.db=. Set
 =TENDER_DB= to use a different file.
 
+** Trying it on a phone
+Browsers only give the location to https pages, so a phone can't use the
+plain http dev server. With [[https://tailscale.com][Tailscale]] on both the computer and the
+phone, serve it over https on your tailnet while =make= is running:
+#+begin_src sh
+  cd frontend
+  make share     # prints the https://<machine>.<tailnet>.ts.net:8443 address
+  make unshare   # stop serving it
+#+end_src
+Only devices on your tailnet can reach it. =SHARE_PORT= changes the port.
+
 ** Running the tests
 #+begin_src sh
   cd backend && make test
