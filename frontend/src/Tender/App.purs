@@ -10,16 +10,17 @@ module Tender.App
 
 import Prelude
 
-import Data.Array (cons, elem)
+import Data.Array (cons, elem, uncons)
 import Data.Either (Either(..), either)
 import Data.Generic.Rep (class Generic)
 import Data.Show.Generic (genericShow)
 import Data.Maybe (Maybe(..), maybe)
 import Effect.Aff (Aff, Milliseconds(..), attempt, delay, message)
 import Effect.Class (liftEffect)
+import Data.Tuple (Tuple)
 import Data.Tuple.Nested ((/\))
 import Flame (Update)
-import Tender.Api (ApiError(..), createSession, decide, getRestaurant, joinSession)
+import Tender.Api (ApiError(..), createSession, decide, getRestaurants, joinSession)
 import Tender.Swipe (flyOut)
 import Tender.Swipe as Swipe
 import Tender.Browser (Shared(..), existingSession, geolocation, reload, rememberSession, shareLink, shareOrCopy, vibrate)
@@ -28,7 +29,8 @@ import Tender.Types (ErrorMessage, Loc, Restaurant, RestaurantId, SessionId, Url
 -- | What we know once the user has joined a session
 type Swiper =
   { user :: UserId
-  , loc :: Loc
+  -- | Restaurants still to show, fetched once when swiping starts
+  , upcoming :: Array Restaurant
   , matches :: Array Restaurant
   -- | Whether the list of matches is open
   , showMatches :: Boolean
@@ -78,9 +80,10 @@ data Message
   | KeyPressed String
   -- | Skip past the current match and keep swiping
   | Continue
-  | Show Restaurant
+  | Loaded (Array Restaurant)
+  -- | Move on from the restaurant with this id, once its decision is saved
+  | Next RestaurantId
   | GotMatch Restaurant
-  | OutOfRestaurants
   | FailedToLoad ErrorMessage
   -- | Start again from the session in the url
   | Retry
@@ -88,15 +91,6 @@ data Message
   | ShareInvite
   | LinkCopied
   | HideCopied
-
--- | Ask for the restaurant after the given one
-nextRestaurant :: Loc -> Maybe RestaurantId -> Aff (Maybe Message)
-nextRestaurant loc after = Just <<< toMessage <$> getRestaurant loc after
-  where
-  toMessage = case _ of
-    Left (NotFound _) -> OutOfRestaurants
-    Left (Failed e) -> FailedToLoad e
-    Right r -> Show r
 
 -- | Show a failed request to the user
 failed :: ApiError -> Message
@@ -106,6 +100,12 @@ failed = case _ of
 
 orFail :: forall a. (a -> Message) -> Either ApiError a -> Message
 orFail = either failed
+
+-- | Show the next restaurant, or say there are none left
+advance :: Swiper -> Tuple Model (Array (Aff (Maybe Message)))
+advance swiper = case uncons swiper.upcoming of
+  Nothing -> Active swiper NoneLeft /\ []
+  Just { head, tail } -> Active swiper { upcoming = tail } (Swiping head) /\ []
 
 -- | Initial state of the app
 init :: Model
@@ -143,34 +143,33 @@ update model = case model, _ of
         Right loc -> Just <<< orFail (\u -> Started u loc) <$> joinSession session
     ]
   _, Started user loc ->
-    Active { user, loc, matches: [], showMatches: false } Fetching /\ [ nextRestaurant loc Nothing ]
+    Active { user, upcoming: [], matches: [], showMatches: false } Fetching
+      /\ [ Just <<< orFail Loaded <$> getRestaurants loc ]
+  Active swiper Fetching, Loaded rs -> advance swiper { upcoming = rs }
 
   Active swiper (Swiping r), Like -> model /\
     [ do
         liftEffect $ flyOut Swipe.Right
-        match <- decide swiper.user r.id true
-        case match of
-          Left e -> pure $ Just $ failed e
-          Right (Just m) | not (elem m.id (_.id <$> swiper.matches)) -> pure $ Just $ GotMatch m
-          Right _ -> nextRestaurant swiper.loc (Just r.id)
+        decide swiper.user r.id true <#> Just <<< case _ of
+          Left e -> failed e
+          Right true | not (elem r.id (_.id <$> swiper.matches)) -> GotMatch r
+          Right _ -> Next r.id
     ]
   Active swiper (Swiping r), Dislike -> model /\
-    [ liftEffect (flyOut Swipe.Left) *> decide swiper.user r.id false >>= case _ of
-        Left e -> pure $ Just $ failed e
-        Right _ -> nextRestaurant swiper.loc (Just r.id)
+    [ do
+        liftEffect $ flyOut Swipe.Left
+        decide swiper.user r.id false <#> Just <<< either failed (const (Next r.id))
     ]
+  Active swiper (Swiping r), Next id | r.id == id -> advance swiper
   Active _ (Swiping _), KeyPressed "ArrowRight" -> update model Like
   Active _ (Swiping _), KeyPressed "ArrowLeft" -> update model Dislike
 
-  Active swiper (Matched r), Continue -> model /\
-    [ nextRestaurant swiper.loc (Just r.id) ]
+  Active swiper (Matched _), Continue -> advance swiper
 
-  Active swiper _, Show r -> Active swiper (Swiping r) /\ []
-  Active swiper _, GotMatch r ->
+  Active swiper (Swiping r), GotMatch m | r.id == m.id ->
     Active swiper { matches = cons r swiper.matches } (Matched r) /\ [ liftEffect vibrate $> Nothing ]
   Active swiper screen, ToggleMatches ->
     Active swiper { showMatches = not swiper.showMatches } screen /\ []
-  Active swiper _, OutOfRestaurants -> Active swiper NoneLeft /\ []
 
   -- Anything else is a stale message, e.g. from a double click
   _, _ -> model /\ []

@@ -3,13 +3,14 @@ module Tender.View.Match (celebration, matchesSheet) where
 import Prelude
 
 import Data.Array (length, range)
-import Data.Maybe (Maybe(..))
+import Data.Maybe (Maybe(..), maybe)
 import Flame (Html)
 import Flame.Html.Attribute as HA
 import Flame.Html.Element as HE
 import Tender.Types (Restaurant)
 import Tender.View.Button (Variant(..), button, linkButton)
 import Tender.View.Icon (Icon(..), icon)
+import Tender.View.Photo (photoCredit, restaurantPhoto)
 import Tender.View.States (matchList)
 
 -- | Pieces of confetti falling across the screen. Positions are spread with
@@ -51,12 +52,13 @@ celebration r continue =
     -- The tilt is on a wrapper since the entrance animation ends at no transform
     , HE.div [ HA.class' "rotate-2" ]
         [ HE.div [ HA.class' "w-64 animate-card-in rounded-3xl border-[3px] border-ink bg-white p-3 text-ink shadow-card" ]
-            [ HE.img [ HA.src r.imageLink, HA.alt "", HA.class' "aspect-square w-full rounded-2xl object-cover" ]
+            [ restaurantPhoto r "aspect-square w-full rounded-2xl"
             , HE.p [ HA.class' "pt-3 text-2xl font-display" ] [ HE.text r.name ]
+            , photoCredit r "text-ink/50"
             ]
         ]
     , HE.div [ HA.class' "flex flex-col items-center gap-3" ]
-        [ linkButton Secondary (Just ExternalLink) "Let's go" r.url
+        [ maybe (HE.text "") (linkButton Secondary (Just ExternalLink) "Let's go") r.url
         , button OnColour Nothing "Keep swiping" continue
         ]
     ]

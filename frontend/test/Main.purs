@@ -22,15 +22,22 @@ restaurant :: String -> Restaurant
 restaurant id =
   { id: RestaurantId id
   , name: id
-  , url: "https://example.com"
+  , url: Just "https://maps.google.com/?cid=1"
   , price: Nothing
-  , rating: 4.0
-  , imageLink: "https://example.com/img.jpg"
+  , rating: Just 4.0
   , category: Nothing
+  , photo: Just { name: "places/" <> id <> "/photos/p1", author: Just { name: "Sam", uri: Just "https://maps.google.com/contrib/1" } }
   }
 
+-- | A place with nothing but a name, as Google sometimes returns
+bare :: String -> Restaurant
+bare id = (restaurant id) { url = Nothing, rating = Nothing, photo = Nothing }
+
 swiper :: Swiper
-swiper = { user: UserId "u", loc: { latitude: 1.0, longitude: 2.0 }, matches: [], showMatches: false }
+swiper = { user: UserId "u", upcoming: [], matches: [], showMatches: false }
+
+here :: { latitude :: Number, longitude :: Number }
+here = { latitude: 1.0, longitude: 2.0 }
 
 lobbyAt :: Lobby
 lobbyAt = { session: SessionId "s", link: "http://example.com/s", copied: false }
@@ -43,13 +50,24 @@ step model msg = case update model msg of
 main :: Effect Unit
 main = runSpecAndExitProcess [ consoleReporter ] do
   describe "update" do
-    it "fetches the first restaurant once started" do
-      step (QR lobbyAt) (Started (UserId "u") swiper.loc)
+    it "fetches the restaurants once started" do
+      step (QR lobbyAt) (Started (UserId "u") here)
         `shouldEqual` Tuple (Active swiper Fetching) 1
 
-    it "shows a restaurant" do
-      step (Active swiper Fetching) (Show (restaurant "a"))
-        `shouldEqual` Tuple (Active swiper (Swiping (restaurant "a"))) 0
+    it "shows the first restaurant and keeps the rest" do
+      step (Active swiper Fetching) (Loaded [ restaurant "a", restaurant "b" ])
+        `shouldEqual` Tuple (Active swiper { upcoming = [ restaurant "b" ] } (Swiping (restaurant "a"))) 0
+
+    it "says there are none when the search finds nothing" do
+      step (Active swiper Fetching) (Loaded []) `shouldEqual` Tuple (Active swiper NoneLeft) 0
+
+    it "moves to the next restaurant without asking the server" do
+      step (Active swiper { upcoming = [ restaurant "b" ] } (Swiping (restaurant "a"))) (Next (RestaurantId "a"))
+        `shouldEqual` Tuple (Active swiper (Swiping (restaurant "b"))) 0
+
+    it "ignores a late Next for a restaurant already passed" do
+      step (Active swiper { upcoming = [ restaurant "c" ] } (Swiping (restaurant "b"))) (Next (RestaurantId "a"))
+        `shouldEqual` Tuple (Active swiper { upcoming = [ restaurant "c" ] } (Swiping (restaurant "b"))) 0
 
     it "records a match" do
       step (Active swiper (Swiping (restaurant "a"))) (GotMatch (restaurant "a"))
@@ -75,8 +93,8 @@ main = runSpecAndExitProcess [ consoleReporter ] do
       step (Active swiper Fetching) Like `shouldEqual` Tuple (Active swiper Fetching) 0
 
     it "moves on from a match" do
-      step (Active swiper (Matched (restaurant "a"))) Continue
-        `shouldEqual` Tuple (Active swiper (Matched (restaurant "a"))) 1
+      step (Active swiper { upcoming = [ restaurant "b" ] } (Matched (restaurant "a"))) Continue
+        `shouldEqual` Tuple (Active swiper (Swiping (restaurant "b"))) 0
 
     it "shows the link was copied, then hides it again" do
       step (QR lobbyAt) LinkCopied `shouldEqual` Tuple (QR lobbyAt { copied = true }) 1
@@ -87,7 +105,7 @@ main = runSpecAndExitProcess [ consoleReporter ] do
         `shouldEqual` Tuple (Active swiper { showMatches = true } (Swiping (restaurant "a"))) 0
 
     it "shows when there are no restaurants left" do
-      step (Active swiper (Swiping (restaurant "a"))) OutOfRestaurants
+      step (Active swiper (Swiping (restaurant "a"))) (Next (RestaurantId "a"))
         `shouldEqual` Tuple (Active swiper NoneLeft) 0
 
     it "shows errors" do
@@ -112,6 +130,12 @@ main = runSpecAndExitProcess [ consoleReporter ] do
     it "shows the restaurant while swiping" do
       renders (Active swiper (Swiping (restaurant "Pho Real"))) "Pho Real"
       renders (Active swiper (Swiping (restaurant "Pho Real"))) "aria-label=\"0 matches\""
+    it "shows the photo through the backend with its credit and a Google Maps link" do
+      renders (Active swiper (Swiping (restaurant "a"))) "src=\"/api/photo?name=places/a/photos/p1\""
+      renders (Active swiper (Swiping (restaurant "a"))) "Photo: "
+      renders (Active swiper (Swiping (restaurant "a"))) ">Google Maps<"
+    it "copes with a place that has no photo, rating or link" do
+      renders (Active swiper (Swiping (bare "Mystery Diner"))) "Mystery Diner"
     it "celebrates a match" do
       renders (Active swiper (Matched (restaurant "a"))) "a match!"
     it "offers to try again after an error" do

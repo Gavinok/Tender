@@ -4,13 +4,14 @@ module Tender.View.States (cardSkeleton, setting, outOfRestaurants, problem, mat
 import Prelude
 
 import Data.Array (null)
-import Data.Maybe (Maybe(..))
+import Data.Maybe (Maybe(..), fromMaybe)
 import Flame (Html)
 import Flame.Html.Attribute as HA
 import Flame.Html.Element as HE
 import Tender.Types (Restaurant)
 import Tender.View.Button (Variant(..), button)
 import Tender.View.Icon (Icon(..), icon)
+import Tender.View.Photo (restaurantPhoto)
 
 shimmer :: String
 shimmer = "animate-shimmer bg-gradient-to-r from-brand-100 via-brand-50 to-brand-100 bg-[length:200%_100%]"
@@ -48,15 +49,16 @@ matchList :: forall a. Array Restaurant -> Html a
 matchList rs =
   HE.ul [ HA.class' "flex w-full flex-col gap-3" ] (map item rs)
   where
+  -- Thumbnails can leave out the photo credit since Google Maps shows it
   item r =
     HE.li_
       [ HE.a
-          [ HA.href r.url
+          [ HA.href (fromMaybe "#" r.url)
           , HA.target "_blank"
           , HA.rel "noopener"
           , HA.class' "flex items-center gap-3 rounded-xl border-2 border-ink bg-white p-2 pr-4 text-left shadow-pop transition active:translate-y-0.5 active:shadow-none"
           ]
-          [ HE.img [ HA.src r.imageLink, HA.alt "", HA.class' "h-14 w-14 rounded-lg object-cover" ]
+          [ restaurantPhoto r "h-14 w-14 rounded-lg"
           , HE.span [ HA.class' "flex-1 font-bold" ] [ HE.text r.name ]
           , icon ExternalLink "h-5 w-5 text-brand-500"
           ]

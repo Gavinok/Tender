@@ -2,7 +2,7 @@ module Tender.Api
   ( ApiError(..)
   , createSession
   , decide
-  , getRestaurant
+  , getRestaurants
   , joinSession
   ) where
 
@@ -10,7 +10,6 @@ import Prelude
 
 import Data.Bifunctor (lmap)
 import Data.Either (Either(..))
-import Data.Maybe (Maybe)
 import Effect.Aff (Aff, Error, attempt, message)
 import Effect.Class (liftEffect)
 import Fetch (Method(..), Response, fetch)
@@ -63,9 +62,11 @@ createSession = get "newsession"
 joinSession :: SessionId -> Aff (Either ApiError UserId)
 joinSession (SessionId s) = get ("addtosession/" <> s)
 
--- | Record whether the user liked the restaurant, returning it if it is now a match
-decide :: UserId -> RestaurantId -> Boolean -> Aff (Either ApiError (Maybe Restaurant))
-decide user restaurant liked = post "decision" { user, restaurant, liked }
+-- | Record whether the user liked the restaurant, and whether that made it a match
+decide :: UserId -> RestaurantId -> Boolean -> Aff (Either ApiError Boolean)
+decide user restaurant liked =
+  map _.match <$> (post "decision" { user, restaurant, liked } :: Aff (Either ApiError { match :: Boolean }))
 
-getRestaurant :: Loc -> Maybe RestaurantId -> Aff (Either ApiError Restaurant)
-getRestaurant loc after = post "restaurant" { loc, restaurantId: after }
+-- | Restaurants near the location, most popular first
+getRestaurants :: Loc -> Aff (Either ApiError (Array Restaurant))
+getRestaurants loc = post "restaurants" loc

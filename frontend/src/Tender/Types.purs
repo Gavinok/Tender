@@ -1,7 +1,10 @@
 module Tender.Types
   ( ErrorMessage
+  , Author
   , Loc
+  , Photo
   , Restaurant
+  , photoUrl
   , RestaurantId(..)
   , SessionId(..)
   , Url
@@ -37,15 +40,29 @@ type ErrorMessage = String
 
 type Url = String
 
+-- | Who took a photo. Google requires showing this with the photo.
+type Author = { name :: String, uri :: Maybe Url }
+
+-- | A photo from Google Places, by its resource name
+type Photo = { name :: String, author :: Maybe Author }
+
+-- | From Google Places. Kept only for the session, as Google's terms require.
 type Restaurant =
   { id :: RestaurantId
   , name :: String
-  , url :: Url
+  -- | The place on Google Maps
+  , url :: Maybe Url
   , price :: Maybe String
-  , rating :: Number
-  , imageLink :: Url
+  , rating :: Maybe Number
   , category :: Maybe String
+  , photo :: Maybe Photo
   }
+
+-- | The backend redirects this to the image, keeping the API key off the page.
+-- | Resource names only contain letters, digits, - and _ besides the slashes,
+-- | so they don't need escaping.
+photoUrl :: Photo -> Url
+photoUrl p = "/api/photo?name=" <> p.name
 
 -- | Location of the current user
 type Loc = { latitude :: Number, longitude :: Number }

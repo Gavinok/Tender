@@ -5,13 +5,13 @@ import Prelude
 import Data.Array (range)
 import Data.Int (toNumber)
 import Data.Maybe (maybe)
-import Data.String (Pattern(..), split)
 import Flame (Html)
 import Flame.Html.Attribute as HA
 import Flame.Html.Element as HE
 import Tender.Types (Restaurant)
 import Tender.View.Button (iconButton)
 import Tender.View.Icon (Icon(..), icon)
+import Tender.View.Photo (mapsLink, photoCredit, restaurantPhoto)
 
 -- | Five stars, filled to the nearest half
 ratingStars :: forall a. Number -> Html a
@@ -57,24 +57,18 @@ restaurantCard r =
     , HA.createAttribute "data-swipe" ""
     , HA.class' "relative min-h-[22rem] w-full flex-1 animate-card-in cursor-grab touch-none select-none overflow-hidden rounded-[2rem] border-[3px] border-ink bg-brand-200 shadow-card active:cursor-grabbing"
     ]
-    [ HE.img [ HA.class' "pointer-events-none absolute inset-0 h-full w-full object-cover", HA.src r.imageLink, HA.alt "" ]
+    [ restaurantPhoto r "pointer-events-none absolute inset-0 h-full w-full"
     , HE.div [ HA.class' "absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" ] []
     -- Fade in while dragging, see Swipe.js
     , stamp "YUM" "left-5 -rotate-12 border-star text-star" "var(--like, 0)"
     , stamp "NOPE" "right-5 rotate-12 border-white text-white" "var(--nope, 0)"
-    , HE.a
-        [ HA.href r.url
-        , HA.target "_blank"
-        , HA.rel "noopener"
-        , HA.class' "absolute right-4 top-4 flex items-center gap-1 rounded-lg bg-white/90 px-3 py-1 text-sm font-bold text-ink shadow"
-        ]
-        [ HE.text "Yelp", icon ExternalLink "w-4 h-4" ]
+    , mapsLink r "absolute right-4 top-4 rounded-lg bg-white/90 px-3 py-1 text-sm text-[#1F1F1F] shadow"
     , HE.div [ HA.class' "absolute inset-x-0 bottom-0 flex flex-col gap-2 p-5 text-left" ]
         [ HE.h2 [ HA.class' "font-display text-3xl leading-tight text-white drop-shadow" ] [ HE.text r.name ]
         , HE.div [ HA.class' "flex items-center gap-2" ]
-            ([ ratingStars r.rating ] <> maybe [] (pure <<< chip) r.price)
-        , HE.div [ HA.class' "flex flex-wrap gap-2" ]
-            (map chip (maybe [] (split (Pattern ", ")) r.category))
+            (maybe [] (pure <<< ratingStars) r.rating <> maybe [] (pure <<< chip) r.price)
+        , HE.div [ HA.class' "flex flex-wrap gap-2" ] (maybe [] (pure <<< chip) r.category)
+        , photoCredit r "text-white/70"
         ]
     ]
 
