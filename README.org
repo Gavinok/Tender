@@ -35,6 +35,15 @@ make targets for both the front and backend
 
 This will start both the front and backend for you
 
+The backend stores restaurants, sessions and likes in =test.db=. Set
+=TENDER_DB= to use a different file.
+
+** Running the tests
+#+begin_src sh
+  cd backend && make test
+  cd frontend && make test
+#+end_src
+
 * Example UI
 
 ** How it works
