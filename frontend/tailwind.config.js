@@ -5,29 +5,31 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        tomato: {
-          50: "#fff4f1",
-          100: "#ffe4dc",
-          200: "#ffc8b8",
-          300: "#ffa089",
-          400: "#ff7a5c",
-          500: "#f4583a",
-          600: "#dc3f22",
-          700: "#b8301a",
-          800: "#93291a",
-          900: "#78261b",
+        brand: {
+          50: "#eef2ff",
+          100: "#dbe3ff",
+          200: "#b8c7ff",
+          300: "#8aa2ff",
+          400: "#5576ff",
+          500: "#2a4bff",
+          600: "#1a35e0",
+          700: "#1528b3",
+          800: "#14238c",
+          900: "#131f6e",
         },
-        cream: "#fff8f1",
-        ink: "#2b1b17",
-        butter: "#ffc94d",
+        surface: "#ffe4ef",
+        ink: "#14122b",
+        star: "#ffd60a",
       },
       fontFamily: {
-        // Rounded system fonts where available (SF Pro Rounded on Apple devices)
-        sans: ["ui-rounded", "Nunito", "Quicksand", "system-ui", "sans-serif"],
+        sans: ["Bricolage Grotesque", "system-ui", "sans-serif"],
+        // Headings, the wordmark and other big text. Only comes in one weight.
+        display: ["Bagel Fat One", "Bricolage Grotesque", "sans-serif"],
       },
+      // Hard, unblurred shadows
       boxShadow: {
-        card: "0 18px 40px -12px rgba(120, 38, 27, 0.35)",
-        pop: "0 6px 0 0 rgba(120, 38, 27, 0.25)",
+        card: "0 10px 0 0 #14122b",
+        pop: "0 5px 0 0 #14122b",
       },
       keyframes: {
         "card-in": {

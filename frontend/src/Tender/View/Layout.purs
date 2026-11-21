@@ -10,16 +10,16 @@ import Tender.View.Icon (Icon(..), icon)
 
 wordmark :: forall a. Html a
 wordmark =
-  HE.div [ HA.class' "flex items-center gap-1.5 text-tomato-500" ]
+  HE.div [ HA.class' "flex items-center gap-1.5 text-brand-500" ]
     [ icon Utensils "w-6 h-6"
-    , HE.span [ HA.class' "text-2xl font-black tracking-tight" ] [ HE.text "tender" ]
+    , HE.span [ HA.class' "font-display text-2xl" ] [ HE.text "tender" ]
     ]
 
 -- | Badge with the number of matches so far, opens the list of them
 matchBadge :: forall a. Int -> a -> Html a
 matchBadge n open =
   HE.button
-    [ HA.class' "flex items-center gap-1 rounded-full bg-white px-3 py-1 font-bold text-tomato-600 shadow-sm ring-1 ring-tomato-100 transition hover:ring-tomato-300 focus:outline-none focus-visible:ring-4 focus-visible:ring-butter"
+    [ HA.class' "flex items-center gap-1 rounded-lg border-2 border-ink bg-white px-3 py-1 font-bold text-brand-600 shadow-pop transition active:translate-y-0.5 active:shadow-none focus:outline-none focus-visible:ring-4 focus-visible:ring-star"
     , HA.onClick open
     , HA.createAttribute "aria-label" (show n <> if n == 1 then " match" else " matches")
     ]

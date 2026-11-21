@@ -14,10 +14,10 @@ import Tender.View.Icon (Icon(..))
 lobby :: forall a. Lobby -> { share :: a, start :: a } -> Html a
 lobby { link, copied } { share, start } =
   HE.div [ HA.class' "flex flex-1 flex-col items-center justify-center gap-6 text-center" ]
-    [ HE.h1 [ HA.class' "text-4xl font-black leading-tight" ] [ HE.text "Where should we eat?" ]
+    [ HE.h1 [ HA.class' "font-display text-5xl leading-none" ] [ HE.text "Where should we eat?" ]
     , HE.p [ HA.class' "max-w-xs text-lg text-ink/70" ]
         [ HE.text "Get everyone to scan this, then start swiping. Anything you all like is a match." ]
-    , HE.figure [ HA.class' "-rotate-2 rounded-3xl bg-white p-4 shadow-card" ]
+    , HE.figure [ HA.class' "-rotate-2 rounded-3xl border-[3px] border-ink bg-white p-4 shadow-card" ]
         [ HE.img [ HA.src (qrDataUrl link), HA.alt "QR code to join this session", HA.class' "h-52 w-52" ]
         , HE.p [ HA.class' "max-w-52 truncate pt-2 font-mono text-xs text-ink/50" ] [ HE.text link ]
         ]

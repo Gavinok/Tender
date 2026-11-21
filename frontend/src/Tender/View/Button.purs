@@ -2,7 +2,7 @@ module Tender.View.Button
   ( Variant(..)
   , button
   , linkButton
-  , roundButton
+  , iconButton
   ) where
 
 import Prelude
@@ -22,13 +22,13 @@ data Variant
 
 -- Full class names so Tailwind finds them in the bundle
 base :: String
-base = "inline-flex items-center justify-center gap-2 rounded-full px-6 py-3 text-lg font-bold transition active:translate-y-0.5 active:shadow-none focus:outline-none focus-visible:ring-4 focus-visible:ring-butter"
+base = "inline-flex items-center justify-center gap-2 rounded-xl border-[3px] px-6 py-3 text-lg font-bold transition active:translate-y-0.5 active:shadow-none focus:outline-none focus-visible:ring-4 focus-visible:ring-star"
 
 variantClasses :: Variant -> String
 variantClasses = case _ of
-  Primary -> "bg-tomato-500 text-white shadow-pop hover:bg-tomato-600"
-  Secondary -> "bg-white text-tomato-600 shadow-pop ring-2 ring-tomato-100 hover:bg-tomato-50"
-  OnColour -> "bg-white/20 text-white ring-2 ring-white/60 hover:bg-white/30"
+  Primary -> "border-ink bg-brand-500 text-white shadow-pop hover:bg-brand-600"
+  Secondary -> "border-ink bg-white text-ink shadow-pop hover:bg-brand-50"
+  OnColour -> "border-white bg-white/15 text-white hover:bg-white/25"
 
 content :: forall a. Maybe Icon -> String -> Array (Html a)
 content i label = maybe [] (\x -> [ icon x "w-5 h-5" ]) i <> [ HE.text label ]
@@ -50,11 +50,11 @@ linkButton v i label url =
     ]
     (content i label)
 
--- | Large circular icon button, e.g. like and nope
-roundButton :: forall a. { label :: String, icon :: Icon, classes :: String } -> a -> Html a
-roundButton r msg =
+-- | Large square icon button, e.g. like and nope
+iconButton :: forall a. { label :: String, icon :: Icon, classes :: String } -> a -> Html a
+iconButton r msg =
   HE.button
-    [ HA.class' ("grid place-items-center rounded-full shadow-card transition duration-150 hover:scale-105 active:scale-90 focus:outline-none focus-visible:ring-4 focus-visible:ring-butter " <> r.classes)
+    [ HA.class' ("grid place-items-center rounded-2xl border-[3px] border-ink shadow-pop transition duration-150 hover:scale-105 active:scale-90 focus:outline-none focus-visible:ring-4 focus-visible:ring-star " <> r.classes)
     , HA.onClick msg
     , HA.title r.label
     , HA.createAttribute "aria-label" r.label

@@ -41,18 +41,18 @@ confetti =
 celebration :: forall a. Restaurant -> a -> Html a
 celebration r continue =
   HE.div
-    [ HA.class' "fixed inset-0 z-20 flex flex-col items-center justify-center gap-6 overflow-hidden bg-gradient-to-b from-tomato-400 to-tomato-600 px-6 text-center text-white"
+    [ HA.class' "fixed inset-0 z-20 flex flex-col items-center justify-center gap-6 overflow-hidden bg-gradient-to-b from-brand-400 to-brand-600 px-6 text-center text-white"
     , HA.createAttribute "role" "dialog"
     , HA.createAttribute "aria-label" "It's a match"
     ]
     [ confetti
-    , HE.p [ HA.class' "animate-pop text-6xl font-black drop-shadow-lg" ] [ HE.text "It's a match!" ]
+    , HE.p [ HA.class' "animate-pop text-6xl font-display drop-shadow-lg" ] [ HE.text "It's a match!" ]
     , HE.p [ HA.class' "text-lg font-bold text-white/90" ] [ HE.text "Everyone's hungry for" ]
     -- The tilt is on a wrapper since the entrance animation ends at no transform
     , HE.div [ HA.class' "rotate-2" ]
-        [ HE.div [ HA.class' "w-64 animate-card-in rounded-3xl bg-white p-3 text-ink shadow-2xl" ]
+        [ HE.div [ HA.class' "w-64 animate-card-in rounded-3xl border-[3px] border-ink bg-white p-3 text-ink shadow-card" ]
             [ HE.img [ HA.src r.imageLink, HA.alt "", HA.class' "aspect-square w-full rounded-2xl object-cover" ]
-            , HE.p [ HA.class' "pt-3 text-2xl font-black" ] [ HE.text r.name ]
+            , HE.p [ HA.class' "pt-3 text-2xl font-display" ] [ HE.text r.name ]
             ]
         ]
     , HE.div [ HA.class' "flex flex-col items-center gap-3" ]
@@ -72,13 +72,13 @@ matchesSheet matches close =
         ]
         []
     , HE.section
-        [ HA.class' "relative mx-auto max-h-[80dvh] w-full max-w-md animate-card-in overflow-y-auto rounded-t-[2rem] bg-cream p-5 pb-8 shadow-2xl"
+        [ HA.class' "relative mx-auto max-h-[80dvh] w-full max-w-md animate-card-in overflow-y-auto rounded-t-[2rem] border-x-[3px] border-t-[3px] border-ink bg-surface p-5 pb-8 shadow-2xl"
         , HA.createAttribute "role" "dialog"
         , HA.createAttribute "aria-label" "Matches"
         ]
         [ HE.div [ HA.class' "mb-4 flex items-center justify-between" ]
-            [ HE.h2 [ HA.class' "text-2xl font-black" ] [ HE.text (title (length matches)) ]
-            , HE.button [ HA.class' "rounded-full p-2 text-ink/60 hover:bg-ink/5", HA.onClick close, HA.createAttribute "aria-label" "Close" ]
+            [ HE.h2 [ HA.class' "text-2xl font-display" ] [ HE.text (title (length matches)) ]
+            , HE.button [ HA.class' "rounded-lg p-2 text-ink/60 hover:bg-ink/5", HA.onClick close, HA.createAttribute "aria-label" "Close" ]
                 [ icon Close "h-6 w-6" ]
             ]
         , if length matches == 0 then

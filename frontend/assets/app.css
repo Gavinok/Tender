@@ -1,3 +1,8 @@
+/* Self-hosted fonts, no requests to third parties */
+@import "npm:@fontsource/bagel-fat-one/400.css";
+@import "npm:@fontsource/bricolage-grotesque/500.css";
+@import "npm:@fontsource/bricolage-grotesque/700.css";
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -5,7 +10,7 @@
 @layer base {
   html,
   body {
-    @apply bg-cream text-ink antialiased;
+    @apply bg-surface text-ink antialiased;
   }
   /* Keep content clear of notches and the home indicator */
   body {
