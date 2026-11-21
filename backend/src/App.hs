@@ -3,8 +3,7 @@
 module App (server) where
 
 import Control.Monad.IO.Class (MonadIO, liftIO)
-import Data.List (uncons)
-import Data.Maybe (fromMaybe, listToMaybe)
+import Data.Maybe (fromMaybe)
 import Database.SQLite.Simple (Connection)
 import GHC.Generics (Generic)
 import Network.Wai.Middleware.Cors (
@@ -55,44 +54,40 @@ apiCors =
         , corsRequestHeaders = simpleHeaders
         }
 
-yelpAndStore :: Connection -> YelpAPIKey -> Loc -> IO (Either String [Restaurant])
+data NextError
+    = NoMoreRestaurants
+    | LookupFailed String
+
+-- | Fetch restaurants near the location from Yelp and store them
+yelpAndStore :: Connection -> YelpAPIKey -> Loc -> IO (Either NextError ())
 yelpAndStore conn k l = do
-  apiRes <- reqRes k l
-  case apiRes of
-    Left e -> pure $ Left $ show e
-    Right (Series []) -> pure $ Left "No restaurant from API"
-    Right (Series res) -> do
-                storeInDB conn res
-                pure $ Right res
+    apiRes <- reqRes k l
+    case apiRes of
+        Left e -> pure $ Left $ LookupFailed $ "Yelp search near " ++ show l ++ " failed: " ++ show e
+        Right (Series res) -> Right <$> storeInDB conn res
 
-
--- TODO modify to restrict to never be a maybe URL past this point
-getRes :: Connection -> YelpAPIKey -> Loc -> Maybe String -> IO (Either String Restaurant)
-getRes conn k loc restaurantId = do
+-- | The restaurant after the given one, or the first if none is given
+getRes :: Connection -> YelpAPIKey -> Loc -> Maybe String -> IO (Either NextError Restaurant)
+getRes conn k l current = do
     -- Check the DB for this location. If nothing is there ask the API
-    cached <- inDB conn loc
-    maybeDbRes <- if null cached then yelpAndStore conn k loc else pure (Right cached)
-    case maybeDbRes of
-        Left e -> pure $ Left $ "Failed to: get restaurants at location " ++ show loc ++ "with error " ++ e
-        Right dbr -> do
-            let r = case restaurantId of
-                      Just rid -> case uncons . dropWhile (\res -> bid (bus res) /= rid) $ dbr of
-                                    Just (_, x:_) -> Just x
-                                    Just (_, []) -> Nothing
-                                    Nothing -> Nothing
-                      Nothing ->  listToMaybe dbr
-            case r of
-                Nothing -> pure $ Left $ "No restaurants came back from the db" <> show dbr
-                -- Restaurant already has a image URL
-                Just res@(Restaurant _ (Just _) _) -> pure $ Right res
-                -- Image URL is missing
-                Just (Restaurant b Nothing l) -> do
-                    maybeImg <- reqIMG k $ bid b
-                    case maybeImg of
-                        Right i -> do
-                            setImage conn (bid b) i
-                            pure $ Right (Restaurant b (Just i) l)
-                        Left e -> pure $ Left $ "Failed to get restaurants image " ++ show e
+    cached <- inDB conn l
+    stored <-
+        if null cached
+            then yelpAndStore conn k l >>= traverse (const $ inDB conn l)
+            else pure (Right cached)
+    case nextAfter current <$> stored of
+        Left e -> pure $ Left e
+        Right Nothing -> pure $ Left NoMoreRestaurants
+        -- Restaurant already has a image URL
+        Right (Just res@(Restaurant _ (Just _) _)) -> pure $ Right res
+        -- Image URL is missing
+        Right (Just (Restaurant b Nothing pos)) -> do
+            maybeImg <- reqIMG k $ bid b
+            case maybeImg of
+                Right i -> do
+                    setImage conn (bid b) i
+                    pure $ Right (Restaurant b (Just i) pos)
+                Left e -> pure $ Left $ LookupFailed $ "Failed to get image for " ++ bid b ++ ": " ++ show e
 
 data RestaurantDecision = RestaurantDecision
     { id :: !U.UserId
@@ -158,7 +153,8 @@ app env = scotty 5001 $ do
         NextRestaurant l rId <- jsonData
         res <- liftIO $ withConn $ \c -> getRes c (envYelpKey env) l rId
         case res of
-            Left e -> do
+            Left NoMoreRestaurants -> errorResponse status404 "No more restaurants nearby"
+            Left (LookupFailed e) -> do
                 logMsg e
                 errorResponse status502 "Could not load restaurants"
             Right r -> json r

@@ -4,7 +4,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE StandaloneDeriving #-}
 
-module Restaurant (Category (..), Series (..), Hours (..), Business (..), Restaurant (..), Loc (..), NextRestaurant(..), bid) where
+module Restaurant (Category (..), Series (..), Hours (..), Business (..), Restaurant (..), Loc (..), NextRestaurant(..), bid, nextAfter) where
 
 import Data.Aeson (FromJSON, ToJSON, parseJSON, withObject, (.:), (.:?), (.=))
 import qualified Data.Aeson as A
@@ -64,6 +64,11 @@ bid :: Business -> String
 bid (Business id_ _ _ _ _ _ _) = id_
 
 instance FromJSON Business
+
+-- | The restaurant after the one with the given id, or the first if none is given
+nextAfter :: Maybe String -> [Restaurant] -> Maybe Restaurant
+nextAfter Nothing = listToMaybe
+nextAfter (Just rid) = listToMaybe . drop 1 . dropWhile ((/= rid) . bid . bus)
 
 -- | Restaurants from a Yelp search. Businesses without coordinates are dropped.
 newtype Series = Series [Restaurant] deriving (Show)

@@ -115,5 +115,6 @@ searchRange = 0.15
 inDB :: Connection -> Loc -> IO [Restaurant]
 inDB conn l = do
     let range = searchRange
-        baseQuery = "SELECT * FROM restaurants WHERE (latitude BETWEEN ? AND ?) AND (longitude BETWEEN ? AND ?)"
+        -- Order must be stable since the frontend steps through by id
+        baseQuery = "SELECT * FROM restaurants WHERE (latitude BETWEEN ? AND ?) AND (longitude BETWEEN ? AND ?) ORDER BY rating DESC, id"
     query conn baseQuery (latitude l - range, latitude l + range, longitude l - range, longitude l + range)
