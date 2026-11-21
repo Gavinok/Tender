@@ -1,48 +1,60 @@
+{-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# OPTIONS_GHC -Wno-orphans #-}
-{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
-module User (User (..), Session, ToField, fromText) where
+module User (User (..), UserId (..), SessionId (..), newUserId, newSessionId, sessionFromText) where
 
-import Data.UUID (UUID, toText)
-import qualified Data.UUID as UID
-import Database.SQLite.Simple (
-    FromRow,
-    ToRow,
-    field,
-    fromRow,
-    toRow,
- )
-import Database.SQLite.Simple.FromField (FromField (fromField))
+import Data.Aeson (FromJSON, ToJSON)
+import Data.Text (Text)
+import Data.UUID (UUID)
+import qualified Data.UUID as UUID
+import Data.UUID.V4 (nextRandom)
+import Database.SQLite.Simple (FromRow)
+import Database.SQLite.Simple.FromField (FieldParser, FromField (fromField), ResultError (ConversionFailed), returnError)
 import Database.SQLite.Simple.ToField (ToField (toField))
 import GHC.Generics (Generic)
-import Data.Text
 
-type Session = UUID
+newtype UserId = UserId UUID
+    deriving stock (Eq, Show)
+    deriving newtype (FromJSON, ToJSON)
 
-fromText :: Text -> Maybe Session
-fromText = UID.fromText
+newtype SessionId = SessionId UUID
+    deriving stock (Eq, Show)
+    deriving newtype (FromJSON, ToJSON)
 
-instance ToRow Session where
-    toRow s = [toField $ toText s]
+newUserId :: IO UserId
+newUserId = UserId <$> nextRandom
 
-instance ToField UUID where
-    toField s = toField $ toText s
+newSessionId :: IO SessionId
+newSessionId = SessionId <$> nextRandom
 
-instance {-# OVERLAPS #-} FromField (Maybe UUID) where
-    fromField s = do
-        UID.fromText <$> fromField s
+sessionFromText :: Text -> Maybe SessionId
+sessionFromText = fmap SessionId . UUID.fromText
+
+-- Both ids are stored as their textual form
+instance ToField UserId where
+    toField (UserId u) = toField (UUID.toText u)
+
+instance ToField SessionId where
+    toField (SessionId u) = toField (UUID.toText u)
+
+instance FromField UserId where
+    fromField f = UserId <$> uuidField f
+
+instance FromField SessionId where
+    fromField f = SessionId <$> uuidField f
+
+uuidField :: FieldParser UUID
+uuidField f = do
+    t <- fromField f
+    case UUID.fromText t of
+        Just u -> pure u
+        Nothing -> returnError ConversionFailed f ("Invalid UUID: " ++ show t)
 
 data User = User
-    { userId :: !UUID
-    , session :: !Session
+    { userId :: !UserId
+    , session :: !SessionId
     }
-    deriving (Generic, Show)
-
-instance FromRow (Maybe User) where
-    fromRow = do
-        f1 :: Maybe UUID <- field
-        f2 :: Maybe Session <- field
-        pure (User <$> f1 <*> f2)
+    deriving stock (Generic, Show)
+    deriving anyclass (FromRow)

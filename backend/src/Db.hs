@@ -14,7 +14,6 @@ import Database.SQLite.Simple (
     query,
     withConnection,
  )
-import Control.Monad (join)
 import Data.Maybe (listToMaybe)
 import GHC.Generics (Generic)
 import Restaurant
@@ -68,7 +67,7 @@ addUserToDb conn (U.User i s) = do
     putStrLn $ "adding User " ++ show i ++ " with session " ++ show s
 
 data Like = Like
-    { userId :: !String
+    { userId :: !U.UserId
     , restaurantId :: !String
     }
     deriving (Show, Generic)
@@ -79,11 +78,11 @@ addLikeToDb conn (Like u r) = do
     putStrLn $ "adding Like for User " ++ show u ++ " Restaurant " ++ show r
     execute conn "INSERT INTO likes (userId, restaurantId) VALUES (?, ?)" (u, r)
 
-getUser :: Connection -> String -> IO (Maybe U.User)
+getUser :: Connection -> U.UserId -> IO (Maybe U.User)
 getUser conn u =
-    join . listToMaybe <$> query conn "SELECT userId, session FROM users WHERE userId = ?" (Only u)
+    listToMaybe <$> query conn "SELECT userId, session FROM users WHERE userId = ?" (Only u)
 
-likedRestaurants :: Connection -> U.Session -> IO [Restaurant]
+likedRestaurants :: Connection -> U.SessionId -> IO [Restaurant]
 likedRestaurants conn s =
     query
         conn

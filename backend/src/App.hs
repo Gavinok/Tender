@@ -29,8 +29,6 @@ import Web.Scotty (
 
 import Data.Aeson (FromJSON)
 
-import Data.UUID (UUID)
-import Data.UUID.V4 (nextRandom)
 import Db
 import Restaurant
 import qualified User as U
@@ -41,9 +39,6 @@ data Env = Env
     { envDbPath :: FilePath
     , envYelpKey :: YelpAPIKey
     }
-
-sessionId :: IO UUID
-sessionId = nextRandom
 
 {- | A preset version of cors with added OPTIONS method and
    Content-Type, Authorization headers
@@ -98,7 +93,7 @@ getRes conn k loc restaurantId = do
                         _ -> pure $ Left $ "Failed to get restaurants image " ++ show maybeImg
 
 data RestaurantDecision = RestaurantDecision
-    { id :: !String
+    { id :: !U.UserId
     , likedRestaurant :: !(Maybe String)
     }
     deriving (Generic, Show)
@@ -127,7 +122,7 @@ app env = scotty 5001 $ do
             options "/newsession" $ text "success"
             get "/newsession" $ do
                 liftIO $ putStrLn "Getting Session"
-                session <- liftIO sessionId
+                session <- liftIO U.newSessionId
                 liftIO $ print "hello"
                 json session
 
@@ -135,8 +130,8 @@ app env = scotty 5001 $ do
             get "/addtosession/:session" $ do
                                     liftIO $ putStrLn "Adding To Session"
                                     sessionString <- pathParam "session"
-                                    uid <- liftIO sessionId
-                                    let session = U.fromText sessionString
+                                    uid <- liftIO U.newUserId
+                                    let session = U.sessionFromText sessionString
                                     case session of
                                       Nothing -> json uid
                                       Just s -> do liftIO $ withConn $ \c -> addUserToDb c (U.User uid s)
