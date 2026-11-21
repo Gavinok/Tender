@@ -21,18 +21,18 @@ import Effect.Aff (Aff)
 import Effect.Aff.Compat (EffectFnAff, fromEffectFnAff)
 import Tender.Types (Loc, SessionId(..), Url)
 import Web.HTML (window)
-import Web.HTML.Location (hostname, origin, pathname, protocol)
+import Web.HTML.Location (origin, pathname)
 import Web.HTML.Window (location)
 
 foreign import _geolocation :: EffectFnAff Loc
 
--- | The backend runs on port 5001 of the host that served the page
+-- | The backend is reached through the same origin under /api, so it works
+-- | behind a tunnel or reverse proxy. In development parcel forwards /api to
+-- | the backend on port 5001 (see .proxyrc.json).
 backendUrl :: String -> Effect Url
 backendUrl path = do
-  loc <- location =<< window
-  proto <- protocol loc
-  host <- hostname loc
-  pure $ proto <> "//" <> host <> ":5001/" <> path
+  o <- origin =<< location =<< window
+  pure $ o <> "/api/" <> path
 
 -- | Ask the browser for the user's location. Fails if they refuse.
 geolocation :: Aff Loc
