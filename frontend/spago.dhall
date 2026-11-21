@@ -2,6 +2,7 @@
 , dependencies =
   [ "aff"
   , "arrays"
+  , "bifunctors"
   , "console"
   , "effect"
   , "either"

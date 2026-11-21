@@ -19,14 +19,15 @@ module Main
 import Prelude
 
 import Data.Array (last, cons, elem, length)
-import Data.Either (Either(..))
+import Data.Bifunctor (lmap)
+import Data.Either (Either(..), either)
 import Data.Maybe (Maybe(..))
 import Data.String (split, Pattern(..))
 import Effect (Effect)
-import Effect.Aff (Error, makeAff, Aff)
+import Effect.Aff (Aff, Error, attempt, makeAff, message)
 import Effect.Aff.Class (class MonadAff, liftAff)
 import Effect.Class (liftEffect)
-import Fetch (Method(..), fetch)
+import Fetch (Method(..), Response, fetch)
 import Flame (QuerySelector(..), Html, (:>), ListUpdate)
 import Flame as F
 import Flame.Html.Attribute as HA
@@ -70,27 +71,46 @@ derive newtype instance Show RestaurantId
 derive newtype instance ReadForeign RestaurantId
 derive newtype instance WriteForeign RestaurantId
 
-createSession :: Aff (Maybe SessionId)
-createSession = do
-  { status, text } <-
-    fetch (backendUrl <> "newsession")
-      { method: GET
-      , headers: { "Content-Type": "application/json" }
-      }
-  case status of
-    200 -> JSON.readJSON_ <$> text
-    _ -> pure Nothing
+data ApiError
+  = NotFound ErrorMessage
+  | Failed ErrorMessage
 
-joinSession :: SessionId -> Aff (Maybe UserId)
-joinSession (SessionId s) = do
-  { status, text } <-
-    fetch (backendUrl <> "addtosession/" <> s)
-      { method: GET
-      , headers: { "Content-Type": "application/json" }
-      }
-  case status of
-    200 -> JSON.readJSON_ <$> text
-    _ -> pure Nothing
+-- | Decode a 200 response, or use the message from an error response
+decode
+  :: forall a
+   . ReadForeign a
+  => Either Error Response
+  -> Aff (Either ApiError a)
+decode (Left e) = pure $ Left $ Failed $ "Could not reach the server: " <> message e
+decode (Right { status, text }) = do
+  body <- text
+  pure case status of
+    200 -> lmap (Failed <<< ("Unexpected response: " <> _) <<< show) (JSON.readJSON body)
+    404 -> Left $ NotFound $ errorMessage body
+    _ -> Left $ Failed $ errorMessage body
+  where
+  errorMessage body = case JSON.readJSON body of
+    Right ({ error } :: { error :: String }) -> error
+    Left _ -> "The server responded with " <> show status
+
+get :: forall a. ReadForeign a => Url -> Aff (Either ApiError a)
+get url = decode =<< attempt (fetch url { method: GET })
+
+post :: forall body a. WriteForeign body => ReadForeign a => Url -> body -> Aff (Either ApiError a)
+post url body =
+  decode =<< attempt
+    ( fetch url
+        { method: POST
+        , headers: { "Content-Type": "application/json" }
+        , body: JSON.writeJSON body
+        }
+    )
+
+createSession :: Aff (Either ApiError SessionId)
+createSession = get (backendUrl <> "newsession")
+
+joinSession :: SessionId -> Aff (Either ApiError UserId)
+joinSession (SessionId s) = get (backendUrl <> "addtosession/" <> s)
 
 geolocation :: forall m. MonadAff m => m Loc
 geolocation =
@@ -131,6 +151,7 @@ data Screen
   = Fetching
   | Swiping Restaurant
   | Matched Restaurant
+  | NoneLeft
 
 -- | The model represents the state of the app
 data Model
@@ -151,24 +172,14 @@ data Message
   | Continue
   | Show Restaurant
   | GotMatch Restaurant
+  | OutOfRestaurants
   | FailedToLoad ErrorMessage
 
-post :: forall body. WriteForeign body => Url -> body -> Aff (Maybe Restaurant)
-post url body = do
-  { status, text } <-
-    fetch url
-      { method: POST
-      , headers: { "Content-Type": "application/json" }
-      , body: JSON.writeJSON body
-      }
-  case status of
-    200 -> JSON.readJSON_ <$> text
-    _ -> pure Nothing
-
-sendLiked :: UserId -> Maybe RestaurantId -> Aff (Maybe Restaurant)
+-- | Record a like (or a dislike with `Nothing`), returning the restaurant if it is now a match
+sendLiked :: UserId -> Maybe RestaurantId -> Aff (Either ApiError (Maybe Restaurant))
 sendLiked user liked = post (backendUrl <> "liked") { id: user, likedRestaurant: liked }
 
-getRestaurant :: Loc -> Maybe RestaurantId -> Aff (Maybe Restaurant)
+getRestaurant :: Loc -> Maybe RestaurantId -> Aff (Either ApiError Restaurant)
 getRestaurant loc after = post (backendUrl <> "restaurant") { loc, restaurantId: after }
 
 -- | Ask for the restaurant after the given one
@@ -176,8 +187,18 @@ nextRestaurant :: Loc -> Maybe RestaurantId -> Aff (Maybe Message)
 nextRestaurant loc after = Just <<< toMessage <$> getRestaurant loc after
   where
   toMessage = case _ of
-    Nothing -> FailedToLoad "API did not return a restaurant"
-    Just r -> Show r
+    Left (NotFound _) -> OutOfRestaurants
+    Left (Failed e) -> FailedToLoad e
+    Right r -> Show r
+
+-- | Show a failed request to the user
+failed :: ApiError -> Message
+failed = case _ of
+  NotFound e -> FailedToLoad e
+  Failed e -> FailedToLoad e
+
+orFail :: forall a. (a -> Message) -> Either ApiError a -> Message
+orFail = either failed
 
 -- | The session in the page url, if any
 existingSession :: Effect (Maybe SessionId)
@@ -202,9 +223,7 @@ update model = case model, _ of
         found <- liftEffect existingSession
         case found of
           Just session -> pure $ JoinSession session
-          Nothing -> createSession <#> case _ of
-            Nothing -> FailedToLoad "Could not get a session from server"
-            Just s -> JoinSession s
+          Nothing -> orFail JoinSession <$> createSession
     ]
   _, JoinSession session -> QR session :> []
 
@@ -212,9 +231,7 @@ update model = case model, _ of
     [ do
         loc <- geolocation
         user <- joinSession session
-        pure $ Just case user of
-          Just u -> Started u loc
-          Nothing -> FailedToLoad "Could not join the session"
+        pure $ Just $ orFail (\u -> Started u loc) user
     ]
   _, Started user loc ->
     Active { user, loc, matches: [] } Fetching :> [ nextRestaurant loc Nothing ]
@@ -223,8 +240,9 @@ update model = case model, _ of
     [ do
         match <- sendLiked swiper.user (Just r.id)
         case match of
-          Just m | not (elem m.id (_.id <$> swiper.matches)) -> pure $ Just $ GotMatch m
-          _ -> nextRestaurant swiper.loc (Just r.id)
+          Left e -> pure $ Just $ failed e
+          Right (Just m) | not (elem m.id (_.id <$> swiper.matches)) -> pure $ Just $ GotMatch m
+          Right _ -> nextRestaurant swiper.loc (Just r.id)
     ]
   Active swiper (Swiping r), Dislike -> model :>
     [ sendLiked swiper.user Nothing *> nextRestaurant swiper.loc (Just r.id) ]
@@ -234,6 +252,7 @@ update model = case model, _ of
   Active swiper _, Show r -> Active swiper (Swiping r) :> []
   Active swiper _, GotMatch r ->
     Active swiper { matches = cons r swiper.matches } (Matched r) :> []
+  Active swiper _, OutOfRestaurants -> Active swiper NoneLeft :> []
 
   -- Anything else is a stale message, e.g. from a double click
   _, _ -> model :> []
@@ -337,6 +356,16 @@ view (QR session@(SessionId s)) =
     ]
 
 view (Active _ Fetching) = loading
+
+view (Active { matches } NoneLeft) =
+  HE.main "main"
+    [ HE.div [ HA.class' "loading-main" ]
+        [ HE.text $ "No more restaurants nearby. " <> case length matches of
+            0 -> "You didn't get any matches."
+            1 -> "You got 1 match."
+            n -> "You got " <> show n <> " matches."
+        ]
+    ]
 
 view (Active { matches } (Swiping r)) =
   HE.main "main"
