@@ -55,17 +55,16 @@ apiCors =
         , corsRequestHeaders = simpleHeaders
         }
 
--- TODO Determine how to propagate these errors rather than using a maybe
 yelpAndStore :: Connection -> YelpAPIKey -> Loc -> IO (Either String [Restaurant])
 yelpAndStore conn k l = do
   apiRes <- reqRes k l
   case apiRes of
-    Was (Series []) -> pure $ Left "No restaurant from API"
-    Was (Series b) -> do
+    Left e -> pure $ Left $ show e
+    Right (Series []) -> pure $ Left "No restaurant from API"
+    Right (Series b) -> do
                 let res =  (\x -> Restaurant x Nothing l) <$> b
                 storeInDB conn res
                 pure $ Right res
-    x -> pure $ Left $ show x
 
 
 -- TODO modify to restrict to never be a maybe URL past this point
@@ -91,10 +90,10 @@ getRes conn k loc restaurantId = do
                 Just (Restaurant b Nothing l) -> do
                     maybeImg <- reqIMG k $ bid b
                     case maybeImg of
-                        Was i -> do
+                        Right i -> do
                             setImage conn (bid b) i
                             pure $ Right (Restaurant b (Just i) l)
-                        _ -> pure $ Left $ "Failed to get restaurants image " ++ show maybeImg
+                        Left e -> pure $ Left $ "Failed to get restaurants image " ++ show e
 
 data RestaurantDecision = RestaurantDecision
     { id :: !U.UserId

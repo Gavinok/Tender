@@ -1,19 +1,20 @@
-module Yelp (YelpAPIKey (..), YelpRequestResult (..), reqRes, reqIMG) where
+{-# LANGUAGE ScopedTypeVariables #-}
+
+module Yelp (YelpAPIKey (..), YelpError (..), reqRes, reqIMG) where
 
 import Restaurant
 
-import Data.Aeson (decode, (.:))
-import qualified Data.Aeson as A
+import Control.Exception (try)
+import Data.Aeson (eitherDecode, withObject, (.:))
 import qualified Data.Aeson.Types as AT
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as S8
 import qualified Data.ByteString.Lazy.Char8 as L8
 import Network.HTTP.Simple (
+    HttpException,
     Request,
-    Response,
     getResponseBody,
     getResponseStatusCode,
-    httpJSON,
     httpLBS,
     parseRequest_,
     setRequestBodyLBS,
@@ -85,34 +86,34 @@ lookupIMG id_ baseReq =
         setRequestMethod "GET" $
             fromPartialYelpReq baseReq
 
-data YelpRequestResult contained x
-    = Was contained
-    | FailedAPIRequest (Response x)
-    | FailedToParse
+data YelpError
+    = -- | The request never got a response
+      YelpUnreachable HttpException
+    | -- | Yelp answered with a non 200 status and this body
+      YelpStatus Int L8.ByteString
+    | -- | The response body was not what we expected
+      YelpParseError String
     deriving (Show)
 
-reqRes :: YelpAPIKey -> Loc -> IO (YelpRequestResult Series (Maybe Series))
-reqRes key loc = do
-    let req = lookupRes loc (defYelpRequest key)
-    resp <- httpJSON req :: IO (Response (Maybe Series))
-    pure $ case getResponseStatusCode resp of
-        200 ->
-            maybe
-                FailedToParse
-                Was
-                $ getResponseBody resp
-        _ -> FailedAPIRequest resp
+{- | Send the request and decode a 200 response with the given parser.
+Network failures are returned rather than thrown.
+-}
+yelpRequest :: (AT.Value -> AT.Parser a) -> Request -> IO (Either YelpError a)
+yelpRequest parser req = do
+    result <- try (httpLBS req)
+    pure $ case result of
+        Left (e :: HttpException) -> Left (YelpUnreachable e)
+        Right resp -> case getResponseStatusCode resp of
+            200 -> either (Left . YelpParseError) Right $ do
+                v <- eitherDecode (getResponseBody resp)
+                AT.parseEither parser v
+            code -> Left (YelpStatus code (getResponseBody resp))
 
-reqIMG :: YelpAPIKey -> String -> IO (YelpRequestResult String L8.ByteString)
-reqIMG key id_ = do
-    let req = lookupIMG id_ (defYelpRequest key)
-    resp <- httpLBS req
-    pure $ case getResponseStatusCode resp of
-        200 -> case decode (getResponseBody resp) of
-            Just (A.Object o) ->
-                maybe
-                    FailedToParse
-                    Was
-                    (AT.parseMaybe (.: "image_url") o :: Maybe String)
-            _ -> FailedToParse
-        _ -> FailedAPIRequest resp
+reqRes :: YelpAPIKey -> Loc -> IO (Either YelpError Series)
+reqRes key l = yelpRequest AT.parseJSON (lookupRes l (defYelpRequest key))
+
+reqIMG :: YelpAPIKey -> String -> IO (Either YelpError String)
+reqIMG key id_ =
+    yelpRequest
+        (withObject "Business" (.: "image_url"))
+        (lookupIMG id_ (defYelpRequest key))
