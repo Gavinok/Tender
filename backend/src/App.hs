@@ -140,10 +140,10 @@ app env = scotty 5001 $ do
 
     get "/addtosession/:session" $ do
         sessionText <- pathParam "session"
-        uid <- liftIO U.newUserId
         case U.sessionFromText sessionText of
-            Nothing -> json uid
+            Nothing -> errorResponse status400 "Invalid session"
             Just s -> do
+                uid <- liftIO U.newUserId
                 liftIO $ withConn $ \c -> addUserToDb c (U.User uid s)
                 json uid
 
