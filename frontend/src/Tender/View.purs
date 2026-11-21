@@ -36,7 +36,7 @@ view (Active swiper screen) =
             , actionBar { nope: Dislike, like: Like }
             -- Start loading the next photo so it's there when this card goes
             , HE.div [ HA.class' "hidden" ]
-                (map (\p -> HE.img [ HA.src (photoUrl p), HA.alt "" ]) (maybe [] pure (head swiper.upcoming >>= _.photo)))
+                (map (\url -> HE.img [ HA.src url, HA.alt "" ]) (maybe [] pure (head swiper.upcoming >>= _.photo >>= photoUrl)))
             ]
         Matched r -> celebration r Continue
     ]

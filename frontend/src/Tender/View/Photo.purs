@@ -1,4 +1,4 @@
--- | Restaurant photos from Google and the attribution Google requires
+-- | Restaurant photos and the attribution each source requires
 module Tender.View.Photo (restaurantPhoto, photoCredit, mapsLink) where
 
 import Prelude
@@ -13,25 +13,30 @@ import Tender.View.Icon (Icon(..), icon)
 -- | The restaurant's photo filling an element with the given classes, or a
 -- | placeholder for places without one
 restaurantPhoto :: forall a. Restaurant -> String -> Html a
-restaurantPhoto r classes = case r.photo of
-  Just p -> HE.img [ HA.src (photoUrl p), HA.alt "", HA.class' ("object-cover " <> classes) ]
+restaurantPhoto r classes = case r.photo >>= photoUrl of
+  Just url -> HE.img [ HA.src url, HA.alt "", HA.class' ("object-cover " <> classes) ]
   Nothing ->
     HE.div [ HA.class' ("grid place-items-center bg-gradient-to-br from-brand-400 to-brand-700 text-white/40 " <> classes) ]
       [ icon Utensils "h-1/3 w-1/3" ]
 
--- | "Photo: <author>", linking to the author's profile
+-- | Credit for the photo's author, or for OpenStreetMap's data
 photoCredit :: forall a. Restaurant -> String -> Html a
-photoCredit r classes = case r.photo >>= _.author of
-  Nothing -> HE.text ""
-  Just author ->
+photoCredit r classes = case r.source, r.photo >>= _.author of
+  "openstreetmap", _ ->
+    HE.p [ HA.class' ("text-xs " <> classes) ]
+      [ HE.a [ HA.href "https://www.openstreetmap.org/copyright", HA.target "_blank", HA.rel "noopener", HA.class' "underline" ]
+          [ HE.text "© OpenStreetMap contributors" ]
+      ]
+  _, Just author ->
     HE.p [ HA.class' ("text-xs " <> classes) ]
       [ HE.text "Photo: "
       , case author.uri of
           Just uri -> HE.a [ HA.href uri, HA.target "_blank", HA.rel "noopener", HA.class' "underline" ] [ HE.text author.name ]
           Nothing -> HE.text author.name
       ]
+  _, Nothing -> HE.text ""
 
--- | Link to the place on Google Maps. Google asks for exactly "Google Maps",
+-- | Link to the place on its source. Google asks for exactly "Google Maps",
 -- | not wrapped or translated, preferably in Roboto.
 mapsLink :: forall a. Restaurant -> String -> Html a
 mapsLink r classes = case r.url of
@@ -44,4 +49,10 @@ mapsLink r classes = case r.url of
       , HA.createAttribute "translate" "no"
       , HA.class' ("flex items-center gap-1 whitespace-nowrap font-['Roboto',Arial,sans-serif] " <> classes)
       ]
-      [ HE.text "Google Maps", icon ExternalLink "h-4 w-4" ]
+      [ HE.text (sourceName r.source), icon ExternalLink "h-4 w-4" ]
+
+sourceName :: String -> String
+sourceName = case _ of
+  "yelp" -> "Yelp"
+  "openstreetmap" -> "OpenStreetMap"
+  _ -> "Google Maps"

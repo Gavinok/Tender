@@ -20,13 +20,14 @@ import Test.Spec.Runner.Node (runSpecAndExitProcess)
 
 restaurant :: String -> Restaurant
 restaurant id =
-  { id: RestaurantId id
+  { source: "google"
+  , id: RestaurantId id
   , name: id
   , url: Just "https://maps.google.com/?cid=1"
   , price: Nothing
   , rating: Just 4.0
   , category: Nothing
-  , photo: Just { name: "places/" <> id <> "/photos/p1", author: Just { name: "Sam", uri: Just "https://maps.google.com/contrib/1" } }
+  , photo: Just { name: Just ("places/" <> id <> "/photos/p1"), url: Nothing, author: Just { name: "Sam", uri: Just "https://maps.google.com/contrib/1" } }
   }
 
 -- | A place with nothing but a name, as Google sometimes returns
@@ -134,6 +135,11 @@ main = runSpecAndExitProcess [ consoleReporter ] do
       renders (Active swiper (Swiping (restaurant "a"))) "src=\"/api/photo?name=places/a/photos/p1\""
       renders (Active swiper (Swiping (restaurant "a"))) "Photo: "
       renders (Active swiper (Swiping (restaurant "a"))) ">Google Maps<"
+    it "credits OpenStreetMap for its places" do
+      renders (Active swiper (Swiping ((bare "Pho Real") { source = "openstreetmap", url = Just "https://www.openstreetmap.org/node/1" }))) "© OpenStreetMap contributors"
+      renders (Active swiper (Swiping ((bare "Pho Real") { source = "openstreetmap", url = Just "https://www.openstreetmap.org/node/1" }))) ">OpenStreetMap<"
+    it "loads Yelp photos straight from their url" do
+      renders (Active swiper (Swiping ((restaurant "a") { source = "yelp", photo = Just { name: Nothing, url: Just "https://s3-media1.fl.yelpcdn.com/a.jpg", author: Nothing } }))) "src=\"https://s3-media1.fl.yelpcdn.com/a.jpg\""
     it "copes with a place that has no photo, rating or link" do
       renders (Active swiper (Swiping (bare "Mystery Diner"))) "Mystery Diner"
     it "celebrates a match" do

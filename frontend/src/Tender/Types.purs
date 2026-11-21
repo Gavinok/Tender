@@ -13,7 +13,7 @@ module Tender.Types
 
 import Prelude
 
-import Data.Maybe (Maybe)
+import Data.Maybe (Maybe(..))
 import Yoga.JSON (class ReadForeign, class WriteForeign)
 
 newtype UserId = UserId String
@@ -43,12 +43,14 @@ type Url = String
 -- | Who took a photo. Google requires showing this with the photo.
 type Author = { name :: String, uri :: Maybe Url }
 
--- | A photo from Google Places, by its resource name
-type Photo = { name :: String, author :: Maybe Author }
+-- | A Google photo's resource name, or the url of a public image
+type Photo = { name :: Maybe String, url :: Maybe Url, author :: Maybe Author }
 
--- | From Google Places. Kept only for the session, as Google's terms require.
+-- | From Google Places, Yelp or OpenStreetMap, as given by `source`. Kept
+-- | only for the session, as Google's and Yelp's terms require.
 type Restaurant =
-  { id :: RestaurantId
+  { source :: String
+  , id :: RestaurantId
   , name :: String
   -- | The place on Google Maps
   , url :: Maybe Url
@@ -58,11 +60,15 @@ type Restaurant =
   , photo :: Maybe Photo
   }
 
--- | The backend redirects this to the image, keeping the API key off the page.
--- | Resource names only contain letters, digits, - and _ besides the slashes,
--- | so they don't need escaping.
-photoUrl :: Photo -> Url
-photoUrl p = "/api/photo?name=" <> p.name
+-- | Where to load the photo from. Google photos go through the backend, which
+-- | redirects to the image and keeps the API key off the page. Their resource
+-- | names only contain letters, digits, - and _ besides the slashes, so they
+-- | don't need escaping.
+photoUrl :: Photo -> Maybe Url
+photoUrl p = case p.url, p.name of
+  Just url, _ -> Just url
+  Nothing, Just name -> Just ("/api/photo?name=" <> name)
+  Nothing, Nothing -> Nothing
 
 -- | Location of the current user
 type Loc = { latitude :: Number, longitude :: Number }
