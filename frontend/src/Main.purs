@@ -2,16 +2,17 @@ module Main
   ( ErrorMessage
   , Loc
   , Message(..)
-  , Model
-  , Price
+  , Model(..)
   , Restaurant
-  , RestaurantId
-  , SessionId
+  , RestaurantId(..)
+  , Screen(..)
+  , SessionId(..)
+  , Swiper
   , Url
-  , UserId
-  , btn
+  , UserId(..)
   , init
   , main
+  , update
   , view
   ) where
 
@@ -25,7 +26,6 @@ import Effect (Effect)
 import Effect.Aff (Error, makeAff, Aff)
 import Effect.Aff.Class (class MonadAff, liftAff)
 import Effect.Class (liftEffect)
-import Effect.Console (log)
 import Fetch (Method(..), fetch)
 import Flame (QuerySelector(..), Html, (:>), ListUpdate)
 import Flame as F
@@ -37,6 +37,7 @@ import Flame.Types (NodeData)
 import Web.HTML (window)
 import Web.HTML.Location (href)
 import Web.HTML.Window (location)
+import Yoga.JSON (class ReadForeign, class WriteForeign)
 import Yoga.JSON as JSON
 
 foreign import _geolocation
@@ -49,6 +50,26 @@ foreign import _geolocation
 backendUrl :: String
 backendUrl = "http://localhost:5001/"
 
+newtype UserId = UserId String
+
+derive newtype instance Eq UserId
+derive newtype instance Show UserId
+derive newtype instance ReadForeign UserId
+derive newtype instance WriteForeign UserId
+
+newtype SessionId = SessionId String
+
+derive newtype instance Eq SessionId
+derive newtype instance Show SessionId
+derive newtype instance ReadForeign SessionId
+
+newtype RestaurantId = RestaurantId String
+
+derive newtype instance Eq RestaurantId
+derive newtype instance Show RestaurantId
+derive newtype instance ReadForeign RestaurantId
+derive newtype instance WriteForeign RestaurantId
+
 createSession :: Aff (Maybe SessionId)
 createSession = do
   { status, text } <-
@@ -60,8 +81,8 @@ createSession = do
     200 -> JSON.readJSON_ <$> text
     _ -> pure Nothing
 
-joinSession :: SessionId → Aff (Maybe UserId)
-joinSession s = do
+joinSession :: SessionId -> Aff (Maybe UserId)
+joinSession (SessionId s) = do
   { status, text } <-
     fetch (backendUrl <> "addtosession/" <> s)
       { method: GET
@@ -71,52 +92,25 @@ joinSession s = do
     200 -> JSON.readJSON_ <$> text
     _ -> pure Nothing
 
-geolocation :: forall m. MonadAff m => m { latitude :: Number, longitude :: Number }
+geolocation :: forall m. MonadAff m => m Loc
 geolocation =
   liftAff
     $ makeAff \cb ->
         _geolocation Right Left cb $> mempty
 
 -- TODO replace localhost url with our real url
-sessionUrl ∷ String → String
-sessionUrl session = "http://localhost:1234/" <> session
+sessionUrl :: SessionId -> String
+sessionUrl (SessionId session) = "http://localhost:1234/" <> session
 
 type ErrorMessage = String
 
-type RestaurantId = String
--- | This datatype is used to signal events to `update`
-data Message
-  = DeterminSession
-  | JoinSession SessionId
-  | StartSwiping
-  | Like
-  | Dislike
-  | FailedToLoad ErrorMessage
-  | NextRestaurant Loc UserId (Maybe RestaurantId)
-  | Matched Restaurant Loc UserId
-  | Finish Restaurant Loc UserId
-
-type UserId = String
-type SessionId = String
-type Matches = Array Restaurant
-
--- | The model represents the state of the app
-data Model
-  = Loading
-  | QR SessionId
-  | Swiping Matches Restaurant Loc UserId
-  | Match Matches Restaurant Loc UserId
-  | ServerError ErrorMessage
-
 type Url = String
 
-type Price = Maybe String
-
 type Restaurant =
-  { id :: String
+  { id :: RestaurantId
   , name :: String
-  , url ∷ String
-  , price :: Price
+  , url :: Url
+  , price :: Maybe String
   , rating :: Number
   , imageLink :: Url
   , category :: Maybe String
@@ -125,159 +119,126 @@ type Restaurant =
 -- | Location of the current user
 type Loc = { latitude :: Number, longitude :: Number }
 
--- | Location of the current user
-type RestaurantDecision =
-  { id :: String
-  , likedRestaurant :: (Maybe String)
+-- | What we know once the user has joined a session
+type Swiper =
+  { user :: UserId
+  , loc :: Loc
+  , matches :: Array Restaurant
   }
 
-apiUrl :: Url
-apiUrl = backendUrl <> "restaurant"
+-- | What a user who has joined a session is looking at
+data Screen
+  = Fetching
+  | Swiping Restaurant
+  | Matched Restaurant
 
-updateUrl :: Url
-updateUrl = backendUrl <> "liked"
+-- | The model represents the state of the app
+data Model
+  = Loading
+  | QR SessionId
+  | Active Swiper Screen
+  | ServerError ErrorMessage
 
-readApi :: String -> Maybe Restaurant
-readApi = JSON.readJSON_
+-- | This datatype is used to signal events to `update`
+data Message
+  = DetermineSession
+  | JoinSession SessionId
+  | StartSwiping
+  | Started UserId Loc
+  | Like
+  | Dislike
+  -- | Skip past the current match and keep swiping
+  | Continue
+  | Show Restaurant
+  | GotMatch Restaurant
+  | FailedToLoad ErrorMessage
+
+post :: forall body. WriteForeign body => Url -> body -> Aff (Maybe Restaurant)
+post url body = do
+  { status, text } <-
+    fetch url
+      { method: POST
+      , headers: { "Content-Type": "application/json" }
+      , body: JSON.writeJSON body
+      }
+  case status of
+    200 -> JSON.readJSON_ <$> text
+    _ -> pure Nothing
+
+sendLiked :: UserId -> Maybe RestaurantId -> Aff (Maybe Restaurant)
+sendLiked user liked = post (backendUrl <> "liked") { id: user, likedRestaurant: liked }
+
+getRestaurant :: Loc -> Maybe RestaurantId -> Aff (Maybe Restaurant)
+getRestaurant loc after = post (backendUrl <> "restaurant") { loc, restaurantId: after }
+
+-- | Ask for the restaurant after the given one
+nextRestaurant :: Loc -> Maybe RestaurantId -> Aff (Maybe Message)
+nextRestaurant loc after = Just <<< toMessage <$> getRestaurant loc after
+  where
+  toMessage = case _ of
+    Nothing -> FailedToLoad "API did not return a restaurant"
+    Just r -> Show r
+
+-- | The session in the page url, if any
+existingSession :: Effect (Maybe SessionId)
+existingSession = do
+  h <- href =<< location =<< window
+  pure case last (split (Pattern "/") h) of
+    Nothing -> Nothing
+    Just "" -> Nothing
+    Just s -> Just (SessionId s)
 
 -- | Initial state of the app
 init :: Model
 init = Loading
 
-skipDuplicateRestaurant :: Model -> Restaurant -> Message
-skipDuplicateRestaurant (Swiping match ogr loc sess) newr =
-  if ogr == newr then
-    NextRestaurant loc sess (Just ogr.id)
-  else
-    Finish newr loc sess
-
-skipDuplicateRestaurant _ _ = FailedToLoad "Attempted to determine restaurant when no restaurant is set"
-
-newtype JsonString = JsonString String
-
-post :: JsonString -> Url -> Aff (Maybe Restaurant)
-post (JsonString x) url = do
-  { status, text } <-
-    fetch url
-      { method: POST
-      , headers: { "Content-Type": "application/json" }
-      , body: x
-      }
-  liftEffect $ log $ "post got a " <> (show status)
-  case status of
-    200 -> readApi <$> text
-    _ -> do
-      t <- text
-      liftEffect $ log $ t
-      pure Nothing
-
-sendLiked :: UserId -> (Maybe String) -> Aff (Maybe Restaurant)
-sendLiked id liked_ =
-  let
-    des :: RestaurantDecision
-    des = ({ id: id, likedRestaurant: liked_ })
-  in
-    post (JsonString $ JSON.writeJSON des)
-      updateUrl
-
-getRestaurant :: Loc → Maybe RestaurantId -> Aff (Maybe Restaurant)
-getRestaurant loc rid = post (JsonString $ JSON.writeJSON { loc: loc, restaurantId: rid }) apiUrl
-
 -- | `update` is called to handle events
 update :: ListUpdate Model Message
-update model = case _ of
-  -- Final states that update the model
-  FailedToLoad e -> ServerError e :> []
-  Finish restaurant loc userId -> case model of
-    Loading → Swiping [] restaurant loc userId :> []
-    (QR _) → Swiping [] restaurant loc userId :> []
-    (Swiping m _ _ _) → Swiping m restaurant loc userId :> []
-    (Match m _ _ _) → Swiping m restaurant loc userId :> []
-    _ → ServerError "Attempted to finish from invalid state" :> []
+update model = case model, _ of
+  _, FailedToLoad e -> ServerError e :> []
 
-  Matched r l u -> case model of
-    (Swiping m _ _ _) → Match (cons r m) r l u :> []
-    _ → ServerError "Attempted to match from non swiping state" :> []
-  JoinSession session → QR session :> []
-  -- Events coming from the UI
-  DeterminSession → model :>
+  _, DetermineSession -> model :>
     [ Just <$> do
-        existingSession ← liftEffect $ do
-          w ← window
-          l ← location w
-          h <- href l
-          let extension = last (split (Pattern "/") h)
-          pure case extension of
-            Nothing → Nothing
-            Just "" → Nothing
-            Just _ → extension
-        case existingSession of
+        found <- liftEffect existingSession
+        case found of
           Just session -> pure $ JoinSession session
-          Nothing -> do
-            session <- createSession
-            pure case session of
-              Nothing → FailedToLoad "Could not get a session from server"
-              Just s → JoinSession s
+          Nothing -> createSession <#> case _ of
+            Nothing -> FailedToLoad "Could not get a session from server"
+            Just s -> JoinSession s
     ]
-  StartSwiping -> model :>
-    [ Just <$> case model of
-        (QR session) → do
-          loc <- geolocation
-          user ← joinSession session
-          show user # liftEffect <<< log
-          pure $ case user of
-            Just u → NextRestaurant loc u Nothing
-            Nothing → StartSwiping
-        _ → pure $ FailedToLoad "StartSwiping Can only be entered from QR"
+  _, JoinSession session -> QR session :> []
+
+  QR session, StartSwiping -> model :>
+    [ do
+        loc <- geolocation
+        user <- joinSession session
+        pure $ Just case user of
+          Just u -> Started u loc
+          Nothing -> FailedToLoad "Could not join the session"
     ]
+  _, Started user loc ->
+    Active { user, loc, matches: [] } Fetching :> [ nextRestaurant loc Nothing ]
 
-  Like ->
-    model
-      :>
-        [ Just
-            <$> case model of
-              Swiping m r l u -> do
-                maybeMatch <- sendLiked u (Just r.id)
-                "liked " <> show r # liftEffect <<< log
-                "got " <> show maybeMatch # liftEffect <<< log
-                pure case maybeMatch of
-                  Just match ->
-                    if elem match m then NextRestaurant l u (Just r.id)
-                    else Matched match l u
-                  Nothing -> NextRestaurant l u (Just r.id)
-              _ -> pure $ FailedToLoad "Attempted to like while not swiping"
-        ]
-  Dislike ->
-    model
-      :>
-        [ Just
-            <$> case model of
-              Swiping m r l u -> sendLiked u Nothing *> (pure $ NextRestaurant l u (Just r.id))
-              _ -> pure $ FailedToLoad "Attempted to dislike while not swiping"
-        ]
-  -- Change this to match the yelp API
-  -- For some reason this seems to be using options rather than GET
-  NextRestaurant loc s rid ->
-    model
-      :>
-        [ Just <$> do
-            maybeRes <- getRestaurant loc rid
-            "nextrestaurant" <> show maybeRes # liftEffect <<< log
-            pure
-              $ case maybeRes of
-                  Nothing -> FailedToLoad "API did not return a restaurant"
-                  Just res -> case model of
-                    Loading -> Finish res loc s
-                    QR _ → Finish res loc s
-                    Match _ _ _ _ → Finish res loc s
-                    Swiping _ _ _ _ -> skipDuplicateRestaurant model res
-                    _ -> FailedToLoad
-                      "Attempted to find next restaurant when not swiping or starting a session"
-        ]
+  Active swiper (Swiping r), Like -> model :>
+    [ do
+        match <- sendLiked swiper.user (Just r.id)
+        case match of
+          Just m | not (elem m.id (_.id <$> swiper.matches)) -> pure $ Just $ GotMatch m
+          _ -> nextRestaurant swiper.loc (Just r.id)
+    ]
+  Active swiper (Swiping r), Dislike -> model :>
+    [ sendLiked swiper.user Nothing *> nextRestaurant swiper.loc (Just r.id) ]
+  Active swiper (Matched r), Continue -> model :>
+    [ nextRestaurant swiper.loc (Just r.id) ]
 
-type Color = String
+  Active swiper _, Show r -> Active swiper (Swiping r) :> []
+  Active swiper _, GotMatch r ->
+    Active swiper { matches = cons r swiper.matches } (Matched r) :> []
 
-headerText :: forall b252 h253. ToNode b252 h253 Html => b252 -> Html h253
+  -- Anything else is a stale message, e.g. from a double click
+  _, _ -> model :> []
+
+headerText :: forall a b. ToNode a b Html => a -> Html b
 headerText text = HE.h1
   [ HA.class'
       "text-xl font-bold"
@@ -331,7 +292,7 @@ btn m t c =
   in
     HE.button (attrs <> c) t
 
-grey :: forall a272. Array (NodeData a272)
+grey :: forall a. Array (NodeData a)
 grey = [ HA.class' "bg-gray-900 hover:bg-gray-800" ]
 
 centered :: forall a. NodeData a
@@ -340,71 +301,51 @@ centered = HA.class' "flex justify-center"
 footer :: forall a b. ToNode b a Html => b -> Html a
 footer content =
   HE.div [ HA.class' "bg-gray-200 py-4 px-6 flex justify-around" ]
-    [ -- HE.div [ HA.class' "footer-content" ]
-      content
+    [ content
     ]
 
 yelplink :: forall a. Restaurant -> Html a
 yelplink r = HE.div [ HA.class' "yelp-link" ]
   [ HE.a [ HA.href r.url, HA.target "_blank", HA.value "Yelp Page" ] "Yelp Page" ]
 
--- | `view` updates the app markup whenever the model is updated
-view :: Model -> Html Message
-view (ServerError e) = HE.main "main" [ HE.text $ "Error: " <> e ]
-
-view Loading =
+loading :: Html Message
+loading =
   HE.main "main"
     [ HE.div [ HA.class' "loading-main" ]
         [ HE.text "LOADING…" ]
     ]
 
-view (QR session) =
+-- | `view` updates the app markup whenever the model is updated
+view :: Model -> Html Message
+view (ServerError e) = HE.main "main" [ HE.text $ "Error: " <> e ]
+
+view Loading = loading
+
+view (QR session@(SessionId s)) =
   HE.main "main"
     [ HE.div [ HA.class' "qr-main" ]
         [ HE.div [ HA.class' "join-button" ]
-            [ HE.a [ HA.href session, HA.value "Join Session" ] "Join Session" ]
+            [ HE.a [ HA.href s, HA.value "Join Session" ] "Join Session" ]
         , HE.img
             [ HA.src $ "https://api.qrserver.com/v1/create-qr-code/?data=" <> sessionUrl session
             , HA.alt ""
             ]
         , HE.div [ HA.class' "my-2" ]
-            [ btn (StartSwiping) "Start Swiping" grey
+            [ btn StartSwiping "Start Swiping" grey
             ]
         ]
     ]
 
--- view (Swiping matches apiResults _ _) =
---   HE.main "main"
---     [ HE.div_
---         [ header $ headerText apiResults.name
---         , HE.div [ HA.class' "main-background" ]
---             [ image apiResults.imageLink
---             , HE.div [ centered ] $ yelplink apiResults
---             , HE.div [ centered ] $ (show $ length matches) <>
---                 if (length matches) == 1 then " Match"
---                 else " Matches"
---             ]
---         , HE.div_
---             [ footer
---                 [ HE.div [ HA.class' "footer-item" ]
---                     $ btn Dislike "-" [ HA.class' "bg-red-900 hover:bg-red-800" ]
+view (Active _ Fetching) = loading
 
---                 , HE.div [ HA.class' "footer-item" ] $ restaurantStats apiResults
-
---                 , HE.div [ HA.class' "footer-item" ]
---                     $ btn Like "+" [ HA.class' "bg-green-900 hover:bg-green-800" ]
---                 ]
---             ]
---         ]
---     ]
-view (Swiping matches apiResults _ _) =
+view (Active { matches } (Swiping r)) =
   HE.main "main"
     [ HE.div [ HA.class' "flex flex-col h-screen" ]
-        [ header $ headerText apiResults.name
+        [ header $ headerText r.name
         , HE.div [ HA.class' "flex-grow overflow-y-auto" ]
             [ HE.div [ HA.class' "flex flex-col items-center py-8" ]
-                [ image apiResults.imageLink
-                , HE.div [ centered ] $ yelplink apiResults
+                [ image r.imageLink
+                , HE.div [ centered ] $ yelplink r
                 , HE.div [ centered ] $ (show $ length matches) <>
                     if (length matches) == 1 then " Match"
                     else " Matches"
@@ -415,7 +356,7 @@ view (Swiping matches apiResults _ _) =
                 [ HE.div [ HA.class' "footer-item" ]
                     $ btn Dislike "-" [ HA.class' "bg-red-900 hover:bg-red-800" ]
 
-                , HE.div [ HA.class' "footer-item" ] $ restaurantStats apiResults
+                , HE.div [ HA.class' "footer-item" ] $ restaurantStats r
 
                 , HE.div [ HA.class' "footer-item" ]
                     $ btn Like "+" [ HA.class' "bg-green-900 hover:bg-green-800" ]
@@ -423,7 +364,8 @@ view (Swiping matches apiResults _ _) =
             ]
         ]
     ]
-view (Match _ r loc id) =
+
+view (Active _ (Matched r)) =
   HE.main "main"
     [ HE.div_
         [ HE.div [ HA.class' "flex justify-center" ] $ headerText "Yay You Got A Match!"
@@ -435,7 +377,7 @@ view (Match _ r loc id) =
         , HE.div_
             [ footer
                 [ HE.div [ HA.class' "footer-item col-start-2" ] $ restaurantStats r
-                , HE.div [ HA.class' "footer-item" ] $ btn (NextRestaurant loc id (Just r.id)) "Continue Anyways" grey
+                , HE.div [ HA.class' "footer-item" ] $ btn Continue "Continue Anyways" grey
                 ]
             ]
         ]
@@ -446,7 +388,7 @@ main :: Effect Unit
 main =
   F.mount_ (QuerySelector "body")
     { init: init :> []
-    , subscribe: [ FSW.onLoad DeterminSession ] -- Load restaurant on startup
+    , subscribe: [ FSW.onLoad DetermineSession ]
     , update
     , view
     }
