@@ -1,17 +1,12 @@
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DerivingStrategies #-}
-{-# LANGUAGE EmptyCase #-}
 {-# LANGUAGE StandaloneDeriving #-}
-{-# LANGUAGE UnicodeSyntax #-}
 module App (server) where
 
 import Control.Monad.IO.Class (liftIO)
 import Data.List (uncons)
-import Database.SQLite.Simple (
-    FromRow (..),
-    ToRow (..)
- )
+import Data.Maybe (listToMaybe)
 import GHC.Generics (Generic)
 import Network.Wai.Middleware.Cors (
     CorsResourcePolicy (corsMethods, corsOrigins, corsRequestHeaders),
@@ -34,7 +29,6 @@ import Web.Scotty (
 
 import Data.Aeson (FromJSON)
 
--- import Data.ByteString.Char8 (putStrLn)
 import Data.UUID (UUID)
 import Data.UUID.V4 (nextRandom)
 import Db
@@ -56,10 +50,6 @@ apiCors =
         , corsMethods = simpleMethods <> ["OPTIONS", "PATCH"]
         , corsRequestHeaders = simpleHeaders
         }
-
-safeHead :: [a] -> Maybe a
-safeHead [] = Nothing
-safeHead (x:_) = Just x
 
 -- TODO Determine how to propagate these errors rather than using a maybe
 yelpAndStore :: YelpAPIKey -> Loc -> IO (Either String [Restaurant])
@@ -87,7 +77,7 @@ getRes k loc restaurantId = do
                                     Just (_, x:_) -> Just x
                                     Just (_, []) -> Nothing
                                     Nothing -> Nothing
-                      Nothing ->  safeHead dbr
+                      Nothing ->  listToMaybe dbr
             case r of
                 Nothing -> pure $ Left $ "No restaurants came back from the db" <> show dbr
                 -- Restaurant already has a image URL
@@ -106,18 +96,8 @@ data RestaurantDecision = RestaurantDecision
     , likedRestaurant :: !(Maybe String)
     }
     deriving (Generic, Show)
-    deriving anyclass (ToRow)
-
-deriving anyclass instance FromRow RestaurantDecision
 
 instance FromJSON RestaurantDecision
-
-type Match = Business
-
-firstElem :: [a] -> Maybe a
-firstElem xs = case xs of
-  [] -> Nothing
-  (x:_) -> Just x
 
 -- curl -X POST -d"{\"latitude\": 48, \"longitude\": -122}" \
 --             http://localhost:5000/hello/gavin
@@ -165,10 +145,7 @@ server = do
                                                         putStr "getting matches"
                                                         (_, matches) <- likedRestaurants s
                                                         print $ "matches where" <> show matches
-                                                        pure $ case matches of
-                                                          [x] -> Just x
-                                                          (x:_) -> Just x
-                                                          [] -> Nothing
+                                                        pure $ listToMaybe matches
                                       (Nothing:_) -> pure Nothing
                                       [] -> pure Nothing
                         liftIO $ print $ " sending " <> show r

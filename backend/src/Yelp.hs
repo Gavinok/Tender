@@ -22,7 +22,6 @@ import Network.HTTP.Simple (
     setRequestMethod,
     setRequestPath,
  )
-import System.Environment.Blank (getEnv)
 
 newtype YelpAPIKey = YelpAPIKey String
 fromKey :: YelpAPIKey -> String
@@ -122,30 +121,3 @@ reqIMG key id_ = do
                     (AT.parseMaybe (.: "image_url") o :: Maybe String)
             _ -> FailedToParse
         _ -> FailedAPIRequest resp
-
---- Tests
-testSeriesReq :: IO ()
-testSeriesReq = do
-    keyMaybe <- getEnv "YELP_KEY"
-    case keyMaybe of
-        Nothing -> fail "Failed to find Yelp Key"
-        Just k -> do
-            res <- reqRes (YelpAPIKey k) (Loc 48 (-122))
-            case res of
-                Was r -> print r
-                _ -> fail "failed request"
-
-testIMGReq :: IO [Char]
-testIMGReq = do
-    keyMaybe <- getEnv "YELP_KEY"
-    case keyMaybe of
-        Nothing -> fail "Failed to find Yelp Key"
-        Just k -> do
-            res <- reqRes (YelpAPIKey k) (Loc 48 (-122))
-            case res of
-                Was (Series s) -> do
-                    r <- reqIMG (YelpAPIKey k) $ bid $ head s
-                    case r of
-                        Was img -> pure img
-                        _ -> fail "failed on image"
-                _ -> fail "failed request"

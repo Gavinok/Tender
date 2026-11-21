@@ -4,7 +4,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE StandaloneDeriving #-}
 
-module Db (addImgToDb, storeInDB, inDB, setupDb, addUserToDb, addLikeToDb, likedRestaurants, LikedRestaurant(..), Like (..), dbClear, getUser) where
+module Db (addImgToDb, storeInDB, inDB, setupDb, addUserToDb, addLikeToDb, likedRestaurants, Like (..), getUser) where
 
 import Database.SQLite.Simple (
     Connection (..),
@@ -15,8 +15,6 @@ import Database.SQLite.Simple (
     execute_,
     open,
     query,
-    query_,
-    toRow,
  )
 import GHC.Generics (Generic)
 import Restaurant
@@ -36,8 +34,6 @@ dbClose :: DbConnection Open -> IO (DbConnection Closed)
 dbClose (DbConnection conn) = do
     close conn
     pure $ DbConnection conn
-
-newtype ClosedDbConnection = ClosedDbConnection () deriving (Show)
 
 setupDb :: IO (DbConnection Open)
 setupDb = do
@@ -81,12 +77,6 @@ addUserToDb (U.User i s) = do
     putStrLn $ "adding User " ++ show i ++ " with session " ++ show s
     dbClose conn
 
-addUserToSession :: U.User -> IO (DbConnection Closed)
-addUserToSession (U.User i s) = do
-    conn <- setupDb
-    execute (connection conn) "INSERT INTO users (userId, session) VALUES (?, ?)" (i, s)
-    putStrLn $ "adding User " ++ show i ++ " with session " ++ show s
-    dbClose conn
 data Like = Like
     { userId :: !String
     , restaurantId :: !String
@@ -102,9 +92,6 @@ addLikeToDb (Like u r) = do
     execute (connection conn) "INSERT INTO likes (userId, restaurantId) VALUES (?, ?)" (u, r)
     dbClose conn
 
-newtype LikedRestaurant = LikedRestaurant {toString :: String} deriving (Generic, Show)
-deriving anyclass instance FromRow LikedRestaurant
-
 getUser :: String -> IO (DbConnection Closed, [Maybe U.User])
 getUser u = do
     conn <- setupDb
@@ -119,22 +106,6 @@ getUser u = do
             )
             [u] ::
             IO [Maybe U.User]
-    c <- dbClose conn
-    pure (c, r)
-
-getFriends :: U.Session -> IO (DbConnection Closed, [Maybe U.User])
-getFriends s = do
-    conn <- setupDb
-    r <-
-        query
-            (connection conn)
-            ( mconcat
-                [ "SELECT userId, session "
-                , "FROM users "
-                , "WHERE users.session = ?"
-                ]
-            )
-            [s]
     c <- dbClose conn
     pure (c, r)
 
@@ -185,50 +156,3 @@ inDB l = do
         x -> do
            putStrLn "Found in db"
            pure $ Right x
-
-dbCheck :: IO (DbConnection Closed)
-dbCheck = do
-    conn <- setupDb
-    let c = connection conn
-    r <- query_ c "SELECT * FROM restaurants" :: IO [Restaurant]
-    print r
-    print $ length r
-    u <- query_ c "SELECT * FROM users" :: IO [Maybe U.User]
-    print u
-    print $ length u
-    v <- query_ c "SELECT * FROM likes" :: IO [Like]
-    print v
-    print $ length v
-    dbClose conn
-
-dbClear :: IO (DbConnection Closed)
-dbClear = do
-    conn <- setupDb
-    let c = connection conn
-    execute_ c "DROP TABLE restaurants"
-    execute_ c "DELETE FROM users"
-    execute_ c "DELETE FROM likes"
-    dbClose conn
-
-db :: IO (DbConnection Closed)
-db = do
-    conn <- setupDb
-    let c = connection conn
-    _ <- storeInDB
-        [ Restaurant
-            (Business "ll" "http://" "name" 10 (Just "$$") [Hours True] [Category "hello"])
-            (Just "https...")
-            (Loc 1 2)
-        ]
-    _ <- storeInDB
-        [ Restaurant
-            (Business "lt" "http://" "lame" 10 (Just "4") [Hours True] [Category "hello"])
-            (Just "https...")
-            (Loc 1 8)
-        ]
-    b <- query_ c "SELECT * FROM restaurants WHERE latitude > 0 " :: IO [Restaurant]
-    print b
-    execute_ c "DELETE FROM restaurants WHERE latitude > 0"
-    v <- query_ c "SELECT * FROM restaurants WHERE latitude > 0 " :: IO [Restaurant]
-    print v
-    dbClose conn
