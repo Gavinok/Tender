@@ -57,14 +57,12 @@ initDb path = withDb path $ \conn -> do
 
 -- | Set the image url of the restaurant with the given id
 setImage :: Connection -> String -> String -> IO ()
-setImage conn restaurant img = do
-    putStrLn $ "adding image for " ++ show restaurant
+setImage conn restaurant img =
     execute conn "UPDATE restaurants SET imagelink = ? WHERE id = ?" (img, restaurant)
 
 addUserToDb :: Connection -> U.User -> IO ()
-addUserToDb conn (U.User i s) = do
+addUserToDb conn (U.User i s) =
     execute conn "INSERT INTO users (userId, session) VALUES (?, ?)" (i, s)
-    putStrLn $ "adding User " ++ show i ++ " with session " ++ show s
 
 data Like = Like
     { userId :: !U.UserId
@@ -74,8 +72,7 @@ data Like = Like
     deriving anyclass (ToRow)
 
 addLikeToDb :: Connection -> Like -> IO ()
-addLikeToDb conn (Like u r) = do
-    putStrLn $ "adding Like for User " ++ show u ++ " Restaurant " ++ show r
+addLikeToDb conn (Like u r) =
     execute conn "INSERT INTO likes (userId, restaurantId) VALUES (?, ?)" (u, r)
 
 getUser :: Connection -> U.UserId -> IO (Maybe U.User)

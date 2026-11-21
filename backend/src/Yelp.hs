@@ -96,9 +96,7 @@ data YelpRequestResult contained x
 reqRes :: YelpAPIKey -> Loc -> IO (YelpRequestResult Series (Maybe Series))
 reqRes key loc = do
     let req = lookupRes loc (defYelpRequest key)
-    print req
     resp <- httpJSON req :: IO (Response (Maybe Series))
-    _ <- print resp
     pure $ case getResponseStatusCode resp of
         200 ->
             maybe
@@ -110,7 +108,6 @@ reqRes key loc = do
 reqIMG :: YelpAPIKey -> String -> IO (YelpRequestResult String L8.ByteString)
 reqIMG key id_ = do
     let req = lookupIMG id_ (defYelpRequest key)
-    print req
     resp <- httpLBS req
     pure $ case getResponseStatusCode resp of
         200 -> case decode (getResponseBody resp) of

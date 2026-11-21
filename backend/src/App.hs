@@ -2,7 +2,7 @@
 
 module App (server) where
 
-import Control.Monad.IO.Class (liftIO)
+import Control.Monad.IO.Class (MonadIO, liftIO)
 import Data.List (uncons)
 import Data.Maybe (fromMaybe, listToMaybe)
 import Database.SQLite.Simple (Connection)
@@ -16,18 +16,22 @@ import Network.Wai.Middleware.Cors (
  )
 import System.Environment.Blank (getEnv)
 import Web.Scotty (
+    ActionM,
     get,
     json,
     jsonData,
     middleware,
-    options,
     pathParam,
     post,
     scotty,
-    text,
+    status,
  )
 
-import Data.Aeson (FromJSON)
+import Data.Aeson (FromJSON, object, (.=))
+import Data.Text (Text)
+import Network.HTTP.Types (Status, status400, status404, status502)
+import Network.Wai.Middleware.RequestLogger (logStdout)
+import System.IO (hPutStrLn, stderr)
 
 import Db
 import Restaurant
@@ -100,8 +104,6 @@ data RestaurantDecision = RestaurantDecision
 
 instance FromJSON RestaurantDecision
 
--- curl -X POST -d"{\"latitude\": 48, \"longitude\": -122}" \
---             http://localhost:5000/hello/gavin
 server :: IO ()
 server = do
     keyMaybe <- getEnv "YELP_KEY"
@@ -112,62 +114,53 @@ server = do
             initDb dbPath
             app (Env dbPath (YelpAPIKey key))
 
+logMsg :: MonadIO m => String -> m ()
+logMsg = liftIO . hPutStrLn stderr
+
+-- | Respond with an error status and a message the frontend can show
+errorResponse :: Status -> Text -> ActionM ()
+errorResponse s msg = status s >> json (object ["error" .= msg])
+
+-- | Record the like and return the restaurant if it is now a match
+recordLike :: Connection -> U.User -> String -> IO (Maybe Restaurant)
+recordLike conn user restaurant = do
+    addLikeToDb conn $ Db.Like (U.userId user) restaurant
+    matchedRestaurant conn (U.session user) restaurant
+
 app :: Env -> IO ()
 app env = scotty 5001 $ do
-            let k = envYelpKey env
-                withConn :: (Connection -> IO a) -> IO a
-                withConn = withDb (envDbPath env)
-            middleware (cors $ const $ Just apiCors)
+    let withConn :: (Connection -> IO a) -> IO a
+        withConn = withDb (envDbPath env)
+    middleware logStdout
+    -- Also answers CORS preflight requests
+    middleware (cors $ const $ Just apiCors)
 
-            options "/newsession" $ text "success"
-            get "/newsession" $ do
-                liftIO $ putStrLn "Getting Session"
-                session <- liftIO U.newSessionId
-                liftIO $ print "hello"
-                json session
+    get "/newsession" $
+        liftIO U.newSessionId >>= json
 
-            options "/addtosession/:session" $ text "success"
-            get "/addtosession/:session" $ do
-                                    liftIO $ putStrLn "Adding To Session"
-                                    sessionString <- pathParam "session"
-                                    uid <- liftIO U.newUserId
-                                    let session = U.sessionFromText sessionString
-                                    case session of
-                                      Nothing -> json uid
-                                      Just s -> do liftIO $ withConn $ \c -> addUserToDb c (U.User uid s)
-                                                   json uid
+    get "/addtosession/:session" $ do
+        sessionText <- pathParam "session"
+        uid <- liftIO U.newUserId
+        case U.sessionFromText sessionText of
+            Nothing -> json uid
+            Just s -> do
+                liftIO $ withConn $ \c -> addUserToDb c (U.User uid s)
+                json uid
 
-            options "/liked" $ text "success"
-            post "/liked" $ do
-                d <- jsonData
-                liftIO $ print (d :: RestaurantDecision)
-                case d of
-                    (RestaurantDecision i (Just l)) -> do
-                        r <- liftIO $ withConn $ \c -> do
-                                    addLikeToDb c $ Db.Like i l
-                                    maybeU <- getUser c i
-                                    case maybeU of
-                                      Just (U.User _ s) -> do
-                                                        putStr "getting matches"
-                                                        match <- matchedRestaurant c s l
-                                                        print $ "match was " <> show match
-                                                        pure match
-                                      Nothing -> pure Nothing
-                        liftIO $ print $ " sending " <> show r
-                        json (r :: Maybe Restaurant)
-                    _ -> json (Nothing :: Maybe Restaurant)
+    post "/liked" $ do
+        RestaurantDecision uid liked <- jsonData
+        user <- liftIO $ withConn $ \c -> getUser c uid
+        case (user, liked) of
+            (Nothing, _) -> errorResponse status404 "Unknown user"
+            -- Dislikes are not recorded
+            (Just _, Nothing) -> json (Nothing :: Maybe Restaurant)
+            (Just u, Just r) -> liftIO (withConn $ \c -> recordLike c u r) >>= json
 
-            options "/restaurant" $ text "success"
-            post "/restaurant" $ do
-                liftIO $ print "Getting res"
-                restaurantReq <- jsonData
-                case restaurantReq of
-                    Nothing -> fail "bad"
-                    (Just (NextRestaurant l rId)) -> do
-                        liftIO $ putStrLn "Getting res"
-                        liftIO $ print l
-                        eitherRes <- liftIO $ withConn $ \c -> getRes c k l rId
-                        liftIO $ print eitherRes
-                        case eitherRes of
-                            Left e -> fail e
-                            Right r -> json r
+    post "/restaurant" $ do
+        NextRestaurant l rId <- jsonData
+        res <- liftIO $ withConn $ \c -> getRes c (envYelpKey env) l rId
+        case res of
+            Left e -> do
+                logMsg e
+                errorResponse status502 "Could not load restaurants"
+            Right r -> json r
