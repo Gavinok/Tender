@@ -9,11 +9,11 @@ import Flame.Html.Attribute as HA
 import Flame.Html.Element as HE
 import Tender.App (Message(..), Model(..), Screen(..))
 import Tender.QR (qrDataUrl)
-import Tender.Types (Restaurant)
-import Tender.View.Button (Variant(..), button, linkButton)
+import Tender.View.Button (Variant(..), button)
 import Tender.View.Card (actionBar, restaurantCard)
 import Tender.View.Icon (Icon(..))
 import Tender.View.Layout (centred, page)
+import Tender.View.Match (celebration, matchesSheet)
 import Tender.View.States (cardSkeleton, outOfRestaurants, problem, setting)
 
 heading :: forall a. String -> Html a
@@ -21,14 +21,6 @@ heading text = HE.h1 [ HA.class' "text-4xl font-black leading-tight" ] [ HE.text
 
 blurb :: forall a. String -> Html a
 blurb text = HE.p [ HA.class' "text-lg text-ink/70" ] [ HE.text text ]
-
-photo :: forall a. Restaurant -> Html a
-photo r =
-  HE.img
-    [ HA.class' "aspect-[4/5] w-full rounded-3xl object-cover shadow-card"
-    , HA.src r.imageLink
-    , HA.alt r.name
-    ]
 
 -- | `view` updates the app markup whenever the model is updated
 view :: Model -> Html Message
@@ -52,25 +44,16 @@ view (QR _ link) =
         ]
     ]
 
-view (Active { matches } Fetching) = page (Just (length matches)) [ cardSkeleton ]
-
-view (Active { matches } NoneLeft) = page (Just (length matches)) [ outOfRestaurants matches Retry ]
-
-view (Active { matches } (Swiping r)) =
-  page (Just (length matches))
-    [ HE.div [ HA.class' "flex max-h-[52rem] flex-1 flex-col gap-6" ]
-        [ restaurantCard r
-        , actionBar { nope: Dislike, like: Like }
-        ]
+view (Active swiper screen) =
+  page (Just { count: length swiper.matches, open: ToggleMatches }) $
+    [ case screen of
+        Fetching -> cardSkeleton
+        NoneLeft -> outOfRestaurants swiper.matches Retry
+        Swiping r ->
+          HE.div [ HA.class' "flex max-h-[52rem] flex-1 flex-col gap-6" ]
+            [ restaurantCard r
+            , actionBar { nope: Dislike, like: Like }
+            ]
+        Matched r -> celebration r Continue
     ]
-
-view (Active { matches } (Matched r)) =
-  page (Just (length matches))
-    [ centred
-        [ heading "It's a Match!"
-        , photo r
-        , HE.h2 [ HA.class' "text-3xl font-black" ] [ HE.text r.name ]
-        , linkButton Secondary (Just ExternalLink) "Open in Yelp" r.url
-        , button Primary Nothing "Keep swiping" Continue
-        ]
-    ]
+      <> if swiper.showMatches then [ matchesSheet swiper.matches ToggleMatches ] else []

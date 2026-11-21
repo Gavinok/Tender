@@ -19,7 +19,7 @@ import Effect.Class (liftEffect)
 import Data.Tuple.Nested ((/\))
 import Flame (Update)
 import Tender.Api (ApiError(..), createSession, decide, getRestaurant, joinSession)
-import Tender.Browser (existingSession, geolocation, reload, rememberSession, shareLink)
+import Tender.Browser (existingSession, geolocation, reload, rememberSession, shareLink, vibrate)
 import Tender.Types (ErrorMessage, Loc, Restaurant, RestaurantId, SessionId, Url, UserId)
 
 -- | What we know once the user has joined a session
@@ -27,6 +27,8 @@ type Swiper =
   { user :: UserId
   , loc :: Loc
   , matches :: Array Restaurant
+  -- | Whether the list of matches is open
+  , showMatches :: Boolean
   }
 
 -- | What a user who has joined a session is looking at
@@ -72,6 +74,7 @@ data Message
   | FailedToLoad ErrorMessage
   -- | Start again from the session in the url
   | Retry
+  | ToggleMatches
 
 -- | Ask for the restaurant after the given one
 nextRestaurant :: Loc -> Maybe RestaurantId -> Aff (Maybe Message)
@@ -119,7 +122,7 @@ update model = case model, _ of
         Right loc -> Just <<< orFail (\u -> Started u loc) <$> joinSession session
     ]
   _, Started user loc ->
-    Active { user, loc, matches: [] } Fetching /\ [ nextRestaurant loc Nothing ]
+    Active { user, loc, matches: [], showMatches: false } Fetching /\ [ nextRestaurant loc Nothing ]
 
   Active swiper (Swiping r), Like -> model /\
     [ do
@@ -142,7 +145,9 @@ update model = case model, _ of
 
   Active swiper _, Show r -> Active swiper (Swiping r) /\ []
   Active swiper _, GotMatch r ->
-    Active swiper { matches = cons r swiper.matches } (Matched r) /\ []
+    Active swiper { matches = cons r swiper.matches } (Matched r) /\ [ liftEffect vibrate $> Nothing ]
+  Active swiper screen, ToggleMatches ->
+    Active swiper { showMatches = not swiper.showMatches } screen /\ []
   Active swiper _, OutOfRestaurants -> Active swiper NoneLeft /\ []
 
   -- Anything else is a stale message, e.g. from a double click

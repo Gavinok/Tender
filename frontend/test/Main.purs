@@ -30,7 +30,7 @@ restaurant id =
   }
 
 swiper :: Swiper
-swiper = { user: UserId "u", loc: { latitude: 1.0, longitude: 2.0 }, matches: [] }
+swiper = { user: UserId "u", loc: { latitude: 1.0, longitude: 2.0 }, matches: [], showMatches: false }
 
 -- | The model after a message, and how many requests it started
 step :: Model -> Message -> Tuple Model Int
@@ -50,7 +50,7 @@ main = runSpecAndExitProcess [ consoleReporter ] do
 
     it "records a match" do
       step (Active swiper (Swiping (restaurant "a"))) (GotMatch (restaurant "a"))
-        `shouldEqual` Tuple (Active swiper { matches = [ restaurant "a" ] } (Matched (restaurant "a"))) 0
+        `shouldEqual` Tuple (Active swiper { matches = [ restaurant "a" ] } (Matched (restaurant "a"))) 1
 
     it "sends a like while swiping" do
       step (Active swiper (Swiping (restaurant "a"))) Like
@@ -74,6 +74,10 @@ main = runSpecAndExitProcess [ consoleReporter ] do
     it "moves on from a match" do
       step (Active swiper (Matched (restaurant "a"))) Continue
         `shouldEqual` Tuple (Active swiper (Matched (restaurant "a"))) 1
+
+    it "opens and closes the list of matches" do
+      step (Active swiper (Swiping (restaurant "a"))) ToggleMatches
+        `shouldEqual` Tuple (Active swiper { showMatches = true } (Swiping (restaurant "a"))) 0
 
     it "shows when there are no restaurants left" do
       step (Active swiper (Swiping (restaurant "a"))) OutOfRestaurants
@@ -102,7 +106,7 @@ main = runSpecAndExitProcess [ consoleReporter ] do
       renders (Active swiper (Swiping (restaurant "Pho Real"))) "Pho Real"
       renders (Active swiper (Swiping (restaurant "Pho Real"))) "aria-label=\"0 matches\""
     it "celebrates a match" do
-      renders (Active swiper (Matched (restaurant "a"))) "Match!"
+      renders (Active swiper (Matched (restaurant "a"))) "a match!"
     it "offers to try again after an error" do
       renders (ServerError "Could not reach the server") "Try again"
     it "says when there is nothing left" do

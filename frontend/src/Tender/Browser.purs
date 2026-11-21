@@ -4,6 +4,7 @@ module Tender.Browser
   , geolocation
   , rememberSession
   , reload
+  , vibrate
   , sessionFromPath
   , shareLink
   ) where
@@ -50,6 +51,8 @@ sessionFromPath :: String -> Maybe SessionId
 sessionFromPath path = SessionId <$> last (filter (_ /= "") (split (Pattern "/") path))
 
 foreign import reload :: Effect Unit
+
+foreign import vibrate :: Effect Unit
 
 foreign import _replacePath :: String -> Effect Unit
 

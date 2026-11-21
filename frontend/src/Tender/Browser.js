@@ -20,3 +20,6 @@ export const _geolocation = (onError, onSuccess) => {
 export const reload = () => window.location.reload();
 
 export const _replacePath = (path) => () => window.history.replaceState(null, "", path);
+
+// Ignored by browsers without vibration (desktop, iOS Safari)
+export const vibrate = () => navigator.vibrate?.([60, 40, 120]);
