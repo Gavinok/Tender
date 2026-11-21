@@ -2,6 +2,7 @@ module Tender.Browser
   ( backendUrl
   , existingSession
   , geolocation
+  , sessionFromPath
   , shareLink
   ) where
 
@@ -40,6 +41,8 @@ shareLink (SessionId session) = do
 
 -- | The session in the page url, if any
 existingSession :: Effect (Maybe SessionId)
-existingSession = do
-  path <- pathname =<< location =<< window
-  pure $ SessionId <$> last (filter (_ /= "") (split (Pattern "/") path))
+existingSession = sessionFromPath <$> (pathname =<< location =<< window)
+
+-- | The last segment of a url path, e.g. `/<session>`
+sessionFromPath :: String -> Maybe SessionId
+sessionFromPath path = SessionId <$> last (filter (_ /= "") (split (Pattern "/") path))

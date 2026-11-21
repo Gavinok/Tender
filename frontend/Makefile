@@ -13,3 +13,6 @@ serve:
 clean:
 	rm -rf .cache .spago node_modules .psci_modules output dist
 
+
+test:
+	npx spago test

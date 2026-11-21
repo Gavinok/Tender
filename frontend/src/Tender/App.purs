@@ -11,6 +11,8 @@ import Prelude
 
 import Data.Array (cons, elem)
 import Data.Either (Either(..), either)
+import Data.Generic.Rep (class Generic)
+import Data.Show.Generic (genericShow)
 import Data.Maybe (Maybe(..), maybe)
 import Effect.Aff (Aff, attempt, message)
 import Effect.Class (liftEffect)
@@ -40,6 +42,16 @@ data Model
   | QR SessionId Url
   | Active Swiper Screen
   | ServerError ErrorMessage
+
+derive instance Eq Screen
+derive instance Generic Screen _
+instance Show Screen where
+  show = genericShow
+
+derive instance Eq Model
+derive instance Generic Model _
+instance Show Model where
+  show = genericShow
 
 -- | This datatype is used to signal events to `update`
 data Message
