@@ -1,9 +1,9 @@
 module Tender.Api
   ( ApiError(..)
   , createSession
+  , decide
   , getRestaurant
   , joinSession
-  , sendLiked
   ) where
 
 import Prelude
@@ -63,9 +63,9 @@ createSession = get "newsession"
 joinSession :: SessionId -> Aff (Either ApiError UserId)
 joinSession (SessionId s) = get ("addtosession/" <> s)
 
--- | Record a like (or a dislike with `Nothing`), returning the restaurant if it is now a match
-sendLiked :: UserId -> Maybe RestaurantId -> Aff (Either ApiError (Maybe Restaurant))
-sendLiked user liked = post "liked" { id: user, likedRestaurant: liked }
+-- | Record whether the user liked the restaurant, returning it if it is now a match
+decide :: UserId -> RestaurantId -> Boolean -> Aff (Either ApiError (Maybe Restaurant))
+decide user restaurant liked = post "decision" { user, restaurant, liked }
 
 getRestaurant :: Loc -> Maybe RestaurantId -> Aff (Either ApiError Restaurant)
 getRestaurant loc after = post "restaurant" { loc, restaurantId: after }

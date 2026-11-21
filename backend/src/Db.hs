@@ -2,19 +2,24 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DerivingStrategies #-}
 
-module Db (initDb, initSchema, withDb, setImage, storeInDB, inDB, addUserToDb, addLikeToDb, matchedRestaurant, Like (..), getUser) where
+module Db (initDb, initSchema, withDb, setImage, storeInDB, inDB, addUserToDb, recordDecision, matchedRestaurant, Decision (..), getUser) where
 
+import Control.Monad (forM_)
 import Database.SQLite.Simple (
     Connection,
     Only (..),
+    Query,
     ToRow,
     execute,
     executeMany,
     execute_,
     query,
+    query_,
     withConnection,
+    withTransaction,
  )
 import Data.Maybe (listToMaybe)
+import Data.String (fromString)
 import GHC.Generics (Generic)
 import Restaurant
 import qualified User as U
@@ -34,30 +39,42 @@ initDb path = withDb path $ \conn -> do
     execute_ conn "PRAGMA journal_mode = WAL"
     initSchema conn
 
+{- | Bring the schema up to date. The database's user_version records how
+many of the migrations have been applied.
+-}
 initSchema :: Connection -> IO ()
 initSchema conn = do
-    let ex = execute_ conn
-    -- Restaurants
-    ex $
-        mconcat
+    applied <- maybe 0 fromOnly . listToMaybe <$> query_ conn "PRAGMA user_version"
+    forM_ (drop applied (zip [1 :: Int ..] migrations)) $ \(version, steps) ->
+        withTransaction conn $ do
+            mapM_ (execute_ conn) steps
+            -- PRAGMA does not accept parameters
+            execute_ conn (fromString ("PRAGMA user_version = " ++ show version))
+
+-- | Each entry is applied once, in order. Only ever append to this list.
+migrations :: [[Query]]
+migrations =
+    [ -- 1: the original schema, already present in databases from before versioning
+      [ mconcat
             [ "CREATE TABLE IF NOT EXISTS restaurants "
             , "(id TEXT PRIMARY KEY, url TEXT, name Text, rating FLOAT, price TEXT, hours INTEGER, category TEXT,"
             , " imagelink TEXT,"
             , " latitude FLOAT, longitude FLOAT"
             , " )"
             ]
-    -- Users
-    ex $
-        mconcat
-            [ "CREATE TABLE IF NOT EXISTS users "
-            , "(userId TEXT, session TEXT)"
+      , "CREATE TABLE IF NOT EXISTS users (userId TEXT, session TEXT)"
+      , "CREATE TABLE IF NOT EXISTS likes (userId TEXT, restaurantId TEXT)"
+      ]
+    , -- 2: record dislikes as well as likes, one decision per user and restaurant
+      [ mconcat
+            [ "CREATE TABLE decisions "
+            , "(userId TEXT NOT NULL, restaurantId TEXT NOT NULL, liked INTEGER NOT NULL,"
+            , " PRIMARY KEY (userId, restaurantId))"
             ]
-    -- Likes
-    ex $
-        mconcat
-            [ "CREATE TABLE IF NOT EXISTS likes "
-            , "(userId TEXT, restaurantId TEXT)"
-            ]
+      , "INSERT OR IGNORE INTO decisions SELECT userId, restaurantId, 1 FROM likes"
+      , "DROP TABLE likes"
+      ]
+    ]
 
 -- | Set the image url of the restaurant with the given id
 setImage :: Connection -> String -> String -> IO ()
@@ -68,16 +85,25 @@ addUserToDb :: Connection -> U.User -> IO ()
 addUserToDb conn (U.User i s) =
     execute conn "INSERT INTO users (userId, session) VALUES (?, ?)" (i, s)
 
-data Like = Like
+-- | Whether a user liked a restaurant
+data Decision = Decision
     { userId :: !U.UserId
     , restaurantId :: !String
+    , liked :: !Bool
     }
     deriving (Show, Generic)
     deriving anyclass (ToRow)
 
-addLikeToDb :: Connection -> Like -> IO ()
-addLikeToDb conn (Like u r) =
-    execute conn "INSERT INTO likes (userId, restaurantId) VALUES (?, ?)" (u, r)
+-- | Record a decision, replacing any earlier one for the same restaurant
+recordDecision :: Connection -> Decision -> IO ()
+recordDecision conn =
+    execute
+        conn
+        ( mconcat
+            [ "INSERT INTO decisions (userId, restaurantId, liked) VALUES (?, ?, ?) "
+            , "ON CONFLICT (userId, restaurantId) DO UPDATE SET liked = excluded.liked"
+            ]
+        )
 
 getUser :: Connection -> U.UserId -> IO (Maybe U.User)
 getUser conn u =
@@ -92,7 +118,7 @@ matchedRestaurant conn s restaurant =
         <$> query
         conn
         ( mconcat
-            [ "WITH l AS (SELECT DISTINCT likes.userId, likes.restaurantId FROM likes) "
+            [ "WITH l AS (SELECT userId, restaurantId FROM decisions WHERE liked) "
             , "SELECT restaurants.id, restaurants.url, restaurants.name, restaurants.rating, restaurants.price, restaurants.hours, restaurants.category, restaurants.imagelink, restaurants.latitude, restaurants.longitude "
             , "FROM users JOIN l "
             , "ON users.userId IS l.userId "

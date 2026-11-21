@@ -17,7 +17,7 @@ import Data.Maybe (Maybe(..), maybe)
 import Effect.Aff (Aff, attempt, message)
 import Effect.Class (liftEffect)
 import Flame (ListUpdate, (:>))
-import Tender.Api (ApiError(..), createSession, getRestaurant, joinSession, sendLiked)
+import Tender.Api (ApiError(..), createSession, decide, getRestaurant, joinSession)
 import Tender.Browser (existingSession, geolocation, shareLink)
 import Tender.Types (ErrorMessage, Loc, Restaurant, RestaurantId, SessionId, Url, UserId)
 
@@ -115,14 +115,17 @@ update model = case model, _ of
 
   Active swiper (Swiping r), Like -> model :>
     [ do
-        match <- sendLiked swiper.user (Just r.id)
+        match <- decide swiper.user r.id true
         case match of
           Left e -> pure $ Just $ failed e
           Right (Just m) | not (elem m.id (_.id <$> swiper.matches)) -> pure $ Just $ GotMatch m
           Right _ -> nextRestaurant swiper.loc (Just r.id)
     ]
   Active swiper (Swiping r), Dislike -> model :>
-    [ sendLiked swiper.user Nothing *> nextRestaurant swiper.loc (Just r.id) ]
+    [ decide swiper.user r.id false >>= case _ of
+        Left e -> pure $ Just $ failed e
+        Right _ -> nextRestaurant swiper.loc (Just r.id)
+    ]
   Active swiper (Matched r), Continue -> model :>
     [ nextRestaurant swiper.loc (Just r.id) ]
 

@@ -53,6 +53,10 @@ main = launchAff_ $ runSpec [ consoleReporter ] do
       step (Active swiper (Swiping (restaurant "a"))) Like
         `shouldEqual` Tuple (Active swiper (Swiping (restaurant "a"))) 1
 
+    it "sends a dislike while swiping" do
+      step (Active swiper (Swiping (restaurant "a"))) Dislike
+        `shouldEqual` Tuple (Active swiper (Swiping (restaurant "a"))) 1
+
     it "ignores a like when not looking at a restaurant" do
       step (Active swiper Fetching) Like `shouldEqual` Tuple (Active swiper Fetching) 0
 

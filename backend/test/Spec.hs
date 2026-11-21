@@ -4,7 +4,7 @@ import Data.Aeson (Value (Null), eitherDecode, encode, object, toJSON, (.=))
 import qualified Data.Aeson.KeyMap as KM
 import Data.Aeson.Types (Value (Object))
 import Data.List (unfoldr)
-import Database.SQLite.Simple (Connection, withConnection)
+import Database.SQLite.Simple (Connection, execute_, query_, withConnection)
 import Test.Hspec
 
 import Db
@@ -38,8 +38,9 @@ sessionWith conn n = do
     mapM_ (\u -> addUserToDb conn (User u s)) us
     pure (s, us)
 
-like :: Connection -> UserId -> String -> IO ()
-like conn u r = addLikeToDb conn (Like u r)
+like, dislike :: Connection -> UserId -> String -> IO ()
+like conn u r = recordDecision conn (Decision u r True)
+dislike conn u r = recordDecision conn (Decision u r False)
 
 main :: IO ()
 main = hspec $ do
@@ -100,12 +101,35 @@ main = hspec $ do
             (s, [u1, _]) <- sessionWith conn 2
             like conn u1 "a" >> like conn u1 "a"
             (fmap rid <$> matchedRestaurant conn s "a") `shouldReturn` Nothing
+        it "does not count dislikes" $ withTestDb $ \conn -> do
+            storeInDB conn [restaurant "a" 4 here]
+            (s, [u1, u2]) <- sessionWith conn 2
+            like conn u1 "a" >> dislike conn u2 "a"
+            (fmap rid <$> matchedRestaurant conn s "a") `shouldReturn` Nothing
+        it "uses the latest decision when a user changes their mind" $ withTestDb $ \conn -> do
+            storeInDB conn [restaurant "a" 4 here]
+            (s, [u1, u2]) <- sessionWith conn 2
+            like conn u1 "a" >> dislike conn u2 "a" >> like conn u2 "a"
+            (fmap rid <$> matchedRestaurant conn s "a") `shouldReturn` Just "a"
         it "ignores likes from other sessions" $ withTestDb $ \conn -> do
             storeInDB conn [restaurant "a" 4 here]
             (s, [u1]) <- sessionWith conn 1
             (_, [other]) <- sessionWith conn 1
             like conn u1 "a" >> like conn other "a"
             (fmap rid <$> matchedRestaurant conn s "a") `shouldReturn` Nothing
+
+    describe "initSchema" $ do
+        it "keeps likes from a database created before decisions were stored" $
+            withConnection ":memory:" $ \conn -> do
+                execute_ conn "CREATE TABLE restaurants (id TEXT PRIMARY KEY, url TEXT, name Text, rating FLOAT, price TEXT, hours INTEGER, category TEXT, imagelink TEXT, latitude FLOAT, longitude FLOAT)"
+                execute_ conn "CREATE TABLE users (userId TEXT, session TEXT)"
+                execute_ conn "CREATE TABLE likes (userId TEXT, restaurantId TEXT)"
+                execute_ conn "INSERT INTO likes VALUES ('u1', 'a'), ('u1', 'a'), ('u2', 'b')"
+                initSchema conn
+                query_ conn "SELECT userId, restaurantId, liked FROM decisions ORDER BY userId"
+                    `shouldReturn` [("u1", "a", True), ("u2", "b", True) :: (String, String, Bool)]
+        it "can run more than once" $ withTestDb $ \conn ->
+            initSchema conn `shouldReturn` ()
 
     describe "inDB" $ do
         it "returns nearby restaurants best rated first, then by id" $ withTestDb $ \conn -> do

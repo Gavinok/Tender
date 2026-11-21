@@ -89,13 +89,15 @@ getRes conn k l current = do
                     pure $ Right (Restaurant b (Just i) pos)
                 Left e -> pure $ Left $ LookupFailed $ "Failed to get image for " ++ bid b ++ ": " ++ show e
 
-data RestaurantDecision = RestaurantDecision
-    { id :: !U.UserId
-    , likedRestaurant :: !(Maybe String)
+-- | Body of a /decision request
+data DecisionRequest = DecisionRequest
+    { user :: !U.UserId
+    , restaurant :: !String
+    , liked :: !Bool
     }
     deriving (Generic, Show)
 
-instance FromJSON RestaurantDecision
+instance FromJSON DecisionRequest
 
 server :: IO ()
 server = do
@@ -114,11 +116,11 @@ logMsg = liftIO . hPutStrLn stderr
 errorResponse :: Status -> Text -> ActionM ()
 errorResponse s msg = status s >> json (object ["error" .= msg])
 
--- | Record the like and return the restaurant if it is now a match
-recordLike :: Connection -> U.User -> String -> IO (Maybe Restaurant)
-recordLike conn user restaurant = do
-    addLikeToDb conn $ Db.Like (U.userId user) restaurant
-    matchedRestaurant conn (U.session user) restaurant
+-- | Record the decision and return the restaurant if it is now a match
+decide :: Connection -> U.User -> String -> Bool -> IO (Maybe Restaurant)
+decide conn u r l = do
+    recordDecision conn $ Decision (U.userId u) r l
+    if l then matchedRestaurant conn (U.session u) r else pure Nothing
 
 app :: Env -> IO ()
 app env = scotty 5001 $ do
@@ -140,14 +142,13 @@ app env = scotty 5001 $ do
                 liftIO $ withConn $ \c -> addUserToDb c (U.User uid s)
                 json uid
 
-    post "/liked" $ do
-        RestaurantDecision uid liked <- jsonData
-        user <- liftIO $ withConn $ \c -> getUser c uid
-        case (user, liked) of
-            (Nothing, _) -> errorResponse status404 "Unknown user"
-            -- Dislikes are not recorded
-            (Just _, Nothing) -> json (Nothing :: Maybe Restaurant)
-            (Just u, Just r) -> liftIO (withConn $ \c -> recordLike c u r) >>= json
+    -- Responds with the restaurant if this decision made it a match, otherwise null
+    post "/decision" $ do
+        DecisionRequest uid r l <- jsonData
+        found <- liftIO $ withConn $ \c -> getUser c uid
+        case found of
+            Nothing -> errorResponse status404 "Unknown user"
+            Just u -> liftIO (withConn $ \c -> decide c u r l) >>= json
 
     post "/restaurant" $ do
         NextRestaurant l rId <- jsonData
