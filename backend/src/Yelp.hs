@@ -11,14 +11,13 @@ import qualified Data.ByteString.Lazy.Char8 as L8
 import Network.HTTP.Simple (
     Request,
     Response,
-    defaultRequest,
     getResponseBody,
     getResponseStatusCode,
     httpJSON,
     httpLBS,
+    parseRequest_,
     setRequestBodyLBS,
     setRequestHeaders,
-    setRequestHost,
     setRequestMethod,
     setRequestPath,
  )
@@ -67,12 +66,11 @@ defYelpRequest key =
     let auth :: BS.ByteString
         auth = S8.pack $ "Bearer " ++ fromKey key
      in PartialYelpRequest $
-            setRequestHost "api.yelp.com" $
-                setRequestHeaders
-                    [ ("Authorization", auth)
-                    , ("Content-Type", "application/graphql")
-                    ]
-                    defaultRequest
+            setRequestHeaders
+                [ ("Authorization", auth)
+                , ("Content-Type", "application/graphql")
+                ]
+                (parseRequest_ "https://api.yelp.com")
 
 lookupRes :: Loc -> PartialYelpRequest -> Request
 lookupRes (Loc lat long) baseReq =
