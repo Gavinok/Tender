@@ -17,11 +17,14 @@ The tools are pinned in =mise.toml=. With [[https://mise.jdx.dev][mise]] install
 GHC and HLS are installed through ghcup so that HLS matches the GHC
 build exactly.
 ** Running Tender
-You will need a [[https://www.yelp.com/developers/v3/manage_app][Yelp API key]]
+You will need a [[https://developers.google.com/maps/documentation/places/web-service/get-api-key][Google Places API key]] with the Places API (New)
+enabled. Google needs a billing account on the project, but the monthly
+free usage covers a project like this; setting a daily quota in the
+Cloud console makes sure it stays free.
 
-The backend reads the key from =YELP_KEY=, or from =pass show YELP_KEY=
-if that isn't set. Run the default make targets for both the front and
-backend
+The backend reads the key from =GOOGLE_PLACES_KEY=, or from
+=pass show GOOGLE_PLACES_KEY= if that isn't set. Run the default make
+targets for both the front and backend
 
 #+begin_src sh
   cd frontend
@@ -33,7 +36,10 @@ backend
 
 This will start both the front and backend for you
 
-The backend stores restaurants, sessions and likes in =test.db=. Set
+Restaurants come fresh from Google for each session. Google's terms
+only allow storing place ids, so that is all the backend keeps.
+
+The backend stores sessions and likes in =test.db=. Set
 =TENDER_DB= to use a different file.
 
 ** Trying it on a phone
