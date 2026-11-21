@@ -24,8 +24,8 @@ import Data.Either (Either(..), either)
 import Data.Maybe (Maybe(..))
 import Data.String (split, Pattern(..))
 import Effect (Effect)
-import Effect.Aff (Aff, Error, attempt, makeAff, message)
-import Effect.Aff.Class (class MonadAff, liftAff)
+import Effect.Aff (Aff, Error, attempt, message)
+import Effect.Aff.Compat (EffectFnAff, fromEffectFnAff)
 import Effect.Class (liftEffect)
 import Fetch (Method(..), Response, fetch)
 import Flame (QuerySelector(..), Html, (:>), ListUpdate)
@@ -41,12 +41,7 @@ import Web.HTML.Window (location)
 import Yoga.JSON (class ReadForeign, class WriteForeign)
 import Yoga.JSON as JSON
 
-foreign import _geolocation
-  :: forall a
-   . ({ latitude :: Number, longitude :: Number } -> a)
-  -> (Error -> a)
-  -> (a -> Effect Unit)
-  -> Effect Unit
+foreign import _geolocation :: EffectFnAff Loc
 
 backendUrl :: String
 backendUrl = "http://localhost:5001/"
@@ -112,11 +107,9 @@ createSession = get (backendUrl <> "newsession")
 joinSession :: SessionId -> Aff (Either ApiError UserId)
 joinSession (SessionId s) = get (backendUrl <> "addtosession/" <> s)
 
-geolocation :: forall m. MonadAff m => m Loc
-geolocation =
-  liftAff
-    $ makeAff \cb ->
-        _geolocation Right Left cb $> mempty
+-- | Ask the browser for the user's location. Fails if they refuse.
+geolocation :: Aff Loc
+geolocation = fromEffectFnAff _geolocation
 
 -- TODO replace localhost url with our real url
 sessionUrl :: SessionId -> String
@@ -228,10 +221,9 @@ update model = case model, _ of
   _, JoinSession session -> QR session :> []
 
   QR session, StartSwiping -> model :>
-    [ do
-        loc <- geolocation
-        user <- joinSession session
-        pure $ Just $ orFail (\u -> Started u loc) user
+    [ attempt geolocation >>= case _ of
+        Left e -> pure $ Just $ FailedToLoad $ "Could not get your location: " <> message e
+        Right loc -> Just <<< orFail (\u -> Started u loc) <$> joinSession session
     ]
   _, Started user loc ->
     Active { user, loc, matches: [] } Fetching :> [ nextRestaurant loc Nothing ]
