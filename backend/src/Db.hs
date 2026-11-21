@@ -1,44 +1,39 @@
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DerivingStrategies #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE StandaloneDeriving #-}
 
-module Db (addImgToDb, storeInDB, inDB, setupDb, addUserToDb, addLikeToDb, likedRestaurants, Like (..), getUser) where
+module Db (initDb, withDb, setImage, storeInDB, inDB, addUserToDb, addLikeToDb, likedRestaurants, Like (..), getUser) where
 
 import Database.SQLite.Simple (
-    Connection (..),
-    FromRow,
+    Connection,
+    Only (..),
     ToRow,
-    close,
     execute,
+    executeMany,
     execute_,
-    open,
     query,
+    withConnection,
  )
+import Control.Monad (join)
+import Data.Maybe (listToMaybe)
 import GHC.Generics (Generic)
 import Restaurant
 import qualified User as U
 
-data Open
-data Closed
+{- | Open a connection for the duration of the action, closing it even if
+the action throws.
+-}
+withDb :: FilePath -> (Connection -> IO a) -> IO a
+withDb path act = withConnection path $ \conn -> do
+    -- Wait for concurrent writers instead of failing with SQLITE_BUSY
+    execute_ conn "PRAGMA busy_timeout = 5000"
+    act conn
 
-newtype DbConnection a = DbConnection {connection :: Connection}
-
-dbConnect :: IO (DbConnection Open)
-dbConnect = do
-    conn <- open "test.db"
-    pure (DbConnection conn)
-
-dbClose :: DbConnection Open -> IO (DbConnection Closed)
-dbClose (DbConnection conn) = do
-    close conn
-    pure $ DbConnection conn
-
-setupDb :: IO (DbConnection Open)
-setupDb = do
-    conn <- dbConnect
-    let ex = execute_ $ connection conn
+-- | Create the schema. Run once at startup.
+initDb :: FilePath -> IO ()
+initDb path = withDb path $ \conn -> do
+    let ex = execute_ conn
+    ex "PRAGMA journal_mode = WAL"
     -- Restaurants
     ex $
         mconcat
@@ -60,22 +55,17 @@ setupDb = do
             [ "CREATE TABLE IF NOT EXISTS likes "
             , "(userId TEXT, restaurantId TEXT)"
             ]
-    pure conn
 
-addImgToDb :: Restaurant -> IO (DbConnection Closed)
-addImgToDb (Restaurant b (Just i) _) = do
-    putStrLn $ "adding image for " ++ show (bid b)
-    conn <- setupDb
-    execute (connection conn) "UPDATE restaurants SET imagelink = ? WHERE id = ?" (Just i, bid b)
-    dbClose conn
-addImgToDb _ = fail "invalid input to update"
+-- | Set the image url of the restaurant with the given id
+setImage :: Connection -> String -> String -> IO ()
+setImage conn restaurant img = do
+    putStrLn $ "adding image for " ++ show restaurant
+    execute conn "UPDATE restaurants SET imagelink = ? WHERE id = ?" (img, restaurant)
 
-addUserToDb :: U.User -> IO (DbConnection Closed)
-addUserToDb (U.User i s) = do
-    conn <- setupDb
-    execute (connection conn) "INSERT INTO users (userId, session) VALUES (?, ?)" (i, s)
+addUserToDb :: Connection -> U.User -> IO ()
+addUserToDb conn (U.User i s) = do
+    execute conn "INSERT INTO users (userId, session) VALUES (?, ?)" (i, s)
     putStrLn $ "adding User " ++ show i ++ " with session " ++ show s
-    dbClose conn
 
 data Like = Like
     { userId :: !String
@@ -83,76 +73,41 @@ data Like = Like
     }
     deriving (Show, Generic)
     deriving anyclass (ToRow)
-deriving anyclass instance FromRow Like
 
-addLikeToDb :: Like -> IO (DbConnection Closed)
-addLikeToDb (Like u r) = do
+addLikeToDb :: Connection -> Like -> IO ()
+addLikeToDb conn (Like u r) = do
     putStrLn $ "adding Like for User " ++ show u ++ " Restaurant " ++ show r
-    conn <- setupDb
-    execute (connection conn) "INSERT INTO likes (userId, restaurantId) VALUES (?, ?)" (u, r)
-    dbClose conn
+    execute conn "INSERT INTO likes (userId, restaurantId) VALUES (?, ?)" (u, r)
 
-getUser :: String -> IO (DbConnection Closed, [Maybe U.User])
-getUser u = do
-    conn <- setupDb
-    r <-
-        query
-            (connection conn)
-            ( mconcat
-                [ "SELECT * "
-                , "FROM users "
-                , "WHERE userId = ?"
-                ]
-            )
-            [u] ::
-            IO [Maybe U.User]
-    c <- dbClose conn
-    pure (c, r)
+getUser :: Connection -> String -> IO (Maybe U.User)
+getUser conn u =
+    join . listToMaybe <$> query conn "SELECT userId, session FROM users WHERE userId = ?" (Only u)
 
-likedRestaurants :: U.Session -> IO (DbConnection Closed, [Restaurant])
-likedRestaurants s = do
-    conn <- setupDb
-    r <-
-        query
-            (connection conn)
-            ( mconcat
-                [
-                 "WITH l AS (SELECT DISTINCT likes.userId, likes.restaurantId FROM likes) "
-                , "SELECT restaurants.id, restaurants.url, restaurants.name, restaurants.rating, restaurants.price, restaurants.hours, restaurants.category, restaurants.imagelink, restaurants.latitude, restaurants.longitude "
-                , "FROM users JOIN l "
-                , "ON users.userId IS l.userId "
-                , "JOIN restaurants "
-                , "ON l.restaurantId is restaurants.id "
-                , "WHERE users.session = ? "
-                , "GROUP BY l.restaurantId "
-                , "HAVING count(l.restaurantId) > 1 "
-                ]
-            )
-            [s]
-    c <- dbClose conn
-    pure (c, r)
+likedRestaurants :: Connection -> U.Session -> IO [Restaurant]
+likedRestaurants conn s =
+    query
+        conn
+        ( mconcat
+            [ "WITH l AS (SELECT DISTINCT likes.userId, likes.restaurantId FROM likes) "
+            , "SELECT restaurants.id, restaurants.url, restaurants.name, restaurants.rating, restaurants.price, restaurants.hours, restaurants.category, restaurants.imagelink, restaurants.latitude, restaurants.longitude "
+            , "FROM users JOIN l "
+            , "ON users.userId IS l.userId "
+            , "JOIN restaurants "
+            , "ON l.restaurantId is restaurants.id "
+            , "WHERE users.session = ? "
+            , "GROUP BY l.restaurantId "
+            , "HAVING count(l.restaurantId) > 1 "
+            ]
+        )
+        [s]
 
-storeInDB :: [Restaurant] -> IO (DbConnection Closed)
-storeInDB b = do
-    conn <- setupDb
-    mapM_
-        (execute (connection conn) "INSERT OR IGNORE INTO restaurants (id, url, name, rating, price, hours, category, imagelink, latitude, longitude) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
-        b
-    dbClose conn
+storeInDB :: Connection -> [Restaurant] -> IO ()
+storeInDB conn =
+    executeMany conn "INSERT OR IGNORE INTO restaurants (id, url, name, rating, price, hours, category, imagelink, latitude, longitude) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
 
--- TODO Use freemonads to mark this DB connection as needing to be closed
-inDB :: Loc ->  IO (Either String [Restaurant])
-inDB l = do
-    conn <- setupDb
+-- | Restaurants already stored near the given location
+inDB :: Connection -> Loc -> IO [Restaurant]
+inDB conn l = do
     let range = 2
         baseQuery = "SELECT * FROM restaurants WHERE (latitude BETWEEN ? AND ?) AND (longitude BETWEEN ? AND ?)"
-    r <- query (connection conn) baseQuery (latitude l - range, latitude l + range, longitude l - range, longitude l + range) :: IO [Restaurant]
-    dbClose conn
-    case r of
-        [] -> do
-            putStrLn $ "at " ++ show l
-            putStrLn "Not found in db"
-            pure $ Left "Not in DB"
-        x -> do
-           putStrLn "Found in db"
-           pure $ Right x
+    query conn baseQuery (latitude l - range, latitude l + range, longitude l - range, longitude l + range)
