@@ -6,10 +6,10 @@
 
 module Restaurant (Category (..), Series (..), Hours (..), Business (..), Restaurant (..), Loc (..), NextRestaurant(..), bid) where
 
-import Data.Aeson (FromJSON, ToJSON, parseJSON, (.:), (.=))
+import Data.Aeson (FromJSON, ToJSON, parseJSON, withObject, (.:), (.:?), (.=))
 import qualified Data.Aeson as A
 import Data.List (intercalate)
-import Data.Maybe (listToMaybe)
+import Data.Maybe (catMaybes, listToMaybe)
 import Database.SQLite.Simple (
     FromRow (..),
     ResultError (ConversionFailed),
@@ -53,7 +53,7 @@ data Business = Business
     { id :: String
     , url :: String
     , name :: String
-    , rating :: Float
+    , rating :: Double
     , price :: Maybe String
     , hours :: [Hours]
     , categories :: [Category]
@@ -65,11 +65,17 @@ bid (Business id_ _ _ _ _ _ _) = id_
 
 instance FromJSON Business
 
-newtype Series = Series [Business] deriving (Show)
+-- | Restaurants from a Yelp search. Businesses without coordinates are dropped.
+newtype Series = Series [Restaurant] deriving (Show)
 
 instance FromJSON Series where
-    parseJSON (A.Object o) = o .: "data" >>= (.: "search") >>= (.: "business") >>= fmap Series . A.parseJSON
-    parseJSON x = fail $ "Unexpected json: " ++ show x
+    parseJSON = withObject "Series" $ \o -> do
+        businesses <- o .: "data" >>= (.: "search") >>= (.: "business")
+        Series . catMaybes <$> traverse parseBusiness businesses
+      where
+        parseBusiness = withObject "Business" $ \b -> do
+            business <- parseJSON (A.Object b)
+            fmap (Restaurant business Nothing) <$> b .:? "coordinates"
 
 data Restaurant = Restaurant
     { bus :: Business
@@ -84,7 +90,7 @@ instance ToJSON Restaurant where
             , "name" .= (rname :: String)
             , "url" .= (rurl :: String)
             , "price" .= (rprice :: Maybe String)
-            , "rating" .= (rrating :: Float)
+            , "rating" .= (rrating :: Double)
             , "imageLink" .= (imgLink :: Maybe String)
             , "category" .= case cat of
                 [] -> Nothing
@@ -131,8 +137,8 @@ data NextRestaurant = NextRestaurant
 instance FromJSON NextRestaurant
 
 data Loc = Loc
-    { latitude :: Float
-    , longitude :: Float
+    { latitude :: Double
+    , longitude :: Double
     }
     deriving (Generic, Show)
 

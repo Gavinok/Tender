@@ -105,9 +105,15 @@ storeInDB :: Connection -> [Restaurant] -> IO ()
 storeInDB conn =
     executeMany conn "INSERT OR IGNORE INTO restaurants (id, url, name, rating, price, hours, category, imagelink, latitude, longitude) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
 
+{- | How far from the user, in degrees, to look for stored restaurants.
+0.15 degrees of latitude is roughly 16km.
+-}
+searchRange :: Double
+searchRange = 0.15
+
 -- | Restaurants already stored near the given location
 inDB :: Connection -> Loc -> IO [Restaurant]
 inDB conn l = do
-    let range = 2
+    let range = searchRange
         baseQuery = "SELECT * FROM restaurants WHERE (latitude BETWEEN ? AND ?) AND (longitude BETWEEN ? AND ?)"
     query conn baseQuery (latitude l - range, latitude l + range, longitude l - range, longitude l + range)

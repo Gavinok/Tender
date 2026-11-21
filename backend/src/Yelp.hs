@@ -27,36 +27,22 @@ newtype YelpAPIKey = YelpAPIKey String
 fromKey :: YelpAPIKey -> String
 fromKey (YelpAPIKey s) = s
 
--- TODO store restaurant's location and use that to pin point restaurants
 -- curl -X POST -H "Authorization: Bearer $YELP_KEY" -H "Content-Type: application/graphql" https://api.yelp.com/v3/graphql --data graphQLQuery
-graphQLQuery :: L8.ByteString -> L8.ByteString -> L8.ByteString
-graphQLQuery lat long =
-    "{\
-    \search(term:\"restaurant\", \
-    \latitude: "
-        <> lat
-        <> ",  \
-           \longitude: "
-        <> long
-        <> ", \
-            \ limit: "
-        <> "50"
-        <> ") \
-           \{ \
-           \total \
-           \business { \
-           \id \
-           \url \
-           \name \
-           \rating \
-           \categories { title } \
-           \price \
-           \hours{ \
-           \is_open_now\
-           \}\
-           \}\
-           \}\
-           \}"
+graphQLQuery :: Loc -> L8.ByteString
+graphQLQuery (Loc lat long) =
+    L8.unlines
+        [ "{"
+        , "  search(term: \"restaurant\", latitude: " <> L8.pack (show lat) <> ", longitude: " <> L8.pack (show long) <> ", limit: 50) {"
+        , "    total"
+        , "    business {"
+        , "      id url name rating price"
+        , "      categories { title }"
+        , "      hours { is_open_now }"
+        , "      coordinates { latitude longitude }"
+        , "    }"
+        , "  }"
+        , "}"
+        ]
 
 newtype PartialYelpRequest = PartialYelpRequest Request
 fromPartialYelpReq :: PartialYelpRequest -> Request
@@ -74,10 +60,10 @@ defYelpRequest key =
                 (parseRequest_ "https://api.yelp.com")
 
 lookupRes :: Loc -> PartialYelpRequest -> Request
-lookupRes (Loc lat long) baseReq =
+lookupRes l baseReq =
     setRequestPath "/v3/graphql" $
         setRequestMethod "POST" $
-            setRequestBodyLBS (graphQLQuery (L8.pack (show lat)) (L8.pack (show long))) $
+            setRequestBodyLBS (graphQLQuery l) $
                 fromPartialYelpReq baseReq
 
 lookupIMG :: String -> PartialYelpRequest -> Request

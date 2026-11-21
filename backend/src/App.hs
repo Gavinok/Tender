@@ -61,8 +61,7 @@ yelpAndStore conn k l = do
   case apiRes of
     Left e -> pure $ Left $ show e
     Right (Series []) -> pure $ Left "No restaurant from API"
-    Right (Series b) -> do
-                let res =  (\x -> Restaurant x Nothing l) <$> b
+    Right (Series res) -> do
                 storeInDB conn res
                 pure $ Right res
 
