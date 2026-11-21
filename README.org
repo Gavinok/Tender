@@ -11,8 +11,10 @@ This is an active work in progress. Expect regular breaking changes
 ** Haskell versioning
 Haskell tooling is a little picky on versioning so be sure to use
 [[https://www.haskell.org/ghcup/][GHCup]] to ensure you are using the correct versions.
+=backend/cabal.project= builds with =ghc-9.4.8=, so it only needs to be
+installed, not set as the default.
 #+begin_src bash
-  ghcup set ghc 9.4.8
+  ghcup install ghc 9.4.8
   ghcup set cabal 3.10.2.1
   ghcup set hls 2.5.0.0 # for dev
 #+end_src
