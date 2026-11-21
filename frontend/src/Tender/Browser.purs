@@ -1,5 +1,6 @@
 module Tender.Browser
-  ( backendUrl
+  ( Shared(..)
+  , backendUrl
   , existingSession
   , geolocation
   , rememberSession
@@ -7,6 +8,7 @@ module Tender.Browser
   , vibrate
   , sessionFromPath
   , shareLink
+  , shareOrCopy
   ) where
 
 import Prelude
@@ -59,3 +61,17 @@ foreign import _replacePath :: String -> Effect Unit
 -- | Put the session in the url so reloading the page rejoins it
 rememberSession :: SessionId -> Effect Unit
 rememberSession (SessionId s) = _replacePath ("/" <> s)
+
+data Shared
+  = Shared
+  | Copied
+  | Cancelled
+
+foreign import _shareOrCopy :: Url -> EffectFnAff String
+
+-- | Open the share sheet, or copy the url where there isn't one
+shareOrCopy :: Url -> Aff Shared
+shareOrCopy url = fromEffectFnAff (_shareOrCopy url) <#> case _ of
+  "copied" -> Copied
+  "cancelled" -> Cancelled
+  _ -> Shared

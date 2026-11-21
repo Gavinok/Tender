@@ -23,3 +23,18 @@ export const _replacePath = (path) => () => window.history.replaceState(null, ""
 
 // Ignored by browsers without vibration (desktop, iOS Safari)
 export const vibrate = () => navigator.vibrate?.([60, 40, 120]);
+
+// Native share sheet where there is one (mostly phones), otherwise copy
+export const _shareOrCopy = (url) => (onError, onSuccess) => {
+  if (navigator.share) {
+    navigator
+      .share({ title: "Tender", text: "Help pick where we eat", url })
+      .then(() => onSuccess("shared"))
+      .catch((e) => (e.name === "AbortError" ? onSuccess("cancelled") : onError(e)));
+  } else if (navigator.clipboard) {
+    navigator.clipboard.writeText(url).then(() => onSuccess("copied"), onError);
+  } else {
+    onError(new Error("Sharing isn't supported in this browser"));
+  }
+  return (cancelError, onCancelerError, onCancelerSuccess) => onCancelerSuccess();
+};

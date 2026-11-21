@@ -2,6 +2,7 @@ module Tender.App
   ( Message(..)
   , Model(..)
   , Screen(..)
+  , Lobby
   , Swiper
   , init
   , update
@@ -14,12 +15,12 @@ import Data.Either (Either(..), either)
 import Data.Generic.Rep (class Generic)
 import Data.Show.Generic (genericShow)
 import Data.Maybe (Maybe(..), maybe)
-import Effect.Aff (Aff, attempt, message)
+import Effect.Aff (Aff, Milliseconds(..), attempt, delay, message)
 import Effect.Class (liftEffect)
 import Data.Tuple.Nested ((/\))
 import Flame (Update)
 import Tender.Api (ApiError(..), createSession, decide, getRestaurant, joinSession)
-import Tender.Browser (existingSession, geolocation, reload, rememberSession, shareLink, vibrate)
+import Tender.Browser (Shared(..), existingSession, geolocation, reload, rememberSession, shareLink, shareOrCopy, vibrate)
 import Tender.Types (ErrorMessage, Loc, Restaurant, RestaurantId, SessionId, Url, UserId)
 
 -- | What we know once the user has joined a session
@@ -38,11 +39,18 @@ data Screen
   | Matched Restaurant
   | NoneLeft
 
+type Lobby =
+  { session :: SessionId
+  , link :: Url
+  -- | Show that the link was just copied
+  , copied :: Boolean
+  }
+
 -- | The model represents the state of the app
 data Model
   = Loading
   -- | Waiting to start, with the link others can use to join
-  | QR SessionId Url
+  | QR Lobby
   | Active Swiper Screen
   | ServerError ErrorMessage
 
@@ -75,6 +83,9 @@ data Message
   -- | Start again from the session in the url
   | Retry
   | ToggleMatches
+  | ShareInvite
+  | LinkCopied
+  | HideCopied
 
 -- | Ask for the restaurant after the given one
 nextRestaurant :: Loc -> Maybe RestaurantId -> Aff (Maybe Message)
@@ -114,9 +125,17 @@ update model = case model, _ of
             rememberSession s
             JoinSession s <$> shareLink s
     ]
-  _, JoinSession session link -> QR session link /\ []
+  _, JoinSession session link -> QR { session, link, copied: false } /\ []
+  QR { link }, ShareInvite -> model /\
+    [ attempt (shareOrCopy link) <#> case _ of
+        Right Copied -> Just LinkCopied
+        _ -> Nothing
+    ]
+  QR lobby, LinkCopied ->
+    QR lobby { copied = true } /\ [ delay (Milliseconds 2000.0) $> Just HideCopied ]
+  QR lobby, HideCopied -> QR lobby { copied = false } /\ []
 
-  QR session _, StartSwiping -> model /\
+  QR { session }, StartSwiping -> model /\
     [ attempt geolocation >>= case _ of
         Left e -> pure $ Just $ FailedToLoad $ "Could not get your location: " <> message e
         Right loc -> Just <<< orFail (\u -> Started u loc) <$> joinSession session

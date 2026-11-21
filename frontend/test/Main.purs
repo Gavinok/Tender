@@ -9,7 +9,7 @@ import Data.Tuple (Tuple(..))
 import Effect.Class (liftEffect)
 import Flame.Renderer.String (render)
 import Effect (Effect)
-import Tender.App (Message(..), Model(..), Screen(..), Swiper, update)
+import Tender.App (Lobby, Message(..), Model(..), Screen(..), Swiper, update)
 import Tender.Browser (sessionFromPath)
 import Tender.Types (Restaurant, RestaurantId(..), SessionId(..), UserId(..))
 import Tender.View (view)
@@ -32,6 +32,9 @@ restaurant id =
 swiper :: Swiper
 swiper = { user: UserId "u", loc: { latitude: 1.0, longitude: 2.0 }, matches: [], showMatches: false }
 
+lobbyAt :: Lobby
+lobbyAt = { session: SessionId "s", link: "http://example.com/s", copied: false }
+
 -- | The model after a message, and how many requests it started
 step :: Model -> Message -> Tuple Model Int
 step model msg = case update model msg of
@@ -41,7 +44,7 @@ main :: Effect Unit
 main = runSpecAndExitProcess [ consoleReporter ] do
   describe "update" do
     it "fetches the first restaurant once started" do
-      step (QR (SessionId "s") "link") (Started (UserId "u") swiper.loc)
+      step (QR lobbyAt) (Started (UserId "u") swiper.loc)
         `shouldEqual` Tuple (Active swiper Fetching) 1
 
     it "shows a restaurant" do
@@ -75,6 +78,10 @@ main = runSpecAndExitProcess [ consoleReporter ] do
       step (Active swiper (Matched (restaurant "a"))) Continue
         `shouldEqual` Tuple (Active swiper (Matched (restaurant "a"))) 1
 
+    it "shows the link was copied, then hides it again" do
+      step (QR lobbyAt) LinkCopied `shouldEqual` Tuple (QR lobbyAt { copied = true }) 1
+      step (QR lobbyAt { copied = true }) HideCopied `shouldEqual` Tuple (QR lobbyAt) 0
+
     it "opens and closes the list of matches" do
       step (Active swiper (Swiping (restaurant "a"))) ToggleMatches
         `shouldEqual` Tuple (Active swiper { showMatches = true } (Swiping (restaurant "a"))) 0
@@ -100,8 +107,8 @@ main = runSpecAndExitProcess [ consoleReporter ] do
         html <- liftEffect $ render (view model)
         html `shouldSatisfy` contains (Pattern text)
     it "shows a local QR code and the share link in the lobby" do
-      renders (QR (SessionId "s") "http://example.com/s") "src=\"data:image/svg+xml"
-      renders (QR (SessionId "s") "http://example.com/s") "href=\"http://example.com/s\""
+      renders (QR lobbyAt) "src=\"data:image/svg+xml"
+      renders (QR lobbyAt) "http://example.com/s"
     it "shows the restaurant while swiping" do
       renders (Active swiper (Swiping (restaurant "Pho Real"))) "Pho Real"
       renders (Active swiper (Swiping (restaurant "Pho Real"))) "aria-label=\"0 matches\""
