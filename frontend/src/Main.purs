@@ -18,10 +18,10 @@ module Main
 
 import Prelude
 
-import Data.Array (last, cons, elem, length)
+import Data.Array (cons, elem, filter, last, length)
 import Data.Bifunctor (lmap)
 import Data.Either (Either(..), either)
-import Data.Maybe (Maybe(..))
+import Data.Maybe (Maybe(..), maybe)
 import Data.String (split, Pattern(..))
 import Effect (Effect)
 import Effect.Aff (Aff, Error, attempt, message)
@@ -36,15 +36,20 @@ import Flame.Html.Element as HE
 import Flame.Subscription.Window as FSW
 import Flame.Types (NodeData)
 import Web.HTML (window)
-import Web.HTML.Location (href)
+import Web.HTML.Location (hostname, origin, pathname, protocol)
 import Web.HTML.Window (location)
 import Yoga.JSON (class ReadForeign, class WriteForeign)
 import Yoga.JSON as JSON
 
 foreign import _geolocation :: EffectFnAff Loc
 
-backendUrl :: String
-backendUrl = "http://localhost:5001/"
+-- | The backend runs on port 5001 of the host that served the page
+backendUrl :: String -> Effect Url
+backendUrl path = do
+  loc <- location =<< window
+  proto <- protocol loc
+  host <- hostname loc
+  pure $ proto <> "//" <> host <> ":5001/" <> path
 
 newtype UserId = UserId String
 
@@ -88,11 +93,14 @@ decode (Right { status, text }) = do
     Right ({ error } :: { error :: String }) -> error
     Left _ -> "The server responded with " <> show status
 
-get :: forall a. ReadForeign a => Url -> Aff (Either ApiError a)
-get url = decode =<< attempt (fetch url { method: GET })
+get :: forall a. ReadForeign a => String -> Aff (Either ApiError a)
+get path = do
+  url <- liftEffect $ backendUrl path
+  decode =<< attempt (fetch url { method: GET })
 
-post :: forall body a. WriteForeign body => ReadForeign a => Url -> body -> Aff (Either ApiError a)
-post url body =
+post :: forall body a. WriteForeign body => ReadForeign a => String -> body -> Aff (Either ApiError a)
+post path body = do
+  url <- liftEffect $ backendUrl path
   decode =<< attempt
     ( fetch url
         { method: POST
@@ -102,18 +110,20 @@ post url body =
     )
 
 createSession :: Aff (Either ApiError SessionId)
-createSession = get (backendUrl <> "newsession")
+createSession = get "newsession"
 
 joinSession :: SessionId -> Aff (Either ApiError UserId)
-joinSession (SessionId s) = get (backendUrl <> "addtosession/" <> s)
+joinSession (SessionId s) = get ("addtosession/" <> s)
 
 -- | Ask the browser for the user's location. Fails if they refuse.
 geolocation :: Aff Loc
 geolocation = fromEffectFnAff _geolocation
 
--- TODO replace localhost url with our real url
-sessionUrl :: SessionId -> String
-sessionUrl (SessionId session) = "http://localhost:1234/" <> session
+-- | Link for other people to join the session
+shareLink :: SessionId -> Effect Url
+shareLink (SessionId session) = do
+  o <- origin =<< location =<< window
+  pure $ o <> "/" <> session
 
 type ErrorMessage = String
 
@@ -149,14 +159,15 @@ data Screen
 -- | The model represents the state of the app
 data Model
   = Loading
-  | QR SessionId
+  -- | Waiting to start, with the link others can use to join
+  | QR SessionId Url
   | Active Swiper Screen
   | ServerError ErrorMessage
 
 -- | This datatype is used to signal events to `update`
 data Message
   = DetermineSession
-  | JoinSession SessionId
+  | JoinSession SessionId Url
   | StartSwiping
   | Started UserId Loc
   | Like
@@ -170,10 +181,10 @@ data Message
 
 -- | Record a like (or a dislike with `Nothing`), returning the restaurant if it is now a match
 sendLiked :: UserId -> Maybe RestaurantId -> Aff (Either ApiError (Maybe Restaurant))
-sendLiked user liked = post (backendUrl <> "liked") { id: user, likedRestaurant: liked }
+sendLiked user liked = post "liked" { id: user, likedRestaurant: liked }
 
 getRestaurant :: Loc -> Maybe RestaurantId -> Aff (Either ApiError Restaurant)
-getRestaurant loc after = post (backendUrl <> "restaurant") { loc, restaurantId: after }
+getRestaurant loc after = post "restaurant" { loc, restaurantId: after }
 
 -- | Ask for the restaurant after the given one
 nextRestaurant :: Loc -> Maybe RestaurantId -> Aff (Maybe Message)
@@ -196,11 +207,8 @@ orFail = either failed
 -- | The session in the page url, if any
 existingSession :: Effect (Maybe SessionId)
 existingSession = do
-  h <- href =<< location =<< window
-  pure case last (split (Pattern "/") h) of
-    Nothing -> Nothing
-    Just "" -> Nothing
-    Just s -> Just (SessionId s)
+  path <- pathname =<< location =<< window
+  pure $ SessionId <$> last (filter (_ /= "") (split (Pattern "/") path))
 
 -- | Initial state of the app
 init :: Model
@@ -214,13 +222,14 @@ update model = case model, _ of
   _, DetermineSession -> model :>
     [ Just <$> do
         found <- liftEffect existingSession
-        case found of
-          Just session -> pure $ JoinSession session
-          Nothing -> orFail JoinSession <$> createSession
+        session <- maybe createSession (pure <<< Right) found
+        case session of
+          Left e -> pure $ failed e
+          Right s -> JoinSession s <$> liftEffect (shareLink s)
     ]
-  _, JoinSession session -> QR session :> []
+  _, JoinSession session link -> QR session link :> []
 
-  QR session, StartSwiping -> model :>
+  QR session _, StartSwiping -> model :>
     [ attempt geolocation >>= case _ of
         Left e -> pure $ Just $ FailedToLoad $ "Could not get your location: " <> message e
         Right loc -> Just <<< orFail (\u -> Started u loc) <$> joinSession session
@@ -332,13 +341,13 @@ view (ServerError e) = HE.main "main" [ HE.text $ "Error: " <> e ]
 
 view Loading = loading
 
-view (QR session@(SessionId s)) =
+view (QR _ link) =
   HE.main "main"
     [ HE.div [ HA.class' "qr-main" ]
         [ HE.div [ HA.class' "join-button" ]
-            [ HE.a [ HA.href s, HA.value "Join Session" ] "Join Session" ]
+            [ HE.a [ HA.href link, HA.value "Join Session" ] "Join Session" ]
         , HE.img
-            [ HA.src $ "https://api.qrserver.com/v1/create-qr-code/?data=" <> sessionUrl session
+            [ HA.src $ "https://api.qrserver.com/v1/create-qr-code/?data=" <> link
             , HA.alt ""
             ]
         , HE.div [ HA.class' "my-2" ]
