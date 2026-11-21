@@ -1,11 +1,12 @@
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DerivingStrategies #-}
 
--- | Restaurants as sent to the frontend. They come fresh from Google Places
--- | for each search and are not stored, since Google's terms only allow
--- | keeping place ids.
-module Restaurant (Restaurant (..), Photo (..), Author (..), Loc (..)) where
+-- | Restaurants as sent to the frontend. They come fresh from a source
+-- | (Google Places, Yelp or OpenStreetMap) for each search and are not
+-- | stored, since Google's and Yelp's terms only allow keeping ids.
+module Restaurant (Restaurant (..), Source (..), Photo (..), PhotoSource (..), Author (..), Loc (..)) where
 
 import Data.Aeson (FromJSON, ToJSON (toJSON), object, (.=))
 import Data.Text (Text)
@@ -25,18 +26,30 @@ data Author = Author
     }
     deriving stock (Eq, Show)
 
+-- | Where a restaurant came from, which decides the attribution shown
+data Source = Google | Yelp | OpenStreetMap
+    deriving stock (Eq, Show)
+
+data PhotoSource
+    = -- | Google's resource name, places/<place>/photos/<photo>, fetched
+      -- through /photo so the key stays on the server. Expires, so it is
+      -- only good for the session that searched.
+      GooglePhoto Text
+    | -- | A public image url
+      PhotoUrl Text
+    deriving stock (Eq, Show)
+
 data Photo = Photo
-    { -- | Google's resource name, places/<place>/photos/<photo>. Expires, so
-      -- | it is only good for the session that searched.
-      photoName :: Text
+    { photoSource :: PhotoSource
     , photoAuthor :: Maybe Author
     }
     deriving stock (Eq, Show)
 
 data Restaurant = Restaurant
-    { restaurantId :: Text
+    { source :: Source
+    , restaurantId :: Text
     , name :: Text
-    , -- | Google Maps page for the place
+    , -- | The place's page on the source, e.g. Google Maps
       url :: Maybe Text
     , rating :: Maybe Double
     , -- | $ to $$$$
@@ -50,7 +63,8 @@ data Restaurant = Restaurant
 instance ToJSON Restaurant where
     toJSON r =
         object
-            [ "id" .= restaurantId r
+            [ "source" .= sourceName (source r)
+            , "id" .= restaurantId r
             , "name" .= name r
             , "url" .= url r
             , "rating" .= rating r
@@ -59,5 +73,14 @@ instance ToJSON Restaurant where
             , "photo" .= fmap photoJSON (photo r)
             ]
       where
-        photoJSON p = object ["name" .= photoName p, "author" .= fmap authorJSON (photoAuthor p)]
+        sourceName :: Source -> Text
+        sourceName = \case
+            Google -> "google"
+            Yelp -> "yelp"
+            OpenStreetMap -> "openstreetmap"
+        photoJSON p =
+            object $
+                ("author" .= fmap authorJSON (photoAuthor p)) : case photoSource p of
+                    GooglePhoto n -> ["name" .= n]
+                    PhotoUrl u -> ["url" .= u]
         authorJSON a = object ["name" .= authorName a, "uri" .= authorUri a]

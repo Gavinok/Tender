@@ -4,7 +4,7 @@
 -- | Restaurants and photos from the Google Places API (New)
 module Places (
     PlacesKey (..),
-    PlacesError (..),
+    googlePlaces,
     searchNearby,
     photoUri,
     parsePlaces,
@@ -12,41 +12,31 @@ module Places (
     searchRadius,
 ) where
 
-import Control.Exception (try)
-import Data.Aeson (Value, eitherDecode, object, withObject, (.!=), (.:), (.:?), (.=))
+import Data.Aeson (Value, object, withObject, (.!=), (.:), (.:?), (.=))
 import qualified Data.Aeson.Types as AT
 import qualified Data.ByteString as BS
-import qualified Data.ByteString.Lazy.Char8 as L8
 import Data.Char (isAlphaNum)
 import Data.Maybe (listToMaybe)
 import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as TE
+import Fetch (FetchError, fetchJSON)
 import Network.HTTP.Simple (
     Header,
-    HttpException,
     Request,
-    getResponseBody,
-    getResponseStatusCode,
-    httpLBS,
     parseRequest_,
     setRequestBodyJSON,
     setRequestHeaders,
     setRequestPath,
     setRequestQueryString,
  )
-import Restaurant (Author (..), Loc, Photo (..), Restaurant (..))
+import Provider (Provider (..))
+import Restaurant (Author (..), Loc, Photo (..), PhotoSource (..), Restaurant (..), Source (..))
 
 newtype PlacesKey = PlacesKey BS.ByteString
 
-data PlacesError
-    = -- | The request never got a response
-      PlacesUnreachable HttpException
-    | -- | Google answered with a non 200 status and this body
-      PlacesStatus Int L8.ByteString
-    | -- | The response body was not what we expected
-      PlacesParseError String
-    deriving (Show)
+googlePlaces :: PlacesKey -> Provider
+googlePlaces key = Provider "Google Places" (searchNearby key)
 
 -- | How far from the user to search, in metres
 searchRadius :: Double
@@ -63,9 +53,9 @@ withKey :: PlacesKey -> [Header] -> Request -> Request
 withKey (PlacesKey k) headers = setRequestHeaders (("X-Goog-Api-Key", k) : headers)
 
 -- | Up to 20 restaurants near the location, most popular first
-searchNearby :: PlacesKey -> Loc -> IO (Either PlacesError [Restaurant])
+searchNearby :: PlacesKey -> Loc -> IO (Either FetchError [Restaurant])
 searchNearby key l =
-    send parsePlaces $
+    fetchJSON parsePlaces $
         withKey key [("X-Goog-FieldMask", fieldMask)] $
             setRequestBodyJSON body $
                 parseRequest_ "POST https://places.googleapis.com/v1/places:searchNearby"
@@ -73,14 +63,16 @@ searchNearby key l =
     body =
         object
             [ "includedTypes" .= ["restaurant" :: Text]
+            , -- Hotels count as restaurants when they have one
+              "excludedPrimaryTypes" .= ["hotel", "lodging", "motel", "bed_and_breakfast" :: Text]
             , "maxResultCount" .= (20 :: Int)
             , "locationRestriction" .= object ["circle" .= object ["center" .= l, "radius" .= searchRadius]]
             ]
 
 -- | A short lived url for the photo, at most the given width
-photoUri :: PlacesKey -> Text -> Int -> IO (Either PlacesError Text)
+photoUri :: PlacesKey -> Text -> Int -> IO (Either FetchError Text)
 photoUri key resource width =
-    send (withObject "Photo" (.: "photoUri")) $
+    fetchJSON (withObject "Photo" (.: "photoUri")) $
         withKey key [] $
             setRequestQueryString [("maxWidthPx", Just (TE.encodeUtf8 (T.pack (show width)))), ("skipHttpRedirect", Just "true")] $
                 setRequestPath (TE.encodeUtf8 ("/v1/" <> resource <> "/media")) $
@@ -103,7 +95,7 @@ parsePlaces = withObject "SearchNearbyResponse" $ \o ->
   where
     place = withObject "Place" $ \p -> do
         photos <- p .:? "photos" .!= []
-        Restaurant
+        Restaurant Google
             <$> p .: "id"
             <*> (p .: "displayName" >>= (.: "text"))
             <*> p .:? "googleMapsUri"
@@ -114,7 +106,7 @@ parsePlaces = withObject "SearchNearbyResponse" $ \o ->
             <*> p .: "location"
     parsePhoto = withObject "Photo" $ \ph -> do
         authors <- ph .:? "authorAttributions" .!= []
-        Photo <$> ph .: "name" <*> traverse parseAuthor (listToMaybe authors)
+        Photo <$> (GooglePhoto <$> ph .: "name") <*> traverse parseAuthor (listToMaybe authors)
     parseAuthor = withObject "AuthorAttribution" $ \a ->
         Author <$> a .: "displayName" <*> (fmap absolute <$> a .:? "uri")
     -- Author links come back without a scheme, e.g. //maps.google.com/...
@@ -128,15 +120,3 @@ priceSymbol = \case
     "PRICE_LEVEL_EXPENSIVE" -> Just "$$$"
     "PRICE_LEVEL_VERY_EXPENSIVE" -> Just "$$$$"
     _ -> Nothing
-
--- | Send the request and decode a 200 response. Network failures are returned rather than thrown.
-send :: (Value -> AT.Parser a) -> Request -> IO (Either PlacesError a)
-send parser req = do
-    result <- try (httpLBS req)
-    pure $ case result of
-        Left (e :: HttpException) -> Left (PlacesUnreachable e)
-        Right resp -> case getResponseStatusCode resp of
-            200 -> either (Left . PlacesParseError) Right $ do
-                v <- eitherDecode (getResponseBody resp)
-                AT.parseEither parser v
-            code -> Left (PlacesStatus code (getResponseBody resp))

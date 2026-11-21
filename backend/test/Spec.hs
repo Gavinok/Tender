@@ -1,6 +1,7 @@
 module Main (main) where
 
 import Data.Aeson (Value (Null), eitherDecode, toJSON)
+import Data.Aeson.Types (Parser)
 import qualified Data.Aeson.KeyMap as KM
 import Data.Aeson.Types (Value (Object), parseEither)
 import qualified Data.ByteString.Lazy.Char8 as L8
@@ -8,10 +9,14 @@ import Data.Text (Text)
 import Database.SQLite.Simple (Connection, Only (..), execute_, query_, withConnection)
 import Test.Hspec
 
-import Db
+import Db hiding (restaurantId)
+import Fetch (FetchError (..))
+import OpenStreetMap (nearest, parseOverpass)
 import Places
+import Provider (Provider (..), searchWithFallback)
 import Restaurant
 import User
+import Yelp (parseYelp)
 
 withTestDb :: (Connection -> IO a) -> IO a
 withTestDb act = withConnection ":memory:" $ \conn -> initSchema conn >> act conn
@@ -45,8 +50,18 @@ searchResponse =
         , "]}"
         ]
 
+parseWith :: (Value -> Parser [Restaurant]) -> L8.ByteString -> Either String [Restaurant]
+parseWith parser body = eitherDecode body >>= parseEither parser
+
 parse :: L8.ByteString -> Either String [Restaurant]
-parse body = eitherDecode body >>= parseEither parsePlaces
+parse = parseWith parsePlaces
+
+-- | A restaurant with only the given name and position
+plain :: Source -> Text -> Loc -> Restaurant
+plain src n = Restaurant src n n Nothing Nothing Nothing Nothing Nothing
+
+provider :: Text -> Either FetchError [Restaurant] -> Provider
+provider n result = Provider n (const (pure result))
 
 main :: IO ()
 main = hspec $ do
@@ -55,18 +70,56 @@ main = hspec $ do
             parse searchResponse
                 `shouldBe` Right
                     [ Restaurant
+                        Google
                         "ChIJ1"
                         "Pho Real"
                         (Just "https://maps.google.com/?cid=1")
                         (Just 4.5)
                         (Just "$$")
                         (Just "Vietnamese Restaurant")
-                        (Just (Photo "places/ChIJ1/photos/AbC-1_x" (Just (Author "Sam" (Just "https://maps.google.com/maps/contrib/1")))))
+                        (Just (Photo (GooglePhoto "places/ChIJ1/photos/AbC-1_x") (Just (Author "Sam" (Just "https://maps.google.com/maps/contrib/1")))))
                         (Loc 48.43 (-123.35))
-                    , Restaurant "ChIJ2" "New Spot" Nothing Nothing Nothing Nothing Nothing (Loc 48.44 (-123.36))
+                    , Restaurant Google "ChIJ2" "New Spot" Nothing Nothing Nothing Nothing Nothing (Loc 48.44 (-123.36))
                     ]
         it "treats a response with no places as an empty list" $
             parse "{}" `shouldBe` Right []
+
+    describe "parseYelp" $ do
+        it "reads a business, treating an empty image as no photo" $
+            parseWith parseYelp
+                "{\"businesses\": [{\"id\": \"y1\", \"name\": \"Jam Cafe\", \"url\": \"https://www.yelp.com/biz/jam\", \"image_url\": \"\", \"rating\": 4.5, \"price\": \"$$\", \"categories\": [{\"alias\": \"breakfast\", \"title\": \"Breakfast & Brunch\"}], \"coordinates\": {\"latitude\": 48.42, \"longitude\": -123.36}}]}"
+                `shouldBe` Right [Restaurant Yelp "y1" "Jam Cafe" (Just "https://www.yelp.com/biz/jam") (Just 4.5) (Just "$$") (Just "Breakfast & Brunch") Nothing (Loc 48.42 (-123.36))]
+
+    describe "parseOverpass" $ do
+        it "reads nodes and ways, skipping places without a name" $
+            parseWith parseOverpass
+                ( L8.unlines
+                    [ "{\"elements\": ["
+                    , " {\"type\": \"node\", \"id\": 1, \"lat\": 48.43, \"lon\": -123.35, \"tags\": {\"amenity\": \"restaurant\", \"name\": \"Pho Real\", \"cuisine\": \"vietnamese;noodle\"}},"
+                    , " {\"type\": \"way\", \"id\": 2, \"center\": {\"lat\": 48.44, \"lon\": -123.36}, \"tags\": {\"name\": \"Fish Store\", \"cuisine\": \"fish_and_chips\"}},"
+                    , " {\"type\": \"node\", \"id\": 3, \"lat\": 48.45, \"lon\": -123.37, \"tags\": {\"amenity\": \"restaurant\"}}"
+                    , "]}"
+                    ]
+                )
+                `shouldBe` Right
+                    [ Restaurant OpenStreetMap "osm:node/1" "Pho Real" (Just "https://www.openstreetmap.org/node/1") Nothing Nothing (Just "Vietnamese") Nothing (Loc 48.43 (-123.35))
+                    , Restaurant OpenStreetMap "osm:way/2" "Fish Store" (Just "https://www.openstreetmap.org/way/2") Nothing Nothing (Just "Fish and chips") Nothing (Loc 48.44 (-123.36))
+                    ]
+        it "puts the nearest first" $
+            map restaurantId (nearest (Loc 0 0) 2 [plain OpenStreetMap "far" (Loc 0.03 0), plain OpenStreetMap "near" (Loc 0.001 0), plain OpenStreetMap "mid" (Loc 0 0.01)])
+                `shouldBe` ["near", "mid"]
+
+    describe "searchWithFallback" $ do
+        let here = Loc 48.43 (-123.35)
+            found = [plain OpenStreetMap "a" here]
+            search ps = searchWithFallback (const (pure ())) ps here
+        it "uses the first source that finds something" $
+            search [provider "down" (Left (ParseError "boom")), provider "empty" (Right []), provider "osm" (Right found)]
+                `shouldReturn` Just found
+        it "says nothing was found when a source answered with nothing" $
+            search [provider "down" (Left (ParseError "boom")), provider "empty" (Right [])] `shouldReturn` Just []
+        it "fails when every source failed" $
+            search [provider "down" (Left (ParseError "boom"))] `shouldReturn` Nothing
 
     describe "isPhotoName" $ do
         it "accepts a photo resource name" $
@@ -85,7 +138,7 @@ main = hspec $ do
 
     describe "Restaurant JSON" $ do
         it "sends null for missing details" $
-            case toJSON (Restaurant "ChIJ2" "New Spot" Nothing Nothing Nothing Nothing Nothing (Loc 1 2)) of
+            case toJSON (Restaurant Google "ChIJ2" "New Spot" Nothing Nothing Nothing Nothing Nothing (Loc 1 2)) of
                 Object o -> (KM.lookup "photo" o, KM.lookup "rating" o) `shouldBe` (Just Null, Just Null)
                 v -> expectationFailure ("not an object: " ++ show v)
 
