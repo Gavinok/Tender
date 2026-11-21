@@ -15,7 +15,7 @@ common shared
 library
     import:           shared
     hs-source-dirs:   src
-    exposed-modules:  App, Db, Restaurant, User, Yelp
+    exposed-modules:  App, Db, Places, Restaurant, User
     build-depends:    aeson         >=2.1   && <2.3
                     , bytestring    >=0.11  && <0.13
                     , http-conduit  >=2.3   && <2.4
@@ -41,4 +41,6 @@ test-suite spec
     build-depends:    tender
                     , aeson
                     , hspec         >=2.10  && <2.12
+                    , bytestring
+                    , text
                     , sqlite-simple

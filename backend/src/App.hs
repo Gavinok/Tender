@@ -5,6 +5,7 @@ module App (server) where
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Data.Maybe (fromMaybe)
 import Database.SQLite.Simple (Connection)
+import qualified Data.Text as T
 import GHC.Generics (Generic)
 import Network.Wai.Middleware.Cors (
     CorsResourcePolicy (corsMethods, corsOrigins, corsRequestHeaders),
@@ -22,25 +23,30 @@ import Web.Scotty (
     middleware,
     pathParam,
     post,
+    queryParam,
+    redirect,
     scotty,
+    setHeader,
     status,
  )
 
 import Data.Aeson (FromJSON, object, (.=))
 import Data.Text (Text)
+import qualified Data.Text.Encoding as TE
+import qualified Data.Text.Lazy as TL
 import Network.HTTP.Types (Status, status400, status404, status502)
 import Network.Wai.Middleware.RequestLogger (logStdout)
 import System.IO (hPutStrLn, stderr)
 
 import Db
-import Restaurant
+import Places
+import Restaurant (Loc)
 import qualified User as U
-import Yelp
 
 -- | Configuration shared by every request
 data Env = Env
     { envDbPath :: FilePath
-    , envYelpKey :: YelpAPIKey
+    , envPlacesKey :: PlacesKey
     }
 
 {- | A preset version of cors with added OPTIONS method and
@@ -54,45 +60,10 @@ apiCors =
         , corsRequestHeaders = simpleHeaders
         }
 
-data NextError
-    = NoMoreRestaurants
-    | LookupFailed String
-
--- | Fetch restaurants near the location from Yelp and store them
-yelpAndStore :: Connection -> YelpAPIKey -> Loc -> IO (Either NextError ())
-yelpAndStore conn k l = do
-    apiRes <- reqRes k l
-    case apiRes of
-        Left e -> pure $ Left $ LookupFailed $ "Yelp search near " ++ show l ++ " failed: " ++ show e
-        Right (Series res) -> Right <$> storeInDB conn res
-
--- | The restaurant after the given one, or the first if none is given
-getRes :: Connection -> YelpAPIKey -> Loc -> Maybe String -> IO (Either NextError Restaurant)
-getRes conn k l current = do
-    -- Check the DB for this location. If nothing is there ask the API
-    cached <- inDB conn l
-    stored <-
-        if null cached
-            then yelpAndStore conn k l >>= traverse (const $ inDB conn l)
-            else pure (Right cached)
-    case nextAfter current <$> stored of
-        Left e -> pure $ Left e
-        Right Nothing -> pure $ Left NoMoreRestaurants
-        -- Restaurant already has a image URL
-        Right (Just res@(Restaurant _ (Just _) _)) -> pure $ Right res
-        -- Image URL is missing
-        Right (Just (Restaurant b Nothing pos)) -> do
-            maybeImg <- reqIMG k $ bid b
-            case maybeImg of
-                Right i -> do
-                    setImage conn (bid b) i
-                    pure $ Right (Restaurant b (Just i) pos)
-                Left e -> pure $ Left $ LookupFailed $ "Failed to get image for " ++ bid b ++ ": " ++ show e
-
 -- | Body of a /decision request
 data DecisionRequest = DecisionRequest
     { user :: !U.UserId
-    , restaurant :: !String
+    , restaurant :: !Text
     , liked :: !Bool
     }
     deriving (Generic, Show)
@@ -101,13 +72,13 @@ instance FromJSON DecisionRequest
 
 server :: IO ()
 server = do
-    keyMaybe <- getEnv "YELP_KEY"
+    keyMaybe <- getEnv "GOOGLE_PLACES_KEY"
     dbPath <- fromMaybe "test.db" <$> getEnv "TENDER_DB"
     case keyMaybe of
-        Nothing -> fail "Failed to find Yelp Key"
+        Nothing -> fail "GOOGLE_PLACES_KEY is not set"
         Just key -> do
             initDb dbPath
-            app (Env dbPath (YelpAPIKey key))
+            app (Env dbPath (PlacesKey (TE.encodeUtf8 (T.pack key))))
 
 logMsg :: MonadIO m => String -> m ()
 logMsg = liftIO . hPutStrLn stderr
@@ -116,11 +87,15 @@ logMsg = liftIO . hPutStrLn stderr
 errorResponse :: Status -> Text -> ActionM ()
 errorResponse s msg = status s >> json (object ["error" .= msg])
 
--- | Record the decision and return the restaurant if it is now a match
-decide :: Connection -> U.User -> String -> Bool -> IO (Maybe Restaurant)
+-- | Record the decision and whether it made the restaurant a match
+decide :: Connection -> U.User -> Text -> Bool -> IO Bool
 decide conn u r l = do
     recordDecision conn $ Decision (U.userId u) r l
-    if l then matchedRestaurant conn (U.session u) r else pure Nothing
+    if l then isMatch conn (U.session u) r else pure False
+
+-- | Width to ask Google for. Cards are at most about 450 css pixels wide.
+photoWidth :: Int
+photoWidth = 1200
 
 app :: Env -> IO ()
 app env = scotty 5001 $ do
@@ -142,20 +117,37 @@ app env = scotty 5001 $ do
                 liftIO $ withConn $ \c -> addUserToDb c (U.User uid s)
                 json uid
 
-    -- Responds with the restaurant if this decision made it a match, otherwise null
+    -- Restaurants near the location, fresh from Google for each session
+    post "/restaurants" $ do
+        l <- jsonData :: ActionM Loc
+        found <- liftIO $ searchNearby (envPlacesKey env) l
+        case found of
+            Left e -> do
+                logMsg $ "Places search near " ++ show l ++ " failed: " ++ show e
+                errorResponse status502 "Couldn't get restaurants from Google"
+            Right rs -> json rs
+
+    -- Redirects to the photo with the given resource name, so the key stays here
+    get "/photo" $ do
+        photo <- queryParam "name"
+        if not (isPhotoName photo)
+            then errorResponse status400 "Not a photo name"
+            else do
+                found <- liftIO $ photoUri (envPlacesKey env) photo photoWidth
+                case found of
+                    Left e -> do
+                        logMsg $ "Photo " ++ T.unpack photo ++ " failed: " ++ show e
+                        errorResponse status502 "Couldn't get the photo from Google"
+                    Right uri -> do
+                        -- Lets the browser reuse it for the rest of the session
+                        setHeader "Cache-Control" "private, max-age=3600"
+                        redirect (TL.fromStrict uri)
+
     post "/decision" $ do
         DecisionRequest uid r l <- jsonData
         found <- liftIO $ withConn $ \c -> getUser c uid
         case found of
             Nothing -> errorResponse status404 "Unknown user"
-            Just u -> liftIO (withConn $ \c -> decide c u r l) >>= json
-
-    post "/restaurant" $ do
-        NextRestaurant l rId <- jsonData
-        res <- liftIO $ withConn $ \c -> getRes c (envYelpKey env) l rId
-        case res of
-            Left NoMoreRestaurants -> errorResponse status404 "No more restaurants nearby"
-            Left (LookupFailed e) -> do
-                logMsg e
-                errorResponse status502 "Could not load restaurants"
-            Right r -> json r
+            Just u -> do
+                match <- liftIO $ withConn $ \c -> decide c u r l
+                json (object ["match" .= match])

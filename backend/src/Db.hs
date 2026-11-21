@@ -2,7 +2,7 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DerivingStrategies #-}
 
-module Db (initDb, initSchema, withDb, setImage, storeInDB, inDB, addUserToDb, recordDecision, matchedRestaurant, Decision (..), getUser) where
+module Db (initDb, initSchema, withDb, addUserToDb, recordDecision, isMatch, Decision (..), getUser) where
 
 import Control.Monad (forM_)
 import Database.SQLite.Simple (
@@ -11,7 +11,6 @@ import Database.SQLite.Simple (
     Query,
     ToRow,
     execute,
-    executeMany,
     execute_,
     query,
     query_,
@@ -21,7 +20,7 @@ import Database.SQLite.Simple (
 import Data.Maybe (listToMaybe)
 import Data.String (fromString)
 import GHC.Generics (Generic)
-import Restaurant
+import Data.Text (Text)
 import qualified User as U
 
 {- | Open a connection for the duration of the action, closing it even if
@@ -74,12 +73,10 @@ migrations =
       , "INSERT OR IGNORE INTO decisions SELECT userId, restaurantId, 1 FROM likes"
       , "DROP TABLE likes"
       ]
+    , -- 3: restaurants come fresh from Google Places, whose terms don't allow
+      -- storing them. Decisions keep only the place id, which is allowed.
+      ["DROP TABLE restaurants"]
     ]
-
--- | Set the image url of the restaurant with the given id
-setImage :: Connection -> String -> String -> IO ()
-setImage conn restaurant img =
-    execute conn "UPDATE restaurants SET imagelink = ? WHERE id = ?" (img, restaurant)
 
 addUserToDb :: Connection -> U.User -> IO ()
 addUserToDb conn (U.User i s) =
@@ -88,7 +85,7 @@ addUserToDb conn (U.User i s) =
 -- | Whether a user liked a restaurant
 data Decision = Decision
     { userId :: !U.UserId
-    , restaurantId :: !String
+    , restaurantId :: !Text
     , liked :: !Bool
     }
     deriving (Show, Generic)
@@ -109,42 +106,18 @@ getUser :: Connection -> U.UserId -> IO (Maybe U.User)
 getUser conn u =
     listToMaybe <$> query conn "SELECT userId, session FROM users WHERE userId = ?" (Only u)
 
-{- | The given restaurant if more than one user in the session has liked
-it
--}
-matchedRestaurant :: Connection -> U.SessionId -> String -> IO (Maybe Restaurant)
-matchedRestaurant conn s restaurant =
-    listToMaybe
-        <$> query
-        conn
-        ( mconcat
-            [ "WITH l AS (SELECT userId, restaurantId FROM decisions WHERE liked) "
-            , "SELECT restaurants.id, restaurants.url, restaurants.name, restaurants.rating, restaurants.price, restaurants.hours, restaurants.category, restaurants.imagelink, restaurants.latitude, restaurants.longitude "
-            , "FROM users JOIN l "
-            , "ON users.userId IS l.userId "
-            , "JOIN restaurants "
-            , "ON l.restaurantId is restaurants.id "
-            , "WHERE users.session = ? AND l.restaurantId = ? "
-            , "GROUP BY l.restaurantId "
-            , "HAVING count(l.restaurantId) > 1 "
-            ]
-        )
-        (s, restaurant)
-
-storeInDB :: Connection -> [Restaurant] -> IO ()
-storeInDB conn =
-    executeMany conn "INSERT OR IGNORE INTO restaurants (id, url, name, rating, price, hours, category, imagelink, latitude, longitude) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
-
-{- | How far from the user, in degrees, to look for stored restaurants.
-0.15 degrees of latitude is roughly 16km.
--}
-searchRange :: Double
-searchRange = 0.15
-
--- | Restaurants already stored near the given location
-inDB :: Connection -> Loc -> IO [Restaurant]
-inDB conn l = do
-    let range = searchRange
-        -- Order must be stable since the frontend steps through by id
-        baseQuery = "SELECT * FROM restaurants WHERE (latitude BETWEEN ? AND ?) AND (longitude BETWEEN ? AND ?) ORDER BY rating DESC, id"
-    query conn baseQuery (latitude l - range, latitude l + range, longitude l - range, longitude l + range)
+-- | Whether more than one person in the session has liked the restaurant
+isMatch :: Connection -> U.SessionId -> Text -> IO Bool
+isMatch conn s restaurant = do
+    likes <-
+        query
+            conn
+            ( mconcat
+                [ "SELECT count(*) FROM decisions JOIN users ON users.userId = decisions.userId "
+                , "WHERE users.session = ? AND decisions.restaurantId = ? AND decisions.liked"
+                ]
+            )
+            (s, restaurant)
+    pure $ case likes of
+        [Only n] -> n > (1 :: Int)
+        _ -> False
