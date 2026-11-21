@@ -42,6 +42,8 @@ The backend stores restaurants, sessions and likes in =test.db=. Set
   cd frontend && make test
 #+end_src
 
+=make watch= in either directory rebuilds on change (needs [[https://github.com/eradman/entr][entr]]).
+
 * Example UI
 
 ** How it works

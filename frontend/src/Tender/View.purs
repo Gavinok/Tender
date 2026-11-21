@@ -6,27 +6,20 @@ import Data.Array (length)
 import Data.Maybe (Maybe(..))
 import Flame (Html)
 import Flame.Html.Attribute as HA
-import Flame.Html.Element (class ToNode)
 import Flame.Html.Element as HE
 import Flame.Types (NodeData)
 import Tender.App (Message(..), Model(..), Screen(..))
 import Tender.QR (qrDataUrl)
 import Tender.Types (Restaurant)
 
-headerText :: forall a b. ToNode a b Html => a -> Html b
-headerText text = HE.h1
-  [ HA.class'
-      "text-xl font-bold"
-  ]
-  text
+page :: Array (Html Message) -> Html Message
+page = HE.main [ HA.id "main" ]
 
-header :: forall a b. ToNode a b Html => a -> Html b
-header content =
-  HE.header
-    [ HA.class'
-        "bg-red-500 text-white py-4 px-6"
-    ]
-    content
+headerText :: forall a. String -> Html a
+headerText text = HE.h1 [ HA.class' "text-xl font-bold" ] [ HE.text text ]
+
+header :: forall a. Array (Html a) -> Html a
+header = HE.header [ HA.class' "bg-red-500 text-white py-4 px-6" ]
 
 image :: String -> Html Message
 image link =
@@ -42,30 +35,19 @@ image link =
     ]
 
 restaurantStats :: forall a. Restaurant -> Html a
-restaurantStats r = HE.div [ HA.class' "text-center" ] $ HE.ul_
-  let
-    ratings = [ " Rating: " <> (show r.rating) ]
-    pricing = case r.price of
-      Nothing -> []
-      Just p -> [ " Price: " <> p ]
-    category = case r.category of
-      Nothing -> []
-      Just c -> [ " Category: " <> c ]
-  in
-    map HE.li_ $ category <> ratings <> pricing
+restaurantStats r = HE.div [ HA.class' "text-center" ]
+  [ HE.ul_ $ map (HE.li_ <<< pure <<< HE.text) $ category <> ratings <> pricing ]
+  where
+  ratings = [ " Rating: " <> show r.rating ]
+  pricing = case r.price of
+    Nothing -> []
+    Just p -> [ " Price: " <> p ]
+  category = case r.category of
+    Nothing -> []
+    Just c -> [ " Category: " <> c ]
 
-buttonShape :: forall a. NodeData a
-buttonShape = HA.class' "button"
-
-btn :: forall a b. ToNode a b Html => b -> a -> Array (NodeData b) -> Html b
-btn m t c =
-  let
-    attrs =
-      [ buttonShape
-      , HA.onClick m
-      ]
-  in
-    HE.button (attrs <> c) t
+btn :: forall a. a -> String -> Array (NodeData a) -> Html a
+btn m t c = HE.button ([ HA.class' "button", HA.onClick m ] <> c) [ HE.text t ]
 
 grey :: forall a. Array (NodeData a)
 grey = [ HA.class' "bg-gray-900 hover:bg-gray-800" ]
@@ -73,34 +55,33 @@ grey = [ HA.class' "bg-gray-900 hover:bg-gray-800" ]
 centered :: forall a. NodeData a
 centered = HA.class' "flex justify-center"
 
-footer :: forall a b. ToNode b a Html => b -> Html a
-footer content =
-  HE.div [ HA.class' "bg-gray-200 py-4 px-6 flex justify-around" ]
-    [ content
-    ]
+footer :: forall a. Array (Html a) -> Html a
+footer = HE.div [ HA.class' "bg-gray-200 py-4 px-6 flex justify-around" ]
+
+footerItem :: forall a. Html a -> Html a
+footerItem content = HE.div [ HA.class' "footer-item" ] [ content ]
 
 yelplink :: forall a. Restaurant -> Html a
 yelplink r = HE.div [ HA.class' "yelp-link" ]
-  [ HE.a [ HA.href r.url, HA.target "_blank", HA.value "Yelp Page" ] "Yelp Page" ]
+  [ HE.a [ HA.href r.url, HA.target "_blank" ] [ HE.text "Yelp Page" ] ]
 
 loading :: Html Message
-loading =
-  HE.main "main"
-    [ HE.div [ HA.class' "loading-main" ]
-        [ HE.text "LOADING…" ]
-    ]
+loading = page [ HE.div [ HA.class' "loading-main" ] [ HE.text "LOADING…" ] ]
+
+matchCount :: forall a. Int -> Html a
+matchCount n = HE.text $ show n <> if n == 1 then " Match" else " Matches"
 
 -- | `view` updates the app markup whenever the model is updated
 view :: Model -> Html Message
-view (ServerError e) = HE.main "main" [ HE.text $ "Error: " <> e ]
+view (ServerError e) = page [ HE.text $ "Error: " <> e ]
 
 view Loading = loading
 
 view (QR _ link) =
-  HE.main "main"
+  page
     [ HE.div [ HA.class' "qr-main" ]
         [ HE.div [ HA.class' "join-button" ]
-            [ HE.a [ HA.href link, HA.value "Join Session" ] "Join Session" ]
+            [ HE.a [ HA.href link ] [ HE.text "Join Session" ] ]
         , HE.img
             [ HA.src $ qrDataUrl link
             , HA.alt "QR code for the session link"
@@ -115,7 +96,7 @@ view (QR _ link) =
 view (Active _ Fetching) = loading
 
 view (Active { matches } NoneLeft) =
-  HE.main "main"
+  page
     [ HE.div [ HA.class' "loading-main" ]
         [ HE.text $ "No more restaurants nearby. " <> case length matches of
             0 -> "You didn't get any matches."
@@ -125,45 +106,39 @@ view (Active { matches } NoneLeft) =
     ]
 
 view (Active { matches } (Swiping r)) =
-  HE.main "main"
+  page
     [ HE.div [ HA.class' "flex flex-col h-screen" ]
-        [ header $ headerText r.name
+        [ header [ headerText r.name ]
         , HE.div [ HA.class' "flex-grow overflow-y-auto" ]
             [ HE.div [ HA.class' "flex flex-col items-center py-8" ]
                 [ image r.imageLink
-                , HE.div [ centered ] $ yelplink r
-                , HE.div [ centered ] $ (show $ length matches) <>
-                    if (length matches) == 1 then " Match"
-                    else " Matches"
+                , HE.div [ centered ] [ yelplink r ]
+                , HE.div [ centered ] [ matchCount (length matches) ]
                 ]
             ]
         , HE.div_
             [ footer
-                [ HE.div [ HA.class' "footer-item" ]
-                    $ btn Dislike "-" [ HA.class' "bg-red-900 hover:bg-red-800" ]
-
-                , HE.div [ HA.class' "footer-item" ] $ restaurantStats r
-
-                , HE.div [ HA.class' "footer-item" ]
-                    $ btn Like "+" [ HA.class' "bg-green-900 hover:bg-green-800" ]
+                [ footerItem $ btn Dislike "-" [ HA.class' "bg-red-900 hover:bg-red-800" ]
+                , footerItem $ restaurantStats r
+                , footerItem $ btn Like "+" [ HA.class' "bg-green-900 hover:bg-green-800" ]
                 ]
             ]
         ]
     ]
 
 view (Active _ (Matched r)) =
-  HE.main "main"
+  page
     [ HE.div_
-        [ HE.div [ HA.class' "flex justify-center" ] $ headerText "Yay You Got A Match!"
+        [ HE.div [ HA.class' "flex justify-center" ] [ headerText "Yay You Got A Match!" ]
         , header [ headerText r.name ]
         , HE.div [ HA.class' "main-background" ]
             [ image r.imageLink
-            , HE.div [ centered ] $ yelplink r
+            , HE.div [ centered ] [ yelplink r ]
             ]
         , HE.div_
             [ footer
-                [ HE.div [ HA.class' "footer-item col-start-2" ] $ restaurantStats r
-                , HE.div [ HA.class' "footer-item" ] $ btn Continue "Continue Anyways" grey
+                [ HE.div [ HA.class' "footer-item col-start-2" ] [ restaurantStats r ]
+                , footerItem $ btn Continue "Continue Anyways" grey
                 ]
             ]
         ]

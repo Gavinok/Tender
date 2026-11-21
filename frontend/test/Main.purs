@@ -4,16 +4,19 @@ import Prelude
 
 import Data.Array (length)
 import Data.Maybe (Maybe(..))
+import Data.String (Pattern(..), contains)
 import Data.Tuple (Tuple(..))
+import Effect.Class (liftEffect)
+import Flame.Renderer.String (render)
 import Effect (Effect)
-import Effect.Aff (launchAff_)
 import Tender.App (Message(..), Model(..), Screen(..), Swiper, update)
 import Tender.Browser (sessionFromPath)
 import Tender.Types (Restaurant, RestaurantId(..), SessionId(..), UserId(..))
+import Tender.View (view)
 import Test.Spec (describe, it)
-import Test.Spec.Assertions (shouldEqual)
+import Test.Spec.Assertions (shouldEqual, shouldSatisfy)
 import Test.Spec.Reporter.Console (consoleReporter)
-import Test.Spec.Runner (runSpec)
+import Test.Spec.Runner.Node (runSpecAndExitProcess)
 
 restaurant :: String -> Restaurant
 restaurant id =
@@ -35,7 +38,7 @@ step model msg = case update model msg of
   Tuple m effects -> Tuple m (length effects)
 
 main :: Effect Unit
-main = launchAff_ $ runSpec [ consoleReporter ] do
+main = runSpecAndExitProcess [ consoleReporter ] do
   describe "update" do
     it "fetches the first restaurant once started" do
       step (QR (SessionId "s") "link") (Started (UserId "u") swiper.loc)
@@ -78,3 +81,19 @@ main = launchAff_ $ runSpec [ consoleReporter ] do
       sessionFromPath "/abc" `shouldEqual` Just (SessionId "abc")
     it "ignores a trailing slash" do
       sessionFromPath "/abc/" `shouldEqual` Just (SessionId "abc")
+
+  describe "view" do
+    let
+      renders model text = do
+        html <- liftEffect $ render (view model)
+        html `shouldSatisfy` contains (Pattern text)
+    it "shows a local QR code and the share link in the lobby" do
+      renders (QR (SessionId "s") "http://example.com/s") "src=\"data:image/svg+xml"
+      renders (QR (SessionId "s") "http://example.com/s") "href=\"http://example.com/s\""
+    it "shows the restaurant while swiping" do
+      renders (Active swiper (Swiping (restaurant "Pho Real"))) "Pho Real"
+      renders (Active swiper (Swiping (restaurant "Pho Real"))) "0 Matches"
+    it "celebrates a match" do
+      renders (Active swiper (Matched (restaurant "a"))) "Match!"
+    it "says when there is nothing left" do
+      renders (Active swiper NoneLeft) "No more restaurants nearby"

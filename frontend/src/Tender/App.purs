@@ -16,7 +16,8 @@ import Data.Show.Generic (genericShow)
 import Data.Maybe (Maybe(..), maybe)
 import Effect.Aff (Aff, attempt, message)
 import Effect.Class (liftEffect)
-import Flame (ListUpdate, (:>))
+import Data.Tuple.Nested ((/\))
+import Flame (Update)
 import Tender.Api (ApiError(..), createSession, decide, getRestaurant, joinSession)
 import Tender.Browser (existingSession, geolocation, shareLink)
 import Tender.Types (ErrorMessage, Loc, Restaurant, RestaurantId, SessionId, Url, UserId)
@@ -91,11 +92,11 @@ init :: Model
 init = Loading
 
 -- | `update` is called to handle events
-update :: ListUpdate Model Message
+update :: Update Model Message
 update model = case model, _ of
-  _, FailedToLoad e -> ServerError e :> []
+  _, FailedToLoad e -> ServerError e /\ []
 
-  _, DetermineSession -> model :>
+  _, DetermineSession -> model /\
     [ Just <$> do
         found <- liftEffect existingSession
         session <- maybe createSession (pure <<< Right) found
@@ -103,17 +104,17 @@ update model = case model, _ of
           Left e -> pure $ failed e
           Right s -> JoinSession s <$> liftEffect (shareLink s)
     ]
-  _, JoinSession session link -> QR session link :> []
+  _, JoinSession session link -> QR session link /\ []
 
-  QR session _, StartSwiping -> model :>
+  QR session _, StartSwiping -> model /\
     [ attempt geolocation >>= case _ of
         Left e -> pure $ Just $ FailedToLoad $ "Could not get your location: " <> message e
         Right loc -> Just <<< orFail (\u -> Started u loc) <$> joinSession session
     ]
   _, Started user loc ->
-    Active { user, loc, matches: [] } Fetching :> [ nextRestaurant loc Nothing ]
+    Active { user, loc, matches: [] } Fetching /\ [ nextRestaurant loc Nothing ]
 
-  Active swiper (Swiping r), Like -> model :>
+  Active swiper (Swiping r), Like -> model /\
     [ do
         match <- decide swiper.user r.id true
         case match of
@@ -121,18 +122,18 @@ update model = case model, _ of
           Right (Just m) | not (elem m.id (_.id <$> swiper.matches)) -> pure $ Just $ GotMatch m
           Right _ -> nextRestaurant swiper.loc (Just r.id)
     ]
-  Active swiper (Swiping r), Dislike -> model :>
+  Active swiper (Swiping r), Dislike -> model /\
     [ decide swiper.user r.id false >>= case _ of
         Left e -> pure $ Just $ failed e
         Right _ -> nextRestaurant swiper.loc (Just r.id)
     ]
-  Active swiper (Matched r), Continue -> model :>
+  Active swiper (Matched r), Continue -> model /\
     [ nextRestaurant swiper.loc (Just r.id) ]
 
-  Active swiper _, Show r -> Active swiper (Swiping r) :> []
+  Active swiper _, Show r -> Active swiper (Swiping r) /\ []
   Active swiper _, GotMatch r ->
-    Active swiper { matches = cons r swiper.matches } (Matched r) :> []
-  Active swiper _, OutOfRestaurants -> Active swiper NoneLeft :> []
+    Active swiper { matches = cons r swiper.matches } (Matched r) /\ []
+  Active swiper _, OutOfRestaurants -> Active swiper NoneLeft /\ []
 
   -- Anything else is a stale message, e.g. from a double click
-  _, _ -> model :> []
+  _, _ -> model /\ []

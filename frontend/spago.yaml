@@ -1,0 +1,33 @@
+package:
+  name: tender
+  dependencies:
+    - aff
+    - arrays
+    - bifunctors
+    - effect
+    - either
+    - fetch
+    - flame
+    - maybe
+    - prelude
+    - strings
+    - tuples
+    - web-dom
+    - web-html
+    - yoga-json
+  test:
+    main: Test.Main
+    dependencies:
+      - spec
+      - spec-node
+      - effect
+      - flame
+      - strings
+  bundle:
+    module: Main
+    outfile: assets/app.js
+    platform: browser
+workspace:
+  packageSet:
+    registry: 81.6.0
+  extraPackages: {}
