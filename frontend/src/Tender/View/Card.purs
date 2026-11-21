@@ -39,16 +39,29 @@ chip text =
   HE.span [ HA.class' "rounded-full bg-white/20 px-3 py-1 text-sm font-bold text-white backdrop-blur" ]
     [ HE.text text ]
 
+stamp :: forall a. String -> String -> String -> Html a
+stamp text classes opacity =
+  HE.span
+    [ HA.class' ("absolute top-16 rounded-xl border-4 px-3 py-1 text-4xl font-black tracking-wider " <> classes)
+    , HA.style { opacity }
+    , HA.createAttribute "aria-hidden" "true"
+    ]
+    [ HE.text text ]
+
 -- | The restaurant's photo with its details over the bottom of it. Keyed on
 -- | the restaurant so each new one animates in.
 restaurantCard :: forall a. Restaurant -> Html a
 restaurantCard r =
   HE.article
     [ HA.key (show r.id)
-    , HA.class' "relative min-h-[22rem] w-full flex-1 animate-card-in overflow-hidden rounded-[2rem] bg-tomato-200 shadow-card"
+    , HA.createAttribute "data-swipe" ""
+    , HA.class' "relative min-h-[22rem] w-full flex-1 animate-card-in cursor-grab touch-none select-none overflow-hidden rounded-[2rem] bg-tomato-200 shadow-card active:cursor-grabbing"
     ]
-    [ HE.img [ HA.class' "absolute inset-0 h-full w-full object-cover", HA.src r.imageLink, HA.alt "" ]
+    [ HE.img [ HA.class' "pointer-events-none absolute inset-0 h-full w-full object-cover", HA.src r.imageLink, HA.alt "" ]
     , HE.div [ HA.class' "absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" ] []
+    -- Fade in while dragging, see Swipe.js
+    , stamp "YUM" "left-5 -rotate-12 border-butter text-butter" "var(--like, 0)"
+    , stamp "NOPE" "right-5 rotate-12 border-white text-white" "var(--nope, 0)"
     , HE.a
         [ HA.href r.url
         , HA.target "_blank"

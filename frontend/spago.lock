@@ -17,6 +17,7 @@
             "strings",
             "tuples",
             "web-dom",
+            "web-events",
             "web-html",
             "yoga-json"
           ]

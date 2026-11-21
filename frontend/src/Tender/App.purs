@@ -20,6 +20,8 @@ import Effect.Class (liftEffect)
 import Data.Tuple.Nested ((/\))
 import Flame (Update)
 import Tender.Api (ApiError(..), createSession, decide, getRestaurant, joinSession)
+import Tender.Swipe (flyOut)
+import Tender.Swipe as Swipe
 import Tender.Browser (Shared(..), existingSession, geolocation, reload, rememberSession, shareLink, shareOrCopy, vibrate)
 import Tender.Types (ErrorMessage, Loc, Restaurant, RestaurantId, SessionId, Url, UserId)
 
@@ -145,6 +147,7 @@ update model = case model, _ of
 
   Active swiper (Swiping r), Like -> model /\
     [ do
+        liftEffect $ flyOut Swipe.Right
         match <- decide swiper.user r.id true
         case match of
           Left e -> pure $ Just $ failed e
@@ -152,7 +155,7 @@ update model = case model, _ of
           Right _ -> nextRestaurant swiper.loc (Just r.id)
     ]
   Active swiper (Swiping r), Dislike -> model /\
-    [ decide swiper.user r.id false >>= case _ of
+    [ liftEffect (flyOut Swipe.Left) *> decide swiper.user r.id false >>= case _ of
         Left e -> pure $ Just $ failed e
         Right _ -> nextRestaurant swiper.loc (Just r.id)
     ]

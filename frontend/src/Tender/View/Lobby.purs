@@ -1,6 +1,5 @@
 module Tender.View.Lobby (lobby) where
 
-import Prelude
 
 import Data.Maybe (Maybe(..))
 import Flame (Html)
