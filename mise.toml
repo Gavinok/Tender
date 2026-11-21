@@ -1,0 +1,19 @@
+# Toolchain for the backend (Haskell) and frontend (PureScript).
+#
+# GHC and HLS both come from ghcup bindists through the mise-ghcup plugin.
+# HLS only works with the exact GHC build it was compiled against, and
+# mise's default GHC backend (conda) is a different build.
+
+[tool_alias]
+ghc = "asdf:mise-plugins/mise-ghcup"
+
+[plugins]
+hls = "https://github.com/mise-plugins/mise-ghcup"
+
+[tools]
+ghc = "9.4.8"
+cabal = "3.16.1.0"
+# Last HLS release with binaries for GHC 9.4.8
+hls = "2.11.0.0"
+node = "22"
+purescript = "0.15.15"
