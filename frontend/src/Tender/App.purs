@@ -19,7 +19,7 @@ import Effect.Class (liftEffect)
 import Data.Tuple.Nested ((/\))
 import Flame (Update)
 import Tender.Api (ApiError(..), createSession, decide, getRestaurant, joinSession)
-import Tender.Browser (existingSession, geolocation, shareLink)
+import Tender.Browser (existingSession, geolocation, reload, rememberSession, shareLink)
 import Tender.Types (ErrorMessage, Loc, Restaurant, RestaurantId, SessionId, Url, UserId)
 
 -- | What we know once the user has joined a session
@@ -70,6 +70,8 @@ data Message
   | GotMatch Restaurant
   | OutOfRestaurants
   | FailedToLoad ErrorMessage
+  -- | Start again from the session in the url
+  | Retry
 
 -- | Ask for the restaurant after the given one
 nextRestaurant :: Loc -> Maybe RestaurantId -> Aff (Maybe Message)
@@ -97,6 +99,7 @@ init = Loading
 update :: Update Model Message
 update model = case model, _ of
   _, FailedToLoad e -> ServerError e /\ []
+  _, Retry -> model /\ [ liftEffect reload $> Nothing ]
 
   _, DetermineSession -> model /\
     [ Just <$> do
@@ -104,7 +107,9 @@ update model = case model, _ of
         session <- maybe createSession (pure <<< Right) found
         case session of
           Left e -> pure $ failed e
-          Right s -> JoinSession s <$> liftEffect (shareLink s)
+          Right s -> liftEffect do
+            rememberSession s
+            JoinSession s <$> shareLink s
     ]
   _, JoinSession session link -> QR session link /\ []
 

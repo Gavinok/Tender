@@ -16,3 +16,7 @@ export const _geolocation = (onError, onSuccess) => {
     onCancelerSuccess();
   };
 };
+
+export const reload = () => window.location.reload();
+
+export const _replacePath = (path) => () => window.history.replaceState(null, "", path);

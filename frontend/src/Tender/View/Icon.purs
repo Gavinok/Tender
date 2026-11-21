@@ -16,7 +16,7 @@ data Icon
   | Share
   | Copy
   | Utensils
-  | Retry
+  | Refresh
 
 paths :: Icon -> Array String
 paths = case _ of
@@ -27,7 +27,7 @@ paths = case _ of
   Share -> [ "M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8", "m16 6-4-4-4 4", "M12 2v13" ]
   Copy -> [ "M10 8h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H10a2 2 0 0 1-2-2V10a2 2 0 0 1 2-2z", "M4 16a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2" ]
   Utensils -> [ "M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2", "M7 2v20", "M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7" ]
-  Retry -> [ "M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8", "M21 3v5h-5", "M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16", "M8 16H3v5" ]
+  Refresh -> [ "M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8", "M21 3v5h-5", "M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16", "M8 16H3v5" ]
 
 -- | An icon with the given classes, e.g. `icon Heart "w-6 h-6 fill-current"`.
 -- | Hidden from screen readers; label the button around it instead.

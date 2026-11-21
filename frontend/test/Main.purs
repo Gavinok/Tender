@@ -103,5 +103,7 @@ main = runSpecAndExitProcess [ consoleReporter ] do
       renders (Active swiper (Swiping (restaurant "Pho Real"))) "aria-label=\"0 matches\""
     it "celebrates a match" do
       renders (Active swiper (Matched (restaurant "a"))) "Match!"
+    it "offers to try again after an error" do
+      renders (ServerError "Could not reach the server") "Try again"
     it "says when there is nothing left" do
-      renders (Active swiper NoneLeft) "No more restaurants nearby"
+      renders (Active swiper NoneLeft) "everything nearby"

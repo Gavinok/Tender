@@ -2,6 +2,8 @@ module Tender.Browser
   ( backendUrl
   , existingSession
   , geolocation
+  , rememberSession
+  , reload
   , sessionFromPath
   , shareLink
   ) where
@@ -46,3 +48,11 @@ existingSession = sessionFromPath <$> (pathname =<< location =<< window)
 -- | The last segment of a url path, e.g. `/<session>`
 sessionFromPath :: String -> Maybe SessionId
 sessionFromPath path = SessionId <$> last (filter (_ /= "") (split (Pattern "/") path))
+
+foreign import reload :: Effect Unit
+
+foreign import _replacePath :: String -> Effect Unit
+
+-- | Put the session in the url so reloading the page rejoins it
+rememberSession :: SessionId -> Effect Unit
+rememberSession (SessionId s) = _replacePath ("/" <> s)

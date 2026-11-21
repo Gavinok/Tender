@@ -14,6 +14,7 @@ import Tender.View.Button (Variant(..), button, linkButton)
 import Tender.View.Card (actionBar, restaurantCard)
 import Tender.View.Icon (Icon(..))
 import Tender.View.Layout (centred, page)
+import Tender.View.States (cardSkeleton, outOfRestaurants, problem, setting)
 
 heading :: forall a. String -> Html a
 heading text = HE.h1 [ HA.class' "text-4xl font-black leading-tight" ] [ HE.text text ]
@@ -29,15 +30,11 @@ photo r =
     , HA.alt r.name
     ]
 
-loading :: Html Message
-loading = page Nothing [ centred [ blurb "Loading…" ] ]
-
 -- | `view` updates the app markup whenever the model is updated
 view :: Model -> Html Message
-view (ServerError e) =
-  page Nothing [ centred [ heading "Uh oh", blurb e ] ]
+view (ServerError e) = page Nothing [ problem e Retry ]
 
-view Loading = loading
+view Loading = page Nothing [ setting ]
 
 view (QR _ link) =
   page Nothing
@@ -55,18 +52,9 @@ view (QR _ link) =
         ]
     ]
 
-view (Active _ Fetching) = loading
+view (Active { matches } Fetching) = page (Just (length matches)) [ cardSkeleton ]
 
-view (Active { matches } NoneLeft) =
-  page (Just (length matches))
-    [ centred
-        [ heading "No more restaurants nearby"
-        , blurb case length matches of
-            0 -> "You didn't get any matches."
-            1 -> "You got 1 match."
-            n -> "You got " <> show n <> " matches."
-        ]
-    ]
+view (Active { matches } NoneLeft) = page (Just (length matches)) [ outOfRestaurants matches Retry ]
 
 view (Active { matches } (Swiping r)) =
   page (Just (length matches))
