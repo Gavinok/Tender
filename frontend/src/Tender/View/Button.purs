@@ -28,7 +28,7 @@ variantClasses :: Variant -> String
 variantClasses = case _ of
   Primary -> "border-ink bg-brand-500 text-white shadow-pop hover:bg-brand-600"
   Secondary -> "border-ink bg-white text-ink shadow-pop hover:bg-brand-50"
-  OnColour -> "border-white bg-white/15 text-white hover:bg-white/25"
+  OnColour -> "border-white bg-white/20 text-white hover:bg-white/30"
 
 content :: forall a. Maybe Icon -> String -> Array (Html a)
 content i label = maybe [] (\x -> [ icon x "w-5 h-5" ]) i <> [ HE.text label ]

@@ -18,8 +18,8 @@ lobby { link, copied } { share, start } =
     , HE.p [ HA.class' "max-w-xs text-lg text-ink/70" ]
         [ HE.text "Get everyone to scan this, then start swiping. Anything you all like is a match." ]
     , HE.figure [ HA.class' "-rotate-2 rounded-3xl border-[3px] border-ink bg-white p-4 shadow-card" ]
-        [ HE.img [ HA.src (qrDataUrl link), HA.alt "QR code to join this session", HA.class' "h-52 w-52" ]
-        , HE.p [ HA.class' "max-w-52 truncate pt-2 font-mono text-xs text-ink/50" ] [ HE.text link ]
+        [ HE.img [ HA.src (qrDataUrl link), HA.alt "QR code to join this session", HA.class' "block h-52 w-52" ]
+        , HE.p [ HA.class' "w-52 truncate pt-2 font-mono text-xs text-ink/50", HA.title link ] [ HE.text link ]
         ]
     , HE.div [ HA.class' "flex flex-col items-center gap-3" ]
         [ if copied then button Secondary (Just Check) "Link copied!" share
