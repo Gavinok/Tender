@@ -2,7 +2,7 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DerivingStrategies #-}
 
-module Db (initDb, withDb, setImage, storeInDB, inDB, addUserToDb, addLikeToDb, likedRestaurants, Like (..), getUser) where
+module Db (initDb, withDb, setImage, storeInDB, inDB, addUserToDb, addLikeToDb, matchedRestaurant, Like (..), getUser) where
 
 import Database.SQLite.Simple (
     Connection,
@@ -82,9 +82,13 @@ getUser :: Connection -> U.UserId -> IO (Maybe U.User)
 getUser conn u =
     listToMaybe <$> query conn "SELECT userId, session FROM users WHERE userId = ?" (Only u)
 
-likedRestaurants :: Connection -> U.SessionId -> IO [Restaurant]
-likedRestaurants conn s =
-    query
+{- | The given restaurant if more than one user in the session has liked
+it
+-}
+matchedRestaurant :: Connection -> U.SessionId -> String -> IO (Maybe Restaurant)
+matchedRestaurant conn s restaurant =
+    listToMaybe
+        <$> query
         conn
         ( mconcat
             [ "WITH l AS (SELECT DISTINCT likes.userId, likes.restaurantId FROM likes) "
@@ -93,12 +97,12 @@ likedRestaurants conn s =
             , "ON users.userId IS l.userId "
             , "JOIN restaurants "
             , "ON l.restaurantId is restaurants.id "
-            , "WHERE users.session = ? "
+            , "WHERE users.session = ? AND l.restaurantId = ? "
             , "GROUP BY l.restaurantId "
             , "HAVING count(l.restaurantId) > 1 "
             ]
         )
-        [s]
+        (s, restaurant)
 
 storeInDB :: Connection -> [Restaurant] -> IO ()
 storeInDB conn =

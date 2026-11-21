@@ -149,9 +149,9 @@ app env = scotty 5001 $ do
                                     case maybeU of
                                       Just (U.User _ s) -> do
                                                         putStr "getting matches"
-                                                        matches <- likedRestaurants c s
-                                                        print $ "matches where" <> show matches
-                                                        pure $ listToMaybe matches
+                                                        match <- matchedRestaurant c s l
+                                                        print $ "match was " <> show match
+                                                        pure match
                                       Nothing -> pure Nothing
                         liftIO $ print $ " sending " <> show r
                         json (r :: Maybe Restaurant)
