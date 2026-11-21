@@ -20,7 +20,9 @@ build exactly.
 You will need a [[https://developers.google.com/maps/documentation/places/web-service/get-api-key][Google Places API key]] with the Places API (New)
 enabled. Google needs a billing account on the project, but the monthly
 free usage covers a project like this; setting a daily quota in the
-Cloud console makes sure it stays free.
+Cloud console makes sure it stays free. A Maps Demo Key works too, but
+Google leaves photos and reviews out of its responses, so every card
+shows a placeholder.
 
 The backend reads the key from =GOOGLE_PLACES_KEY=, or from
 =pass show GOOGLE_PLACES_KEY= if that isn't set. Run the default make
