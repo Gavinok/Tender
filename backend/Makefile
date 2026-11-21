@@ -1,6 +1,6 @@
 all:
 	cabal run
 watch:
-	find app -name "*.hs" | entr -r make all
+	find app src -name "*.hs" | entr -r make all
 test:
 	cabal test
