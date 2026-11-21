@@ -44,7 +44,7 @@ setting =
 badge :: forall a. Icon -> String -> Html a
 badge i classes = HE.div [ HA.class' ("grid h-20 w-20 place-items-center rounded-2xl border-[3px] border-ink " <> classes) ] [ icon i "h-10 w-10" ]
 
--- | Restaurants with a small photo and a link to Yelp
+-- | Restaurants with a small photo and a link to Google Maps
 matchList :: forall a. Array Restaurant -> Html a
 matchList rs =
   HE.ul [ HA.class' "flex w-full flex-col gap-3" ] (map item rs)
