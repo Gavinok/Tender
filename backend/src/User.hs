@@ -3,7 +3,7 @@
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
-module User (User (..), UserId (..), SessionId (..), newUserId, newSessionId, sessionFromText) where
+module User (User (..), UserId (..), SessionId (..), newUserId, newSessionId, sessionFromText, userFromText) where
 
 import Data.Aeson (FromJSON, ToJSON)
 import Data.Text (Text)
@@ -31,6 +31,9 @@ newSessionId = SessionId <$> nextRandom
 
 sessionFromText :: Text -> Maybe SessionId
 sessionFromText = fmap SessionId . UUID.fromText
+
+userFromText :: Text -> Maybe UserId
+userFromText = fmap UserId . UUID.fromText
 
 -- Both ids are stored as their textual form
 instance ToField UserId where

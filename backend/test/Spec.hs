@@ -172,6 +172,35 @@ main = hspec $ do
             like conn u1 "a" >> like conn other "a"
             isMatch conn s "a" `shouldReturn` False
 
+    describe "joinSession" $ do
+        it "gives a new person a new id" $ withTestDb $ \conn -> do
+            (s, _) <- sessionWith conn 0
+            a <- joinSession conn s Nothing
+            b <- joinSession conn s Nothing
+            a `shouldNotBe` b
+        it "keeps the id of someone coming back to the session" $ withTestDb $ \conn -> do
+            (s, _) <- sessionWith conn 0
+            a <- joinSession conn s Nothing
+            joinSession conn s (Just a) `shouldReturn` a
+        it "doesn't let an id from another session in" $ withTestDb $ \conn -> do
+            (s, _) <- sessionWith conn 0
+            (other, _) <- sessionWith conn 0
+            a <- joinSession conn other Nothing
+            b <- joinSession conn s (Just a)
+            b `shouldNotBe` a
+        it "treats an unknown id as a new person" $ withTestDb $ \conn -> do
+            (s, _) <- sessionWith conn 0
+            stranger <- newUserId
+            b <- joinSession conn s (Just stranger)
+            b `shouldNotBe` stranger
+        it "means a reload doesn't turn one person's like into a match" $ withTestDb $ \conn -> do
+            (s, _) <- sessionWith conn 0
+            me <- joinSession conn s Nothing
+            like conn me "a"
+            me' <- joinSession conn s (Just me)
+            like conn me' "a"
+            isMatch conn s "a" `shouldReturn` False
+
     describe "initSchema" $ do
         it "upgrades a database from before versioning, keeping likes and dropping stored restaurants" $
             withConnection ":memory:" $ \conn -> do

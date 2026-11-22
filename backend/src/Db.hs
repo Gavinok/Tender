@@ -2,7 +2,7 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DerivingStrategies #-}
 
-module Db (initDb, initSchema, withDb, addUserToDb, recordDecision, isMatch, Decision (..), getUser) where
+module Db (initDb, initSchema, withDb, addUserToDb, joinSession, recordDecision, isMatch, Decision (..), getUser) where
 
 import Control.Monad (forM_)
 import Database.SQLite.Simple (
@@ -81,6 +81,21 @@ migrations =
 addUserToDb :: Connection -> U.User -> IO ()
 addUserToDb conn (U.User i s) =
     execute conn "INSERT INTO users (userId, session) VALUES (?, ?)" (i, s)
+
+{- | The user's id in the session. Someone coming back (after a reload, say)
+keeps the id they had, so their earlier likes still count as theirs and
+not as another person's. Anyone else, including an id from another
+session, joins as a new user.
+-}
+joinSession :: Connection -> U.SessionId -> Maybe U.UserId -> IO U.UserId
+joinSession conn s returning = do
+    known <- maybe (pure Nothing) (getUser conn) returning
+    case known of
+        Just u | U.session u == s -> pure (U.userId u)
+        _ -> do
+            uid <- U.newUserId
+            addUserToDb conn (U.User uid s)
+            pure uid
 
 -- | Whether a user liked a restaurant
 data Decision = Decision

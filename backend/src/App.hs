@@ -24,6 +24,7 @@ import Web.Scotty (
     pathParam,
     post,
     queryParam,
+    queryParamMaybe,
     redirect,
     scotty,
     setHeader,
@@ -138,8 +139,9 @@ app env = scotty 5001 $ do
         case U.sessionFromText sessionText of
             Nothing -> errorResponse status400 "Invalid session"
             Just s -> do
-                uid <- liftIO U.newUserId
-                liftIO $ withConn $ \c -> addUserToDb c (U.User uid s)
+                -- Set when this browser has been in the session before
+                returning <- (>>= U.userFromText) <$> queryParamMaybe "user"
+                uid <- liftIO $ withConn $ \c -> joinSession c s returning
                 json uid
 
     -- Restaurants near the location, fresh for each session

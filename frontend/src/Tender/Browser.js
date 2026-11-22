@@ -38,3 +38,22 @@ export const _shareOrCopy = (url) => (onError, onSuccess) => {
   }
   return (cancelError, onCancelerError, onCancelerSuccess) => onCancelerSuccess();
 };
+
+// Storage can be unavailable (e.g. some private browsing modes); then every
+// visit joins as a new person, as before.
+const userKey = (session) => `tender:user:${session}`;
+
+export const _rememberedUser = (just) => (nothing) => (session) => () => {
+  try {
+    const user = window.localStorage.getItem(userKey(session));
+    return user ? just(user) : nothing;
+  } catch (e) {
+    return nothing;
+  }
+};
+
+export const _rememberUser = (session) => (user) => () => {
+  try {
+    window.localStorage.setItem(userKey(session), user);
+  } catch (e) {}
+};

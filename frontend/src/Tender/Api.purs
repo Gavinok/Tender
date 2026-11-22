@@ -10,11 +10,12 @@ import Prelude
 
 import Data.Bifunctor (lmap)
 import Data.Either (Either(..))
+import Data.Maybe (Maybe, maybe)
 import Effect.Aff (Aff, Error, attempt, message)
 import Effect.Class (liftEffect)
 import Fetch (Method(..), Response, fetch)
 import Tender.Browser (backendUrl)
-import Tender.Types (ErrorMessage, Loc, Restaurant, RestaurantId, SessionId(..), UserId)
+import Tender.Types (ErrorMessage, Loc, Restaurant, RestaurantId, SessionId(..), UserId(..))
 import Yoga.JSON (class ReadForeign, class WriteForeign)
 import Yoga.JSON as JSON
 
@@ -59,8 +60,10 @@ post path body = do
 createSession :: Aff (Either ApiError SessionId)
 createSession = get "newsession"
 
-joinSession :: SessionId -> Aff (Either ApiError UserId)
-joinSession (SessionId s) = get ("addtosession/" <> s)
+-- | Join the session, keeping the given id if this browser was in it before
+joinSession :: SessionId -> Maybe UserId -> Aff (Either ApiError UserId)
+joinSession (SessionId s) returning =
+  get ("addtosession/" <> s <> maybe "" (\(UserId u) -> "?user=" <> u) returning)
 
 -- | Record whether the user liked the restaurant, and whether that made it a match
 decide :: UserId -> RestaurantId -> Boolean -> Aff (Either ApiError Boolean)

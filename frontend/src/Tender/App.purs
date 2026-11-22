@@ -23,7 +23,7 @@ import Flame (Update)
 import Tender.Api (ApiError(..), createSession, decide, getRestaurants, joinSession)
 import Tender.Swipe (flyOut)
 import Tender.Swipe as Swipe
-import Tender.Browser (Shared(..), existingSession, geolocation, reload, rememberSession, shareLink, shareOrCopy, vibrate)
+import Tender.Browser (Shared(..), existingSession, geolocation, reload, rememberSession, rememberUser, rememberedUser, shareLink, shareOrCopy, vibrate)
 import Tender.Types (ErrorMessage, Loc, Restaurant, RestaurantId, SessionId, Url, UserId)
 
 -- | What we know once the user has joined a session
@@ -140,7 +140,12 @@ update model = case model, _ of
   QR { session }, StartSwiping -> model /\
     [ attempt geolocation >>= case _ of
         Left e -> pure $ Just $ FailedToLoad $ "Could not get your location: " <> message e
-        Right loc -> Just <<< orFail (\u -> Started u loc) <$> joinSession session
+        Right loc -> do
+          returning <- liftEffect $ rememberedUser session
+          joined <- joinSession session returning
+          case joined of
+            Right u -> liftEffect (rememberUser session u) $> Just (Started u loc)
+            Left e -> pure $ Just $ failed e
     ]
   _, Started user loc ->
     Active { user, upcoming: [], matches: [], showMatches: false } Fetching

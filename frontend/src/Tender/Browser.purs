@@ -4,6 +4,8 @@ module Tender.Browser
   , existingSession
   , geolocation
   , rememberSession
+  , rememberUser
+  , rememberedUser
   , reload
   , vibrate
   , sessionFromPath
@@ -14,12 +16,12 @@ module Tender.Browser
 import Prelude
 
 import Data.Array (filter, last)
-import Data.Maybe (Maybe)
+import Data.Maybe (Maybe(..))
 import Data.String (Pattern(..), split)
 import Effect (Effect)
 import Effect.Aff (Aff)
 import Effect.Aff.Compat (EffectFnAff, fromEffectFnAff)
-import Tender.Types (Loc, SessionId(..), Url)
+import Tender.Types (Loc, SessionId(..), Url, UserId(..))
 import Web.HTML (window)
 import Web.HTML.Location (origin, pathname)
 import Web.HTML.Window (location)
@@ -75,3 +77,15 @@ shareOrCopy url = fromEffectFnAff (_shareOrCopy url) <#> case _ of
   "copied" -> Copied
   "cancelled" -> Cancelled
   _ -> Shared
+
+foreign import _rememberedUser :: (String -> Maybe String) -> Maybe String -> String -> Effect (Maybe String)
+
+foreign import _rememberUser :: String -> String -> Effect Unit
+
+-- | The id this browser had in the session, so coming back doesn't make
+-- | the same person a second user
+rememberedUser :: SessionId -> Effect (Maybe UserId)
+rememberedUser (SessionId s) = map UserId <$> _rememberedUser Just Nothing s
+
+rememberUser :: SessionId -> UserId -> Effect Unit
+rememberUser (SessionId s) (UserId u) = _rememberUser s u
