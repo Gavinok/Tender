@@ -10,7 +10,7 @@ module Tender.App
 
 import Prelude
 
-import Data.Array (cons, elem, filter, uncons)
+import Data.Array (cons, elem, filter, snoc, uncons)
 import Data.Either (Either(..), either)
 import Data.Generic.Rep (class Generic)
 import Data.Show.Generic (genericShow)
@@ -20,7 +20,8 @@ import Effect.Class (liftEffect)
 import Data.Tuple (Tuple)
 import Data.Tuple.Nested ((/\))
 import Flame (Update)
-import Tender.Api (ApiError(..), createSession, decide, getRestaurants, joinSession)
+import Tender.Api (ApiError(..), createSession, decide, getRestaurants, getVibe, joinSession, setVibe)
+import Tender.Vibe (Vibe)
 import Tender.Swipe (flyOut)
 import Tender.Swipe as Swipe
 import Tender.Browser (Shared(..), existingSession, geolocation, reload, rememberSession, rememberUser, rememberedUser, shareLink, shareOrCopy, vibrate)
@@ -36,6 +37,8 @@ type Swiper =
   , matches :: Array Restaurant
   -- | Whether the list of matches is open
   , showMatches :: Boolean
+  -- | The session's vibe chips
+  , vibe :: Array String
   }
 
 -- | What a user who has joined a session is looking at
@@ -50,6 +53,7 @@ type Lobby =
   , link :: Url
   -- | Show that the link was just copied
   , copied :: Boolean
+  , vibe :: Vibe
   }
 
 -- | The model represents the state of the app
@@ -82,7 +86,13 @@ data Message
   | KeyPressed String
   -- | Skip past the current match and keep swiping
   | Continue
-  | Loaded { restaurants :: Array Restaurant, othersLiked :: Array RestaurantId }
+  | Loaded { restaurants :: Array Restaurant, othersLiked :: Array RestaurantId, vibe :: Array String }
+  | ToggleChip String
+  -- | The vibe as saved after this person changed it
+  | VibeSaved Vibe
+  -- | The vibe as fetched by the lobby's regular check, which then schedules the next one
+  | VibePolled Vibe
+  | PollVibe
   -- | The decision on this restaurant is saved
   | Decided { id :: RestaurantId, match :: Boolean, othersLiked :: Array RestaurantId }
   | FailedToLoad ErrorMessage
@@ -114,6 +124,12 @@ likedFirst ids rs = filter liked rs <> filter (not <<< liked) rs
   where
   liked r = elem r.id ids
 
+-- | Fetch the session's vibe. A failed check keeps what is shown and tries again later.
+pollVibe :: SessionId -> Aff (Maybe Message)
+pollVibe session = getVibe session >>= case _ of
+  Right v -> pure $ Just (VibePolled v)
+  Left _ -> delay (Milliseconds 3000.0) $> Just PollVibe
+
 -- | Initial state of the app
 init :: Model
 init = Loading
@@ -134,7 +150,18 @@ update model = case model, _ of
             rememberSession s
             JoinSession s <$> shareLink s
     ]
-  _, JoinSession session link -> QR { session, link, copied: false } /\ []
+  _, JoinSession session link ->
+    QR { session, link, copied: false, vibe: { chips: [], locked: false } } /\ [ pollVibe session ]
+  -- Keeps checking while in the lobby so everyone sees the same chips; stops once swiping
+  QR lobby, VibePolled v -> QR lobby { vibe = v } /\ [ delay (Milliseconds 3000.0) $> Just PollVibe ]
+  QR { session }, PollVibe -> model /\ [ pollVibe session ]
+  QR lobby, VibeSaved v -> QR lobby { vibe = v } /\ []
+  QR lobby, ToggleChip id | not lobby.vibe.locked ->
+    let
+      chosen = if elem id lobby.vibe.chips then filter (_ /= id) lobby.vibe.chips else snoc lobby.vibe.chips id
+    in
+      QR lobby { vibe = lobby.vibe { chips = chosen } }
+        /\ [ setVibe lobby.session chosen <#> either (const Nothing) (Just <<< VibeSaved) ]
   QR { link }, ShareInvite -> model /\
     [ attempt (shareOrCopy link) <#> case _ of
         Right Copied -> Just LinkCopied
@@ -155,10 +182,10 @@ update model = case model, _ of
             Left e -> pure $ Just $ failed e
     ]
   _, Started user loc ->
-    Active { user, upcoming: [], othersLiked: [], matches: [], showMatches: false } Fetching
+    Active { user, upcoming: [], othersLiked: [], matches: [], showMatches: false, vibe: [] } Fetching
       /\ [ Just <<< orFail Loaded <$> getRestaurants user loc ]
   Active swiper Fetching, Loaded found ->
-    advance swiper { upcoming = likedFirst found.othersLiked found.restaurants, othersLiked = found.othersLiked }
+    advance swiper { upcoming = likedFirst found.othersLiked found.restaurants, othersLiked = found.othersLiked, vibe = found.vibe }
 
   Active swiper (Swiping r), Like -> model /\
     [ do

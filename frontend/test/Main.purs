@@ -35,13 +35,13 @@ bare :: String -> Restaurant
 bare id = (restaurant id) { url = Nothing, rating = Nothing, photo = Nothing }
 
 swiper :: Swiper
-swiper = { user: UserId "u", upcoming: [], othersLiked: [], matches: [], showMatches: false }
+swiper = { user: UserId "u", upcoming: [], othersLiked: [], matches: [], showMatches: false, vibe: [] }
 
 here :: { latitude :: Number, longitude :: Number }
 here = { latitude: 1.0, longitude: 2.0 }
 
 lobbyAt :: Lobby
-lobbyAt = { session: SessionId "s", link: "http://example.com/s", copied: false }
+lobbyAt = { session: SessionId "s", link: "http://example.com/s", copied: false, vibe: { chips: [], locked: false } }
 
 decided :: String -> Boolean -> Array String -> Message
 decided id match others = Decided { id: RestaurantId id, match, othersLiked: map RestaurantId others }
@@ -59,15 +59,15 @@ main = runSpecAndExitProcess [ consoleReporter ] do
         `shouldEqual` Tuple (Active swiper Fetching) 1
 
     it "shows the first restaurant and keeps the rest" do
-      step (Active swiper Fetching) (Loaded { restaurants: [ restaurant "a", restaurant "b" ], othersLiked: [] })
+      step (Active swiper Fetching) (Loaded { restaurants: [ restaurant "a", restaurant "b" ], othersLiked: [], vibe: [] })
         `shouldEqual` Tuple (Active swiper { upcoming = [ restaurant "b" ] } (Swiping (restaurant "a"))) 0
 
     it "starts with what others already liked" do
-      step (Active swiper Fetching) (Loaded { restaurants: [ restaurant "a", restaurant "b", restaurant "c" ], othersLiked: [ RestaurantId "c" ] })
+      step (Active swiper Fetching) (Loaded { restaurants: [ restaurant "a", restaurant "b", restaurant "c" ], othersLiked: [ RestaurantId "c" ], vibe: [] })
         `shouldEqual` Tuple (Active swiper { upcoming = [ restaurant "a", restaurant "b" ], othersLiked = [ RestaurantId "c" ] } (Swiping (restaurant "c"))) 0
 
     it "says there are none when the search finds nothing" do
-      step (Active swiper Fetching) (Loaded { restaurants: [], othersLiked: [] }) `shouldEqual` Tuple (Active swiper NoneLeft) 0
+      step (Active swiper Fetching) (Loaded { restaurants: [], othersLiked: [], vibe: [] }) `shouldEqual` Tuple (Active swiper NoneLeft) 0
 
     it "moves to the next restaurant without asking the server" do
       step (Active swiper { upcoming = [ restaurant "b" ] } (Swiping (restaurant "a"))) (decided "a" false [])
@@ -112,6 +112,25 @@ main = runSpecAndExitProcess [ consoleReporter ] do
       step (QR lobbyAt) LinkCopied `shouldEqual` Tuple (QR lobbyAt { copied = true }) 1
       step (QR lobbyAt { copied = true }) HideCopied `shouldEqual` Tuple (QR lobbyAt) 0
 
+    it "toggles a vibe chip and saves it" do
+      step (QR lobbyAt) (ToggleChip "patio") `shouldEqual` Tuple (QR lobbyAt { vibe = { chips: [ "patio" ], locked: false } }) 1
+      step (QR lobbyAt { vibe = { chips: [ "patio" ], locked: false } }) (ToggleChip "patio") `shouldEqual` Tuple (QR lobbyAt) 1
+
+    it "doesn't change chips once swiping has started" do
+      let locked = lobbyAt { vibe = { chips: [ "patio" ], locked: true } }
+      step (QR locked) (ToggleChip "drinks") `shouldEqual` Tuple (QR locked) 0
+
+    it "shows the vibe others picked and checks again later" do
+      step (QR lobbyAt) (VibePolled { chips: [ "drinks" ], locked: false })
+        `shouldEqual` Tuple (QR lobbyAt { vibe = { chips: [ "drinks" ], locked: false } }) 1
+
+    it "stops checking the vibe once swiping" do
+      step (Active swiper Fetching) PollVibe `shouldEqual` Tuple (Active swiper Fetching) 0
+
+    it "keeps the session's vibe for the swiping screen" do
+      step (Active swiper Fetching) (Loaded { restaurants: [ restaurant "a" ], othersLiked: [], vibe: [ "patio" ] })
+        `shouldEqual` Tuple (Active swiper { vibe = [ "patio" ] } (Swiping (restaurant "a"))) 0
+
     it "opens and closes the list of matches" do
       step (Active swiper (Swiping (restaurant "a"))) ToggleMatches
         `shouldEqual` Tuple (Active swiper { showMatches = true } (Swiping (restaurant "a"))) 0
@@ -136,6 +155,9 @@ main = runSpecAndExitProcess [ consoleReporter ] do
       renders model text = do
         html <- liftEffect $ render (view model)
         html `shouldSatisfy` contains (Pattern text)
+    it "shows vibe chips in the lobby, marking the chosen ones" do
+      renders (QR lobbyAt { vibe = { chips: [ "patio" ], locked: false } }) "aria-pressed=\"true\">☀️ Patio<"
+      renders (QR lobbyAt { vibe = { chips: [ "patio" ], locked: true } }) "Locked in"
     it "shows a local QR code and the share link in the lobby" do
       renders (QR lobbyAt) "src=\"data:image/svg+xml"
       renders (QR lobbyAt) "http://example.com/s"

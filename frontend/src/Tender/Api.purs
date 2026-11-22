@@ -3,6 +3,8 @@ module Tender.Api
   , createSession
   , decide
   , getRestaurants
+  , getVibe
+  , setVibe
   , joinSession
   ) where
 
@@ -16,6 +18,7 @@ import Effect.Class (liftEffect)
 import Fetch (Method(..), Response, fetch)
 import Tender.Browser (backendUrl)
 import Tender.Types (ErrorMessage, Loc, Restaurant, RestaurantId, SessionId(..), UserId(..))
+import Tender.Vibe (Vibe)
 import Yoga.JSON (class ReadForeign, class WriteForeign)
 import Yoga.JSON as JSON
 
@@ -60,6 +63,13 @@ post path body = do
 createSession :: Aff (Either ApiError SessionId)
 createSession = get "newsession"
 
+getVibe :: SessionId -> Aff (Either ApiError Vibe)
+getVibe (SessionId s) = get ("vibe/" <> s)
+
+-- | Set the session's chips. Ignored once someone has started swiping.
+setVibe :: SessionId -> Array String -> Aff (Either ApiError Vibe)
+setVibe (SessionId s) chosen = post ("vibe/" <> s) { chips: chosen }
+
 -- | Join the session, keeping the given id if this browser was in it before
 joinSession :: SessionId -> Maybe UserId -> Aff (Either ApiError UserId)
 joinSession (SessionId s) returning =
@@ -73,5 +83,5 @@ decide user restaurant liked = post "decision" { user, restaurant, liked }
 
 -- | Restaurants for the user's session. The session searches from the first
 -- | location anyone in it sent, so everyone gets the same restaurants.
-getRestaurants :: UserId -> Loc -> Aff (Either ApiError { restaurants :: Array Restaurant, othersLiked :: Array RestaurantId })
+getRestaurants :: UserId -> Loc -> Aff (Either ApiError { restaurants :: Array Restaurant, othersLiked :: Array RestaurantId, vibe :: Array String })
 getRestaurants user loc = post "restaurants" { user, loc }

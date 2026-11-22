@@ -33,7 +33,7 @@ import Network.HTTP.Simple (
  )
 import Provider (Provider (..))
 import Vibe (Chip, Search (..), priceLevels, queryTerms, wantsOpenNow)
-import Restaurant (Author (..), Loc, Photo (..), PhotoSource (..), Restaurant (..), Source (..))
+import Restaurant (Author (..), Loc (..), Photo (..), PhotoSource (..), Restaurant (..), Source (..))
 
 newtype PlacesKey = PlacesKey BS.ByteString
 
@@ -85,11 +85,22 @@ searchText key l chips =
         object $
             [ "textQuery" .= queryTerms chips
             , "pageSize" .= (20 :: Int)
-            , -- Text search can only be restricted to a rectangle, so prefer the circle instead
-              "locationBias" .= object ["circle" .= object ["center" .= l, "radius" .= searchRadius]]
+            , -- Text search can only be restricted to a rectangle: the box around the circle
+              "locationRestriction" .= object ["rectangle" .= boxAround l searchRadius]
             , "openNow" .= wantsOpenNow chips
             ]
                 <> ["priceLevels" .= levels | let levels = priceLevels chips, not (null levels)]
+
+-- | The rectangle around a circle of the given radius in metres
+boxAround :: Loc -> Double -> Value
+boxAround (Loc lat lon) radius =
+    object
+        [ "low" .= Loc (lat - dLat) (lon - dLon)
+        , "high" .= Loc (lat + dLat) (lon + dLon)
+        ]
+  where
+    dLat = radius / 111320
+    dLon = radius / (111320 * cos (lat * pi / 180))
 
 -- | A short lived url for the photo, at most the given width
 photoUri :: PlacesKey -> Text -> Int -> IO (Either FetchError Text)
