@@ -1,7 +1,7 @@
 {-# LANGUAGE LambdaCase #-}
 
 -- | Vibe chips a group picks in the lobby, and what each means for the search
-module Vibe (Chip (..), Search (..), allChips, chipId, chipFromId, queryTerms, priceLevels, wantsOpenNow) where
+module Vibe (Chip (..), Search (..), defaultRadius, maxRadius, allChips, chipId, chipFromId, queryTerms, priceLevels, wantsOpenNow) where
 
 import Data.Maybe (mapMaybe)
 import Data.List (nub)
@@ -26,8 +26,18 @@ data Chip
 data Search = Search
     { searchLoc :: Loc
     , searchChips :: [Chip]
+    , -- | Metres around the location
+      searchRadius :: Double
     }
     deriving (Show)
+
+-- | Where a session's search starts, in metres
+defaultRadius :: Double
+defaultRadius = 5000
+
+-- | The furthest Google's nearby search reaches, in metres
+maxRadius :: Double
+maxRadius = 50000
 
 allChips :: [Chip]
 allChips = [minBound .. maxBound]

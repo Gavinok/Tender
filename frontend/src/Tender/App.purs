@@ -30,6 +30,10 @@ import Tender.Types (ErrorMessage, Loc, Restaurant, RestaurantId, SessionId, Url
 -- | What we know once the user has joined a session
 type Swiper =
   { user :: UserId
+  , loc :: Loc
+  -- | How far the session searches, in metres, and how far it can go
+  , radius :: Number
+  , maxRadius :: Number
   -- | Restaurants still to show, fetched once when swiping starts
   , upcoming :: Array Restaurant
   -- | Which of the current card's photos is showing
@@ -90,7 +94,8 @@ data Message
   | KeyPressed String
   -- | Skip past the current match and keep swiping
   | Continue
-  | Loaded { restaurants :: Array Restaurant, othersLiked :: Array RestaurantId, vibe :: Array String }
+  | Loaded { restaurants :: Array Restaurant, othersLiked :: Array RestaurantId, vibe :: Array String, radius :: Number, maxRadius :: Number }
+  | SearchFurther
   | NextPhoto
   | PreviousPhoto
   | ToggleSummary
@@ -189,10 +194,18 @@ update model = case model, _ of
             Left e -> pure $ Just $ failed e
     ]
   _, Started user loc ->
-    Active { user, upcoming: [], photo: 0, summaryOpen: false, othersLiked: [], matches: [], showMatches: false, vibe: [] } Fetching
-      /\ [ Just <<< orFail Loaded <$> getRestaurants user loc ]
+    Active { user, loc, radius: 0.0, maxRadius: 0.0, upcoming: [], photo: 0, summaryOpen: false, othersLiked: [], matches: [], showMatches: false, vibe: [] } Fetching
+      /\ [ Just <<< orFail Loaded <$> getRestaurants user loc Nothing ]
   Active swiper Fetching, Loaded found ->
-    advance swiper { upcoming = likedFirst found.othersLiked found.restaurants, othersLiked = found.othersLiked, vibe = found.vibe }
+    advance swiper
+      { upcoming = likedFirst found.othersLiked found.restaurants
+      , othersLiked = found.othersLiked
+      , vibe = found.vibe
+      , radius = found.radius
+      , maxRadius = found.maxRadius
+      }
+  Active swiper NoneLeft, SearchFurther | swiper.radius < swiper.maxRadius ->
+    Active swiper Fetching /\ [ Just <<< orFail Loaded <$> getRestaurants swiper.user swiper.loc (Just swiper.radius) ]
 
   Active swiper (Swiping r), Like -> model /\
     [ do

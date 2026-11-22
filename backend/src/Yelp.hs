@@ -17,18 +17,19 @@ import Vibe (Search (..))
 newtype YelpKey = YelpKey BS.ByteString
 
 yelp :: YelpKey -> Provider
-yelp key = Provider "Yelp" (searchYelp key . searchLoc)
+yelp key = Provider "Yelp" $ \s -> searchYelp key (searchLoc s) (searchRadius s)
 
--- | Up to 20 restaurants within 5km, Yelp's best matches first
-searchYelp :: YelpKey -> Loc -> IO (Either FetchError [Restaurant])
-searchYelp (YelpKey key) (Loc lat lon) =
+-- | Up to 20 restaurants within the radius in metres, Yelp's best matches first
+searchYelp :: YelpKey -> Loc -> Double -> IO (Either FetchError [Restaurant])
+searchYelp (YelpKey key) (Loc lat lon) radius =
     fetchJSON parseYelp $
         setRequestHeaders [("Authorization", "Bearer " <> key)] $
             setRequestQueryString
                 [ ("latitude", Just (S8.pack (show lat)))
                 , ("longitude", Just (S8.pack (show lon)))
                 , ("categories", Just "restaurants")
-                , ("radius", Just "5000")
+                , -- Yelp's limit is 40km
+                  ("radius", Just (S8.pack (show (round (min 40000 radius) :: Int))))
                 , ("limit", Just "20")
                 , ("sort_by", Just "best_match")
                 ]

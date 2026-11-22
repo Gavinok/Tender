@@ -1,3 +1,4 @@
+{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE DeriveGeneric #-}
 
 module App (server) where
@@ -31,7 +32,7 @@ import Web.Scotty (
     status,
  )
 
-import Data.Aeson (FromJSON (parseJSON), Value, object, withObject, (.:), (.=))
+import Data.Aeson (FromJSON (parseJSON), Value, object, withObject, (.:), (.:?), (.=))
 import Data.Text (Text)
 import qualified Data.Text.Encoding as TE
 import qualified Data.Text.Lazy as TL
@@ -47,7 +48,7 @@ import Data.List (partition)
 import Restaurant (Loc, Restaurant)
 import qualified Restaurant as R
 import qualified User as U
-import Vibe (Chip, Search (..), chipFromId, chipId)
+import Vibe (Chip, Search (..), chipFromId, chipId, maxRadius)
 import Yelp (YelpKey (..), yelp)
 
 -- | Configuration shared by every request
@@ -74,11 +75,14 @@ apiCors =
 data RestaurantsRequest = RestaurantsRequest
     { searcher :: !U.UserId
     , loc :: !Loc
+    , -- | Set by "search further": the radius the person was shown, to double
+      widenFrom :: !(Maybe Double)
     }
     deriving (Generic, Show)
 
 instance FromJSON RestaurantsRequest where
-    parseJSON = withObject "RestaurantsRequest" $ \o -> RestaurantsRequest <$> o .: "user" <*> o .: "loc"
+    parseJSON = withObject "RestaurantsRequest" $ \o ->
+        RestaurantsRequest <$> o .: "user" <*> o .: "loc" <*> o .:? "widenFrom"
 
 -- | Body of a POST /vibe request
 newtype VibeRequest = VibeRequest [Text]
@@ -187,23 +191,29 @@ app env = scotty 5001 $ do
 
     -- Restaurants near the session's location, fresh for each person
     post "/restaurants" $ do
-        RestaurantsRequest uid here <- jsonData
+        RestaurantsRequest uid here wider <- jsonData
         known <- liftIO $ withConn $ \c -> getUser c uid
         case known of
             Nothing -> errorResponse status404 "Unknown user"
             Just u -> do
-                (l, (chips, _)) <- liftIO $ withConn $ \c ->
-                    (,) <$> sessionLocation c (U.session u) here <*> getVibe c (U.session u)
-                found <- liftIO $ searchWithFallback logMsg (envProviders env) (Search l chips)
+                (l, (chips, _), radius, decided) <- liftIO $ withConn $ \c -> do
+                    let s = U.session u
+                    l <- sessionLocation c s here
+                    radius <- maybe (sessionRadius c s) (widenSearch c s) wider
+                    (l,,radius,) <$> getVibe c s <*> decidedBy c uid
+                found <- liftIO $ searchWithFallback logMsg (envProviders env) (Search l chips radius)
                 case found of
                     Nothing -> errorResponse status502 "Couldn't get restaurants from any source"
                     Just rs -> do
                         others <- liftIO $ withConn $ \c -> othersLiked c u
                         json $
                             object
-                                [ "restaurants" .= likedFirst others rs
+                                [ -- Leaving out ones this person already decided on, e.g. before a reload
+                                  "restaurants" .= likedFirst others (filter ((`notElem` decided) . R.restaurantId) rs)
                                 , "othersLiked" .= others
                                 , "vibe" .= map chipId chips
+                                , "radius" .= radius
+                                , "maxRadius" .= maxRadius
                                 ]
 
     -- Redirects to the photo with the given resource name, so the key stays here

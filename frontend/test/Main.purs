@@ -39,7 +39,7 @@ bare :: String -> Restaurant
 bare id = (restaurant id) { url = Nothing, rating = Nothing, photos = [], summary = Nothing }
 
 swiper :: Swiper
-swiper = { user: UserId "u", upcoming: [], photo: 0, summaryOpen: false, othersLiked: [], matches: [], showMatches: false, vibe: [] }
+swiper = { user: UserId "u", loc: here, radius: 5000.0, maxRadius: 50000.0, upcoming: [], photo: 0, summaryOpen: false, othersLiked: [], matches: [], showMatches: false, vibe: [] }
 
 here :: { latitude :: Number, longitude :: Number }
 here = { latitude: 1.0, longitude: 2.0 }
@@ -60,18 +60,18 @@ main = runSpecAndExitProcess [ consoleReporter ] do
   describe "update" do
     it "fetches the restaurants once started" do
       step (QR lobbyAt) (Started (UserId "u") here)
-        `shouldEqual` Tuple (Active swiper Fetching) 1
+        `shouldEqual` Tuple (Active swiper { radius = 0.0, maxRadius = 0.0 } Fetching) 1
 
     it "shows the first restaurant and keeps the rest" do
-      step (Active swiper Fetching) (Loaded { restaurants: [ restaurant "a", restaurant "b" ], othersLiked: [], vibe: [] })
+      step (Active swiper Fetching) (Loaded { restaurants: [ restaurant "a", restaurant "b" ], othersLiked: [], vibe: [], radius: 5000.0, maxRadius: 50000.0 })
         `shouldEqual` Tuple (Active swiper { upcoming = [ restaurant "b" ] } (Swiping (restaurant "a"))) 0
 
     it "starts with what others already liked" do
-      step (Active swiper Fetching) (Loaded { restaurants: [ restaurant "a", restaurant "b", restaurant "c" ], othersLiked: [ RestaurantId "c" ], vibe: [] })
+      step (Active swiper Fetching) (Loaded { restaurants: [ restaurant "a", restaurant "b", restaurant "c" ], othersLiked: [ RestaurantId "c" ], vibe: [], radius: 5000.0, maxRadius: 50000.0 })
         `shouldEqual` Tuple (Active swiper { upcoming = [ restaurant "a", restaurant "b" ], othersLiked = [ RestaurantId "c" ] } (Swiping (restaurant "c"))) 0
 
     it "says there are none when the search finds nothing" do
-      step (Active swiper Fetching) (Loaded { restaurants: [], othersLiked: [], vibe: [] }) `shouldEqual` Tuple (Active swiper NoneLeft) 0
+      step (Active swiper Fetching) (Loaded { restaurants: [], othersLiked: [], vibe: [], radius: 5000.0, maxRadius: 50000.0 }) `shouldEqual` Tuple (Active swiper NoneLeft) 0
 
     it "moves to the next restaurant without asking the server" do
       step (Active swiper { upcoming = [ restaurant "b" ] } (Swiping (restaurant "a"))) (decided "a" false [])
@@ -146,8 +146,18 @@ main = runSpecAndExitProcess [ consoleReporter ] do
       step (Active swiper Fetching) PollVibe `shouldEqual` Tuple (Active swiper Fetching) 0
 
     it "keeps the session's vibe for the swiping screen" do
-      step (Active swiper Fetching) (Loaded { restaurants: [ restaurant "a" ], othersLiked: [], vibe: [ "patio" ] })
+      step (Active swiper Fetching) (Loaded { restaurants: [ restaurant "a" ], othersLiked: [], vibe: [ "patio" ], radius: 5000.0, maxRadius: 50000.0 })
         `shouldEqual` Tuple (Active swiper { vibe = [ "patio" ] } (Swiping (restaurant "a"))) 0
+
+    it "searches further from the out of restaurants screen" do
+      step (Active swiper NoneLeft) SearchFurther `shouldEqual` Tuple (Active swiper Fetching) 1
+
+    it "doesn't search further than the furthest Google goes" do
+      step (Active swiper { radius = 50000.0 } NoneLeft) SearchFurther `shouldEqual` Tuple (Active swiper { radius = 50000.0 } NoneLeft) 0
+
+    it "keeps the wider radius it was given" do
+      step (Active swiper Fetching) (Loaded { restaurants: [ restaurant "z" ], othersLiked: [], vibe: [], radius: 10000.0, maxRadius: 50000.0 })
+        `shouldEqual` Tuple (Active swiper { radius = 10000.0 } (Swiping (restaurant "z"))) 0
 
     it "opens and closes the list of matches" do
       step (Active swiper (Swiping (restaurant "a"))) ToggleMatches
@@ -206,5 +216,8 @@ main = runSpecAndExitProcess [ consoleReporter ] do
       renders (Active swiper (Matched (restaurant "a"))) "a match!"
     it "offers to try again after an error" do
       renders (ServerError "Could not reach the server") "Try again"
+    it "offers to search further, saying how far" do
+      renders (Active swiper NoneLeft) "Search further (up to 10 km)"
+      renders (Active swiper { radius = 40000.0 } NoneLeft) "Search further (up to 50 km)"
     it "says when there is nothing left" do
       renders (Active swiper NoneLeft) "everything nearby"

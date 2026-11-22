@@ -2,7 +2,7 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DerivingStrategies #-}
 
-module Db (initDb, initSchema, withDb, addUserToDb, joinSession, sessionLocation, getVibe, setVibe, recordDecision, isMatch, othersLiked, Decision (..), getUser) where
+module Db (initDb, initSchema, withDb, addUserToDb, joinSession, sessionLocation, sessionRadius, widenSearch, decidedBy, getVibe, setVibe, recordDecision, isMatch, othersLiked, Decision (..), getUser) where
 
 import Control.Monad (forM_)
 import Database.SQLite.Simple (
@@ -20,7 +20,7 @@ import Database.SQLite.Simple (
 import Data.List (nub)
 import Data.Maybe (listToMaybe, mapMaybe)
 import qualified Data.Text as T
-import Vibe (Chip, chipFromId, chipId)
+import Vibe (Chip, chipFromId, chipId, defaultRadius, maxRadius)
 import Data.String (fromString)
 import GHC.Generics (Generic)
 import Data.Text (Text)
@@ -84,6 +84,8 @@ migrations =
       ["CREATE TABLE sessions (session TEXT PRIMARY KEY, latitude REAL NOT NULL, longitude REAL NOT NULL)"]
     , -- 5: vibe chips the group picks in the lobby, as comma separated ids
       ["CREATE TABLE session_vibes (session TEXT PRIMARY KEY, chips TEXT NOT NULL)"]
+    , -- 6: how far the session searches, in metres, widened by "search further"
+      ["ALTER TABLE sessions ADD COLUMN radius REAL NOT NULL DEFAULT 5000"]
     ]
 
 addUserToDb :: Connection -> U.User -> IO ()
@@ -116,6 +118,27 @@ sessionLocation conn s (Loc lat lon) = do
     pure $ case found of
         [(lat', lon')] -> Loc lat' lon'
         _ -> Loc lat lon
+
+-- | How far the session searches, in metres
+sessionRadius :: Connection -> U.SessionId -> IO Double
+sessionRadius conn s = do
+    found <- query conn "SELECT radius FROM sessions WHERE session = ?" (Only s)
+    pure $ case found of
+        [Only r] -> r
+        _ -> defaultRadius
+
+{- | Double the session's radius from the one the person was shown, up to
+the maximum. Two people pressing "search further" at once only widen it
+one step, since both double the same radius.
+-}
+widenSearch :: Connection -> U.SessionId -> Double -> IO Double
+widenSearch conn s from = do
+    execute conn "UPDATE sessions SET radius = max(radius, ?) WHERE session = ?" (min maxRadius (from * 2), s)
+    sessionRadius conn s
+
+-- | Restaurants the user has already liked or not, to leave out of new searches
+decidedBy :: Connection -> U.UserId -> IO [Text]
+decidedBy conn u = map fromOnly <$> query conn "SELECT restaurantId FROM decisions WHERE userId = ? ORDER BY restaurantId" (Only u)
 
 {- | The session's vibe chips, and whether they are locked. They lock once
 someone starts swiping, since that runs the session's one search.

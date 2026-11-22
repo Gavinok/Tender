@@ -10,7 +10,6 @@ module Places (
     photoUri,
     parsePlaces,
     isPhotoName,
-    searchRadius,
 ) where
 
 import Data.Aeson (Value, object, withObject, (.!=), (.:), (.:?), (.=))
@@ -39,16 +38,12 @@ newtype PlacesKey = PlacesKey BS.ByteString
 
 -- | The most popular places nearby, or a text search when the group picked a vibe
 googlePlaces :: PlacesKey -> Provider
-googlePlaces key = Provider "Google Places" $ \(Search l chips) ->
-    if null chips then searchNearby key l else searchText key l chips
+googlePlaces key = Provider "Google Places" $ \(Search l chips radius) ->
+    if null chips then searchNearby key l radius else searchText key l chips radius
 
 -- | Photos kept per place, of the up to 10 Google returns
 maxPhotos :: Int
 maxPhotos = 5
-
--- | How far from the user to search, in metres
-searchRadius :: Double
-searchRadius = 5000
 
 {- | Fields shown on the card. Google bills a request at the most expensive
 field asked for, and rating and priceLevel put this in the Enterprise SKU.
@@ -60,9 +55,9 @@ fieldMask = "places.id,places.displayName,places.location,places.rating,places.p
 withKey :: PlacesKey -> [Header] -> Request -> Request
 withKey (PlacesKey k) headers = setRequestHeaders (("X-Goog-Api-Key", k) : headers)
 
--- | Up to 20 restaurants near the location, most popular first
-searchNearby :: PlacesKey -> Loc -> IO (Either FetchError [Restaurant])
-searchNearby key l =
+-- | Up to 20 restaurants within the radius in metres, most popular first
+searchNearby :: PlacesKey -> Loc -> Double -> IO (Either FetchError [Restaurant])
+searchNearby key l radius =
     fetchJSON parsePlaces $
         withKey key [("X-Goog-FieldMask", fieldMask)] $
             setRequestBodyJSON body $
@@ -74,12 +69,12 @@ searchNearby key l =
             , -- Hotels count as restaurants when they have one
               "excludedPrimaryTypes" .= ["hotel", "lodging", "motel", "bed_and_breakfast" :: Text]
             , "maxResultCount" .= (20 :: Int)
-            , "locationRestriction" .= object ["circle" .= object ["center" .= l, "radius" .= searchRadius]]
+            , "locationRestriction" .= object ["circle" .= object ["center" .= l, "radius" .= radius]]
             ]
 
--- | Up to 20 places matching the vibe, preferring ones within 5km
-searchText :: PlacesKey -> Loc -> [Chip] -> IO (Either FetchError [Restaurant])
-searchText key l chips =
+-- | Up to 20 places matching the vibe within the radius in metres
+searchText :: PlacesKey -> Loc -> [Chip] -> Double -> IO (Either FetchError [Restaurant])
+searchText key l chips radius =
     fetchJSON parsePlaces $
         withKey key [("X-Goog-FieldMask", fieldMask)] $
             setRequestBodyJSON body $
@@ -90,7 +85,7 @@ searchText key l chips =
             [ "textQuery" .= queryTerms chips
             , "pageSize" .= (20 :: Int)
             , -- Text search can only be restricted to a rectangle: the box around the circle
-              "locationRestriction" .= object ["rectangle" .= boxAround l searchRadius]
+              "locationRestriction" .= object ["rectangle" .= boxAround l radius]
             , "openNow" .= wantsOpenNow chips
             ]
                 <> ["priceLevels" .= levels | let levels = priceLevels chips, not (null levels)]

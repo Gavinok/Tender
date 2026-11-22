@@ -123,7 +123,7 @@ main = hspec $ do
     describe "searchWithFallback" $ do
         let here = Loc 48.43 (-123.35)
             found = [plain OpenStreetMap "a" here]
-            search ps = searchWithFallback (const (pure ())) ps (Search here [])
+            search ps = searchWithFallback (const (pure ())) ps (Search here [] defaultRadius)
         it "uses the first source that finds something" $
             search [provider "down" (Left (ParseError "boom")), provider "empty" (Right []), provider "osm" (Right found)]
                 `shouldReturn` Just found
@@ -244,6 +244,28 @@ main = hspec $ do
             _ <- setVibe conn s [Patio]
             _ <- sessionLocation conn s (Loc 48.43 (-123.35))
             setVibe conn s [Fancy] `shouldReturn` ([Patio], True)
+
+    describe "searching further" $ do
+        it "starts at the default radius" $ withTestDb $ \conn -> do
+            (s, _) <- sessionWith conn 0
+            _ <- sessionLocation conn s (Loc 48.43 (-123.35))
+            sessionRadius conn s `shouldReturn` defaultRadius
+        it "doubles the radius up to the maximum" $ withTestDb $ \conn -> do
+            (s, _) <- sessionWith conn 0
+            _ <- sessionLocation conn s (Loc 48.43 (-123.35))
+            widenSearch conn s 5000 `shouldReturn` 10000
+            widenSearch conn s 10000 `shouldReturn` 20000
+            widenSearch conn s 40000 `shouldReturn` maxRadius
+            widenSearch conn s maxRadius `shouldReturn` maxRadius
+        it "only widens one step when two people ask at once" $ withTestDb $ \conn -> do
+            (s, _) <- sessionWith conn 0
+            _ <- sessionLocation conn s (Loc 48.43 (-123.35))
+            _ <- widenSearch conn s 5000
+            widenSearch conn s 5000 `shouldReturn` 10000
+        it "knows what each person has already decided on" $ withTestDb $ \conn -> do
+            (_, [me, friend]) <- sessionWith conn 2
+            like conn me "a" >> dislike conn me "b" >> like conn friend "c"
+            decidedBy conn me `shouldReturn` ["a", "b"]
 
     describe "sessionLocation" $ do
         it "uses the first location sent for everyone in the session" $ withTestDb $ \conn -> do
