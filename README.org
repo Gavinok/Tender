@@ -25,18 +25,15 @@ Google leaves photos and reviews out of its responses, so every card
 shows a placeholder.
 
 The backend reads the key from =GOOGLE_PLACES_KEY=, or from
-=pass show GOOGLE_PLACES_KEY= if that isn't set. Run the default make
-targets for both the front and backend
+=pass show GOOGLE_PLACES_KEY= if that isn't set. From the top of the repository run
 
 #+begin_src sh
-  cd frontend
-  make
-  cd ..
-  cd backend
-  make
+  make        # backend on http://localhost:5001, app on http://localhost:1234
+  make phone  # the same, also shared over https on your tailnet (see below)
+  make test   # test both halves
 #+end_src
 
-This will start both the front and backend for you
+=make= builds and starts both, and Ctrl+C stops both.
 
 Restaurants come fresh from Google for each session. Google's terms
 only allow storing place ids, so that is all the backend keeps.
