@@ -31,7 +31,7 @@ import Web.Scotty (
     status,
  )
 
-import Data.Aeson (FromJSON (parseJSON), object, withObject, (.:), (.=))
+import Data.Aeson (FromJSON (parseJSON), Value, object, withObject, (.:), (.=))
 import Data.Text (Text)
 import qualified Data.Text.Encoding as TE
 import qualified Data.Text.Lazy as TL
@@ -47,6 +47,7 @@ import Data.List (partition)
 import Restaurant (Loc, Restaurant)
 import qualified Restaurant as R
 import qualified User as U
+import Vibe (Chip, Search (..), chipFromId, chipId)
 import Yelp (YelpKey (..), yelp)
 
 -- | Configuration shared by every request
@@ -78,6 +79,15 @@ data RestaurantsRequest = RestaurantsRequest
 
 instance FromJSON RestaurantsRequest where
     parseJSON = withObject "RestaurantsRequest" $ \o -> RestaurantsRequest <$> o .: "user" <*> o .: "loc"
+
+-- | Body of a POST /vibe request
+newtype VibeRequest = VibeRequest [Text]
+
+instance FromJSON VibeRequest where
+    parseJSON = withObject "VibeRequest" $ \o -> VibeRequest <$> o .: "chips"
+
+vibeJSON :: ([Chip], Bool) -> Value
+vibeJSON (chips, locked) = object ["chips" .= map chipId chips, "locked" .= locked]
 
 -- | Body of a /decision request
 data DecisionRequest = DecisionRequest
@@ -160,6 +170,21 @@ app env = scotty 5001 $ do
                 uid <- liftIO $ withConn $ \c -> joinSession c s returning
                 json uid
 
+    -- The session's vibe chips, and whether swiping has started and locked them
+    get "/vibe/:session" $ do
+        sessionText <- pathParam "session"
+        case U.sessionFromText sessionText of
+            Nothing -> errorResponse status400 "Invalid session"
+            Just s -> liftIO (withConn $ \c -> getVibe c s) >>= json . vibeJSON
+
+    post "/vibe/:session" $ do
+        sessionText <- pathParam "session"
+        VibeRequest ids <- jsonData
+        case (U.sessionFromText sessionText, traverse chipFromId ids) of
+            (Nothing, _) -> errorResponse status400 "Invalid session"
+            (_, Nothing) -> errorResponse status400 "Unknown vibe"
+            (Just s, Just chips) -> liftIO (withConn $ \c -> setVibe c s chips) >>= json . vibeJSON
+
     -- Restaurants near the session's location, fresh for each person
     post "/restaurants" $ do
         RestaurantsRequest uid here <- jsonData
@@ -167,8 +192,9 @@ app env = scotty 5001 $ do
         case known of
             Nothing -> errorResponse status404 "Unknown user"
             Just u -> do
-                l <- liftIO $ withConn $ \c -> sessionLocation c (U.session u) here
-                found <- liftIO $ searchWithFallback logMsg (envProviders env) l
+                (l, (chips, _)) <- liftIO $ withConn $ \c ->
+                    (,) <$> sessionLocation c (U.session u) here <*> getVibe c (U.session u)
+                found <- liftIO $ searchWithFallback logMsg (envProviders env) (Search l chips)
                 case found of
                     Nothing -> errorResponse status502 "Couldn't get restaurants from any source"
                     Just rs -> do
@@ -177,6 +203,7 @@ app env = scotty 5001 $ do
                             object
                                 [ "restaurants" .= likedFirst others rs
                                 , "othersLiked" .= others
+                                , "vibe" .= map chipId chips
                                 ]
 
     -- Redirects to the photo with the given resource name, so the key stays here

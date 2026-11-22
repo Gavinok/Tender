@@ -6,6 +6,7 @@ module Places (
     PlacesKey (..),
     googlePlaces,
     searchNearby,
+    searchText,
     photoUri,
     parsePlaces,
     isPhotoName,
@@ -31,12 +32,15 @@ import Network.HTTP.Simple (
     setRequestQueryString,
  )
 import Provider (Provider (..))
+import Vibe (Chip, Search (..), priceLevels, queryTerms, wantsOpenNow)
 import Restaurant (Author (..), Loc, Photo (..), PhotoSource (..), Restaurant (..), Source (..))
 
 newtype PlacesKey = PlacesKey BS.ByteString
 
+-- | The most popular places nearby, or a text search when the group picked a vibe
 googlePlaces :: PlacesKey -> Provider
-googlePlaces key = Provider "Google Places" (searchNearby key)
+googlePlaces key = Provider "Google Places" $ \(Search l chips) ->
+    if null chips then searchNearby key l else searchText key l chips
 
 -- | How far from the user to search, in metres
 searchRadius :: Double
@@ -68,6 +72,24 @@ searchNearby key l =
             , "maxResultCount" .= (20 :: Int)
             , "locationRestriction" .= object ["circle" .= object ["center" .= l, "radius" .= searchRadius]]
             ]
+
+-- | Up to 20 places matching the vibe, preferring ones within 5km
+searchText :: PlacesKey -> Loc -> [Chip] -> IO (Either FetchError [Restaurant])
+searchText key l chips =
+    fetchJSON parsePlaces $
+        withKey key [("X-Goog-FieldMask", fieldMask)] $
+            setRequestBodyJSON body $
+                parseRequest_ "POST https://places.googleapis.com/v1/places:searchText"
+  where
+    body =
+        object $
+            [ "textQuery" .= queryTerms chips
+            , "pageSize" .= (20 :: Int)
+            , -- Text search can only be restricted to a rectangle, so prefer the circle instead
+              "locationBias" .= object ["circle" .= object ["center" .= l, "radius" .= searchRadius]]
+            , "openNow" .= wantsOpenNow chips
+            ]
+                <> ["priceLevels" .= levels | let levels = priceLevels chips, not (null levels)]
 
 -- | A short lived url for the photo, at most the given width
 photoUri :: PlacesKey -> Text -> Int -> IO (Either FetchError Text)

@@ -4,18 +4,20 @@ module Provider (Provider (..), searchWithFallback) where
 import Data.Text (Text)
 import qualified Data.Text as T
 import Fetch (FetchError)
-import Restaurant (Loc, Restaurant)
+import Restaurant (Restaurant)
+import Vibe (Search (..))
 
 data Provider = Provider
     { providerName :: Text
-    , searchNear :: Loc -> IO (Either FetchError [Restaurant])
+    , -- | Sources that can't use the vibe search by location alone
+      searchNear :: Search -> IO (Either FetchError [Restaurant])
     }
 
 {- | Results from the first provider that finds anything, logging each one
 that fails or comes back empty. Nothing when every provider failed, as
 opposed to Just [] when they answered but found nothing.
 -}
-searchWithFallback :: (String -> IO ()) -> [Provider] -> Loc -> IO (Maybe [Restaurant])
+searchWithFallback :: (String -> IO ()) -> [Provider] -> Search -> IO (Maybe [Restaurant])
 searchWithFallback logMsg providers l = go False providers
   where
     go answered [] = pure (if answered then Just [] else Nothing)

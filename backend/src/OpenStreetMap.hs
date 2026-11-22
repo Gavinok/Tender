@@ -15,9 +15,10 @@ import Fetch (FetchError, fetchJSON)
 import Network.HTTP.Simple (parseRequest_, setRequestBodyURLEncoded, setRequestHeaders)
 import Provider (Provider (..))
 import Restaurant (Loc (..), Restaurant (..), Source (..))
+import Vibe (Search (..))
 
 openStreetMap :: Provider
-openStreetMap = Provider "OpenStreetMap" searchOverpass
+openStreetMap = Provider "OpenStreetMap" (searchOverpass . searchLoc)
 
 -- | The 20 nearest named restaurants within 5km
 searchOverpass :: Loc -> IO (Either FetchError [Restaurant])

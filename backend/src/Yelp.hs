@@ -12,11 +12,12 @@ import Fetch (FetchError, fetchJSON)
 import Network.HTTP.Simple (parseRequest_, setRequestHeaders, setRequestQueryString)
 import Provider (Provider (..))
 import Restaurant (Loc (..), Photo (..), PhotoSource (..), Restaurant (..), Source (..))
+import Vibe (Search (..))
 
 newtype YelpKey = YelpKey BS.ByteString
 
 yelp :: YelpKey -> Provider
-yelp key = Provider "Yelp" (searchYelp key)
+yelp key = Provider "Yelp" (searchYelp key . searchLoc)
 
 -- | Up to 20 restaurants within 5km, Yelp's best matches first
 searchYelp :: YelpKey -> Loc -> IO (Either FetchError [Restaurant])

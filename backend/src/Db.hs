@@ -2,7 +2,7 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DerivingStrategies #-}
 
-module Db (initDb, initSchema, withDb, addUserToDb, joinSession, sessionLocation, recordDecision, isMatch, othersLiked, Decision (..), getUser) where
+module Db (initDb, initSchema, withDb, addUserToDb, joinSession, sessionLocation, getVibe, setVibe, recordDecision, isMatch, othersLiked, Decision (..), getUser) where
 
 import Control.Monad (forM_)
 import Database.SQLite.Simple (
@@ -17,7 +17,10 @@ import Database.SQLite.Simple (
     withConnection,
     withTransaction,
  )
-import Data.Maybe (listToMaybe)
+import Data.List (nub)
+import Data.Maybe (listToMaybe, mapMaybe)
+import qualified Data.Text as T
+import Vibe (Chip, chipFromId, chipId)
 import Data.String (fromString)
 import GHC.Generics (Generic)
 import Data.Text (Text)
@@ -79,6 +82,8 @@ migrations =
       ["DROP TABLE restaurants"]
     , -- 4: one location per session, so everyone in it sees the same restaurants
       ["CREATE TABLE sessions (session TEXT PRIMARY KEY, latitude REAL NOT NULL, longitude REAL NOT NULL)"]
+    , -- 5: vibe chips the group picks in the lobby, as comma separated ids
+      ["CREATE TABLE session_vibes (session TEXT PRIMARY KEY, chips TEXT NOT NULL)"]
     ]
 
 addUserToDb :: Connection -> U.User -> IO ()
@@ -111,6 +116,31 @@ sessionLocation conn s (Loc lat lon) = do
     pure $ case found of
         [(lat', lon')] -> Loc lat' lon'
         _ -> Loc lat lon
+
+{- | The session's vibe chips, and whether they are locked. They lock once
+someone starts swiping, since that runs the session's one search.
+-}
+getVibe :: Connection -> U.SessionId -> IO ([Chip], Bool)
+getVibe conn s = do
+    stored <- query conn "SELECT chips FROM session_vibes WHERE session = ?" (Only s)
+    started <- query conn "SELECT count(*) FROM sessions WHERE session = ?" (Only s)
+    let chips = case stored of
+            [Only t] -> mapMaybe chipFromId (T.splitOn "," t)
+            _ -> []
+    pure (chips, started /= [Only (0 :: Int)])
+
+-- | Replace the session's chips unless they are locked, returning the result
+setVibe :: Connection -> U.SessionId -> [Chip] -> IO ([Chip], Bool)
+setVibe conn s chips = withTransaction conn $ do
+    (_, locked) <- getVibe conn s
+    if locked
+        then getVibe conn s
+        else do
+            execute
+                conn
+                "INSERT INTO session_vibes (session, chips) VALUES (?, ?) ON CONFLICT (session) DO UPDATE SET chips = excluded.chips"
+                (s, T.intercalate "," (map chipId (nub chips)))
+            pure (nub chips, False)
 
 -- | Whether a user liked a restaurant
 data Decision = Decision

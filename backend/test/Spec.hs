@@ -16,6 +16,7 @@ import Places
 import Provider (Provider (..), searchWithFallback)
 import Restaurant
 import User
+import Vibe
 import Yelp (parseYelp)
 
 withTestDb :: (Connection -> IO a) -> IO a
@@ -112,7 +113,7 @@ main = hspec $ do
     describe "searchWithFallback" $ do
         let here = Loc 48.43 (-123.35)
             found = [plain OpenStreetMap "a" here]
-            search ps = searchWithFallback (const (pure ())) ps here
+            search ps = searchWithFallback (const (pure ())) ps (Search here [])
         it "uses the first source that finds something" $
             search [provider "down" (Left (ParseError "boom")), provider "empty" (Right []), provider "osm" (Right found)]
                 `shouldReturn` Just found
@@ -210,6 +211,30 @@ main = hspec $ do
             dislike conn me "b"
             othersLiked conn (User me s) `shouldReturn` ["a"]
 
+    describe "Vibe" $ do
+        it "turns chips into a text query" $
+            queryTerms [Patio, Drinks, Cheap] `shouldBe` "patio cocktails restaurant"
+        it "allows the price levels of every price chip picked" $ do
+            priceLevels [Cheap] `shouldBe` ["PRICE_LEVEL_INEXPENSIVE", "PRICE_LEVEL_MODERATE"]
+            priceLevels [Patio] `shouldBe` []
+        it "round trips chip ids" $
+            map (chipFromId . chipId) allChips `shouldBe` map Just allChips
+
+    describe "session vibe" $ do
+        it "is empty and unlocked for a new session" $ withTestDb $ \conn -> do
+            (s, _) <- sessionWith conn 0
+            getVibe conn s `shouldReturn` ([], False)
+        it "keeps the latest chips anyone set" $ withTestDb $ \conn -> do
+            (s, _) <- sessionWith conn 0
+            _ <- setVibe conn s [Patio]
+            setVibe conn s [Drinks, Cheap, Drinks] `shouldReturn` ([Drinks, Cheap], False)
+            getVibe conn s `shouldReturn` ([Drinks, Cheap], False)
+        it "locks once someone starts swiping" $ withTestDb $ \conn -> do
+            (s, _) <- sessionWith conn 0
+            _ <- setVibe conn s [Patio]
+            _ <- sessionLocation conn s (Loc 48.43 (-123.35))
+            setVibe conn s [Fancy] `shouldReturn` ([Patio], True)
+
     describe "sessionLocation" $ do
         it "uses the first location sent for everyone in the session" $ withTestDb $ \conn -> do
             (s, _) <- sessionWith conn 0
@@ -232,6 +257,6 @@ main = hspec $ do
                 query_ conn "SELECT userId, restaurantId, liked FROM decisions ORDER BY userId"
                     `shouldReturn` [("u1", "a", True), ("u2", "b", True) :: (String, String, Bool)]
                 query_ conn "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name"
-                    `shouldReturn` [Only ("decisions" :: String), Only "sessions", Only "users"]
+                    `shouldReturn` [Only ("decisions" :: String), Only "session_vibes", Only "sessions", Only "users"]
         it "can run more than once" $ withTestDb $ \conn ->
             initSchema conn `shouldReturn` ()
