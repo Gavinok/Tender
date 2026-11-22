@@ -4,7 +4,7 @@ import Prelude
 
 import Data.Array (length, range)
 import Data.Int (toNumber)
-import Data.Maybe (maybe)
+import Data.Maybe (Maybe(..), maybe)
 import Flame (Html)
 import Flame.Html.Attribute as HA
 import Flame.Html.Element as HE
@@ -48,6 +48,25 @@ stamp text classes opacity =
     ]
     [ HE.text text ]
 
+-- | The whole summary over the lower part of the card. Dragging inside it
+-- | doesn't swipe the card (see Swipe.js).
+summaryBox :: forall a. { text :: String, disclosure :: Maybe String } -> a -> Html a
+summaryBox s close =
+  HE.section
+    [ HA.createAttribute "data-no-swipe" ""
+    , HA.class' "absolute inset-x-0 bottom-0 flex max-h-[70%] animate-card-in flex-col gap-3 overflow-y-auto rounded-t-2xl border-t-[3px] border-ink bg-surface p-5 text-left text-ink touch-pan-y"
+    ]
+    [ HE.div [ HA.class' "flex items-center justify-between" ]
+        [ HE.h3 [ HA.class' "font-display text-xl" ] [ HE.text "The lowdown" ]
+        , HE.button [ HA.class' "rounded-lg p-1 text-ink/60 hover:bg-ink/5", HA.onClick close, HA.createAttribute "aria-label" "Close summary" ]
+            [ icon Close "h-5 w-5" ]
+        ]
+    , HE.p [ HA.class' "leading-relaxed" ] [ HE.text s.text ]
+    , case s.disclosure of
+        Just d -> HE.p [ HA.class' "text-xs italic text-ink/50" ] [ HE.text d ]
+        Nothing -> HE.text ""
+    ]
+
 -- | A bar per photo across the top of the card, the one showing filled in.
 -- | Tapping the left or right of the card moves between them (see Swipe.js).
 photoBars :: forall a. Int -> Int -> Html a
@@ -62,8 +81,8 @@ photoBars count showing
 -- | The restaurant's photo with its details over the bottom of it, and a
 -- | badge when someone else in the group already liked it. Keyed on the
 -- | restaurant so each new one animates in.
-restaurantCard :: forall a. { likedByOthers :: Boolean, photo :: Int } -> Restaurant -> Html a
-restaurantCard { likedByOthers, photo } r =
+restaurantCard :: forall a. { likedByOthers :: Boolean, photo :: Int, summaryOpen :: Boolean, toggleSummary :: a } -> Restaurant -> Html a
+restaurantCard { likedByOthers, photo, summaryOpen, toggleSummary } r =
   HE.article
     [ HA.key (show r.id)
     , HA.createAttribute "data-swipe" ""
@@ -85,8 +104,18 @@ restaurantCard { likedByOthers, photo } r =
         , HE.div [ HA.class' "flex items-center gap-2" ]
             (maybe [] (pure <<< ratingStars) r.rating <> maybe [] (pure <<< chip) r.price)
         , HE.div [ HA.class' "flex flex-wrap gap-2" ] (maybe [] (pure <<< chip) r.category)
+        , case r.summary of
+            Just s | not summaryOpen ->
+              HE.button [ HA.class' "text-left text-sm text-white/90", HA.onClick toggleSummary ]
+                [ HE.span [ HA.class' "line-clamp-2" ] [ HE.text s.text ]
+                , HE.span [ HA.class' "font-bold underline" ] [ HE.text "More" ]
+                ]
+            _ -> HE.text ""
         , photoCredit r photo "text-white/70"
         ]
+    , case r.summary of
+        Just s | summaryOpen -> summaryBox s toggleSummary
+        _ -> HE.text ""
     ]
 
 -- | Nope and like, sized for thumbs

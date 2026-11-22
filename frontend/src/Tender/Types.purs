@@ -59,6 +59,8 @@ type Restaurant =
   , category :: Maybe String
   -- | The first is shown first
   , photos :: Array Photo
+  -- | A few sentences about the place, with Google's disclosure for AI summaries
+  , summary :: Maybe { text :: String, disclosure :: Maybe String }
   }
 
 -- | Where to load the photo from. Google photos go through the backend, which

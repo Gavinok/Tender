@@ -35,8 +35,8 @@ export const listen = () => {
   let dx = 0;
 
   document.addEventListener("pointerdown", (e) => {
-    // Links and buttons on the card still work as normal
-    if (e.target.closest("a, button")) return;
+    // Links, buttons and the summary box on the card still work as normal
+    if (e.target.closest("a, button, [data-no-swipe]")) return;
     card = e.target.closest("[data-swipe]");
     if (!card) return;
     startX = e.clientX;

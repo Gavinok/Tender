@@ -33,7 +33,7 @@ import Network.HTTP.Simple (
  )
 import Provider (Provider (..))
 import Vibe (Chip, Search (..), priceLevels, queryTerms, wantsOpenNow)
-import Restaurant (Author (..), Loc (..), Photo (..), PhotoSource (..), Restaurant (..), Source (..))
+import Restaurant (Author (..), Loc (..), Photo (..), PhotoSource (..), Restaurant (..), Source (..), Summary (..))
 
 newtype PlacesKey = PlacesKey BS.ByteString
 
@@ -54,7 +54,7 @@ searchRadius = 5000
 field asked for, and rating and priceLevel put this in the Enterprise SKU.
 -}
 fieldMask :: BS.ByteString
-fieldMask = "places.id,places.displayName,places.location,places.rating,places.priceLevel,places.googleMapsUri,places.primaryTypeDisplayName,places.photos"
+fieldMask = "places.id,places.displayName,places.location,places.rating,places.priceLevel,places.googleMapsUri,places.primaryTypeDisplayName,places.photos,places.generativeSummary,places.editorialSummary"
 
 -- | The key goes in a header rather than the url so it can't end up in logs
 withKey :: PlacesKey -> [Header] -> Request -> Request
@@ -141,7 +141,19 @@ parsePlaces = withObject "SearchNearbyResponse" $ \o ->
             <*> (p .:? "primaryTypeDisplayName" >>= traverse (.: "text"))
             -- Each photo shown is a billed request, so only the first few
             <*> traverse parsePhoto (take maxPhotos found)
+            <*> parseSummary p
             <*> p .: "location"
+    -- Google's AI summary where there is one, otherwise its editorial summary
+    parseSummary p = do
+        generated <- p .:? "generativeSummary"
+        ai <- case generated of
+            Nothing -> pure Nothing
+            Just g -> do
+                overview <- g .:? "overview" >>= traverse (.: "text")
+                disclosure <- g .:? "disclosureText" >>= traverse (.: "text")
+                pure (flip Summary disclosure <$> overview)
+        editorial <- p .:? "editorialSummary" >>= traverse (.: "text")
+        pure (maybe (flip Summary Nothing <$> editorial) Just ai)
     parsePhoto = withObject "Photo" $ \ph -> do
         authors <- ph .:? "authorAttributions" .!= []
         Photo <$> (GooglePhoto <$> ph .: "name") <*> traverse parseAuthor (listToMaybe authors)

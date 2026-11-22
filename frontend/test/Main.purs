@@ -31,14 +31,15 @@ restaurant id =
       [ { name: Just ("places/" <> id <> "/photos/p1"), url: Nothing, author: Just { name: "Sam", uri: Just "https://maps.google.com/contrib/1" } }
       , { name: Just ("places/" <> id <> "/photos/p2"), url: Nothing, author: Just { name: "Kai", uri: Nothing } }
       ]
+  , summary: Just { text: "Bright noodle spot known for its broth.", disclosure: Just "Summarized with Gemini" }
   }
 
 -- | A place with nothing but a name, as Google sometimes returns
 bare :: String -> Restaurant
-bare id = (restaurant id) { url = Nothing, rating = Nothing, photos = [] }
+bare id = (restaurant id) { url = Nothing, rating = Nothing, photos = [], summary = Nothing }
 
 swiper :: Swiper
-swiper = { user: UserId "u", upcoming: [], photo: 0, othersLiked: [], matches: [], showMatches: false, vibe: [] }
+swiper = { user: UserId "u", upcoming: [], photo: 0, summaryOpen: false, othersLiked: [], matches: [], showMatches: false, vibe: [] }
 
 here :: { latitude :: Number, longitude :: Number }
 here = { latitude: 1.0, longitude: 2.0 }
@@ -120,6 +121,11 @@ main = runSpecAndExitProcess [ consoleReporter ] do
       step (Active swiper { photo = 1 } (Swiping (restaurant "a"))) NextPhoto `shouldEqual` Tuple (Active swiper { photo = 1 } (Swiping (restaurant "a"))) 0
       step (Active swiper (Swiping (restaurant "a"))) PreviousPhoto `shouldEqual` Tuple (Active swiper (Swiping (restaurant "a"))) 0
 
+    it "opens and closes the summary, closed again on the next card" do
+      step (Active swiper (Swiping (restaurant "a"))) ToggleSummary `shouldEqual` Tuple (Active swiper { summaryOpen = true } (Swiping (restaurant "a"))) 0
+      step (Active swiper { summaryOpen = true, upcoming = [ restaurant "b" ] } (Swiping (restaurant "a"))) (decided "a" false [])
+        `shouldEqual` Tuple (Active swiper (Swiping (restaurant "b"))) 0
+
     it "starts each new card on its first photo" do
       step (Active swiper { photo = 1, upcoming = [ restaurant "b" ] } (Swiping (restaurant "a"))) (decided "a" false [])
         `shouldEqual` Tuple (Active swiper (Swiping (restaurant "b"))) 0
@@ -189,6 +195,9 @@ main = runSpecAndExitProcess [ consoleReporter ] do
       renders (Active swiper { photo = 1 } (Swiping (restaurant "a"))) "src=\"/api/photo?name=places/a/photos/p2\""
       renders (Active swiper { photo = 1 } (Swiping (restaurant "a"))) "Photo: Kai"
       renders (Active swiper { photo = 1 } (Swiping (restaurant "a"))) "aria-label=\"Photo 2 of 2\""
+    it "previews the summary and shows it in full with Google's disclosure when opened" do
+      renders (Active swiper (Swiping (restaurant "a"))) "line-clamp-2\">Bright noodle spot"
+      renders (Active swiper { summaryOpen = true } (Swiping (restaurant "a"))) "Summarized with Gemini"
     it "loads Yelp photos straight from their url" do
       renders (Active swiper (Swiping ((restaurant "a") { source = "yelp", photos = [ { name: Nothing, url: Just "https://s3-media1.fl.yelpcdn.com/a.jpg", author: Nothing } ] }))) "src=\"https://s3-media1.fl.yelpcdn.com/a.jpg\""
     it "copes with a place that has no photo, rating or link" do
