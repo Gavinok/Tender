@@ -129,8 +129,9 @@ server = do
     providers <- providersFromEnv placesKey yelpKey order
     logMsg $ "Restaurant sources: " ++ T.unpack (T.intercalate ", " (map providerName providers))
     dbPath <- fromMaybe "test.db" <$> getEnv "TENDER_DB"
+    port <- maybe 5001 read <$> getEnv "TENDER_PORT"
     initDb dbPath
-    app (Env dbPath providers placesKey)
+    app port (Env dbPath providers placesKey)
 
 logMsg :: MonadIO m => String -> m ()
 logMsg = liftIO . hPutStrLn stderr
@@ -153,8 +154,8 @@ likedFirst ids rs = uncurry (<>) (partition ((`elem` ids) . R.restaurantId) rs)
 photoWidth :: Int
 photoWidth = 1200
 
-app :: Env -> IO ()
-app env = scotty 5001 $ do
+app :: Int -> Env -> IO ()
+app port env = scotty port $ do
     let withConn :: (Connection -> IO a) -> IO a
         withConn = withDb (envDbPath env)
     middleware logStdout
