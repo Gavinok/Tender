@@ -70,6 +70,7 @@ decide :: UserId -> RestaurantId -> Boolean -> Aff (Either ApiError Boolean)
 decide user restaurant liked =
   map _.match <$> (post "decision" { user, restaurant, liked } :: Aff (Either ApiError { match :: Boolean }))
 
--- | Restaurants near the location, most popular first
-getRestaurants :: Loc -> Aff (Either ApiError (Array Restaurant))
-getRestaurants loc = post "restaurants" loc
+-- | Restaurants for the user's session. The session searches from the first
+-- | location anyone in it sent, so everyone gets the same restaurants.
+getRestaurants :: UserId -> Loc -> Aff (Either ApiError (Array Restaurant))
+getRestaurants user loc = post "restaurants" { user, loc }

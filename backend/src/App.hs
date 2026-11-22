@@ -31,7 +31,7 @@ import Web.Scotty (
     status,
  )
 
-import Data.Aeson (FromJSON, object, (.=))
+import Data.Aeson (FromJSON (parseJSON), object, withObject, (.:), (.=))
 import Data.Text (Text)
 import qualified Data.Text.Encoding as TE
 import qualified Data.Text.Lazy as TL
@@ -66,6 +66,16 @@ apiCors =
         , corsMethods = simpleMethods <> ["OPTIONS", "PATCH"]
         , corsRequestHeaders = simpleHeaders
         }
+
+-- | Body of a /restaurants request: who is asking, and where they are
+data RestaurantsRequest = RestaurantsRequest
+    { searcher :: !U.UserId
+    , loc :: !Loc
+    }
+    deriving (Generic, Show)
+
+instance FromJSON RestaurantsRequest where
+    parseJSON = withObject "RestaurantsRequest" $ \o -> RestaurantsRequest <$> o .: "user" <*> o .: "loc"
 
 -- | Body of a /decision request
 data DecisionRequest = DecisionRequest
@@ -144,13 +154,18 @@ app env = scotty 5001 $ do
                 uid <- liftIO $ withConn $ \c -> joinSession c s returning
                 json uid
 
-    -- Restaurants near the location, fresh for each session
+    -- Restaurants near the session's location, fresh for each person
     post "/restaurants" $ do
-        l <- jsonData :: ActionM Loc
-        found <- liftIO $ searchWithFallback logMsg (envProviders env) l
-        case found of
-            Nothing -> errorResponse status502 "Couldn't get restaurants from any source"
-            Just rs -> json rs
+        RestaurantsRequest uid here <- jsonData
+        known <- liftIO $ withConn $ \c -> getUser c uid
+        case known of
+            Nothing -> errorResponse status404 "Unknown user"
+            Just u -> do
+                l <- liftIO $ withConn $ \c -> sessionLocation c (U.session u) here
+                found <- liftIO $ searchWithFallback logMsg (envProviders env) l
+                case found of
+                    Nothing -> errorResponse status502 "Couldn't get restaurants from any source"
+                    Just rs -> json rs
 
     -- Redirects to the photo with the given resource name, so the key stays here
     get "/photo" $ do

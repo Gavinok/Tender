@@ -2,7 +2,7 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DerivingStrategies #-}
 
-module Db (initDb, initSchema, withDb, addUserToDb, joinSession, recordDecision, isMatch, Decision (..), getUser) where
+module Db (initDb, initSchema, withDb, addUserToDb, joinSession, sessionLocation, recordDecision, isMatch, Decision (..), getUser) where
 
 import Control.Monad (forM_)
 import Database.SQLite.Simple (
@@ -21,6 +21,7 @@ import Data.Maybe (listToMaybe)
 import Data.String (fromString)
 import GHC.Generics (Generic)
 import Data.Text (Text)
+import Restaurant (Loc (..))
 import qualified User as U
 
 {- | Open a connection for the duration of the action, closing it even if
@@ -76,6 +77,8 @@ migrations =
     , -- 3: restaurants come fresh from Google Places, whose terms don't allow
       -- storing them. Decisions keep only the place id, which is allowed.
       ["DROP TABLE restaurants"]
+    , -- 4: one location per session, so everyone in it sees the same restaurants
+      ["CREATE TABLE sessions (session TEXT PRIMARY KEY, latitude REAL NOT NULL, longitude REAL NOT NULL)"]
     ]
 
 addUserToDb :: Connection -> U.User -> IO ()
@@ -96,6 +99,18 @@ joinSession conn s returning = do
             uid <- U.newUserId
             addUserToDb conn (U.User uid s)
             pure uid
+
+{- | Where the session searches for restaurants: the first location anyone
+in it sent. Everyone else gets that one too, so they all see the same
+restaurants and can match on them.
+-}
+sessionLocation :: Connection -> U.SessionId -> Loc -> IO Loc
+sessionLocation conn s (Loc lat lon) = do
+    execute conn "INSERT OR IGNORE INTO sessions (session, latitude, longitude) VALUES (?, ?, ?)" (s, lat, lon)
+    found <- query conn "SELECT latitude, longitude FROM sessions WHERE session = ?" (Only s)
+    pure $ case found of
+        [(lat', lon')] -> Loc lat' lon'
+        _ -> Loc lat lon
 
 -- | Whether a user liked a restaurant
 data Decision = Decision

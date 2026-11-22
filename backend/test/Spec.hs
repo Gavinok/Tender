@@ -201,6 +201,17 @@ main = hspec $ do
             like conn me' "a"
             isMatch conn s "a" `shouldReturn` False
 
+    describe "sessionLocation" $ do
+        it "uses the first location sent for everyone in the session" $ withTestDb $ \conn -> do
+            (s, _) <- sessionWith conn 0
+            sessionLocation conn s (Loc 48.43 (-123.35)) `shouldReturn` Loc 48.43 (-123.35)
+            sessionLocation conn s (Loc 49.28 (-123.12)) `shouldReturn` Loc 48.43 (-123.35)
+        it "keeps each session's location separate" $ withTestDb $ \conn -> do
+            (s, _) <- sessionWith conn 0
+            (other, _) <- sessionWith conn 0
+            _ <- sessionLocation conn s (Loc 48.43 (-123.35))
+            sessionLocation conn other (Loc 51.04 (-114.1)) `shouldReturn` Loc 51.04 (-114.1)
+
     describe "initSchema" $ do
         it "upgrades a database from before versioning, keeping likes and dropping stored restaurants" $
             withConnection ":memory:" $ \conn -> do
@@ -212,6 +223,6 @@ main = hspec $ do
                 query_ conn "SELECT userId, restaurantId, liked FROM decisions ORDER BY userId"
                     `shouldReturn` [("u1", "a", True), ("u2", "b", True) :: (String, String, Bool)]
                 query_ conn "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name"
-                    `shouldReturn` [Only ("decisions" :: String), Only "users"]
+                    `shouldReturn` [Only ("decisions" :: String), Only "sessions", Only "users"]
         it "can run more than once" $ withTestDb $ \conn ->
             initSchema conn `shouldReturn` ()

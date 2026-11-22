@@ -149,7 +149,7 @@ update model = case model, _ of
     ]
   _, Started user loc ->
     Active { user, upcoming: [], matches: [], showMatches: false } Fetching
-      /\ [ Just <<< orFail Loaded <$> getRestaurants loc ]
+      /\ [ Just <<< orFail Loaded <$> getRestaurants user loc ]
   Active swiper Fetching, Loaded rs -> advance swiper { upcoming = rs }
 
   Active swiper (Swiping r), Like -> model /\
