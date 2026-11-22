@@ -2,7 +2,7 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DerivingStrategies #-}
 
-module Db (initDb, initSchema, withDb, addUserToDb, joinSession, sessionLocation, recordDecision, isMatch, Decision (..), getUser) where
+module Db (initDb, initSchema, withDb, addUserToDb, joinSession, sessionLocation, recordDecision, isMatch, othersLiked, Decision (..), getUser) where
 
 import Control.Monad (forM_)
 import Database.SQLite.Simple (
@@ -135,6 +135,23 @@ recordDecision conn =
 getUser :: Connection -> U.UserId -> IO (Maybe U.User)
 getUser conn u =
     listToMaybe <$> query conn "SELECT userId, session FROM users WHERE userId = ?" (Only u)
+
+{- | Restaurants someone else in the session has liked that this user hasn't
+decided on yet, so they can be shown first
+-}
+othersLiked :: Connection -> U.User -> IO [Text]
+othersLiked conn u =
+    map fromOnly
+        <$> query
+            conn
+            ( mconcat
+                [ "SELECT DISTINCT decisions.restaurantId FROM decisions "
+                , "JOIN users ON users.userId = decisions.userId "
+                , "WHERE users.session = ? AND decisions.userId != ? AND decisions.liked "
+                , "AND decisions.restaurantId NOT IN (SELECT restaurantId FROM decisions WHERE userId = ?)"
+                ]
+            )
+            (U.session u, U.userId u, U.userId u)
 
 -- | Whether more than one person in the session has liked the restaurant
 isMatch :: Connection -> U.SessionId -> Text -> IO Bool

@@ -43,7 +43,9 @@ import Db
 import OpenStreetMap (openStreetMap)
 import Places
 import Provider (Provider (..), searchWithFallback)
-import Restaurant (Loc)
+import Data.List (partition)
+import Restaurant (Loc, Restaurant)
+import qualified Restaurant as R
 import qualified User as U
 import Yelp (YelpKey (..), yelp)
 
@@ -129,6 +131,10 @@ decide conn u r l = do
     recordDecision conn $ Decision (U.userId u) r l
     if l then isMatch conn (U.session u) r else pure False
 
+-- | Restaurants someone else in the session liked first, otherwise in the source's order
+likedFirst :: [Text] -> [Restaurant] -> [Restaurant]
+likedFirst ids rs = uncurry (<>) (partition ((`elem` ids) . R.restaurantId) rs)
+
 -- | Width to ask Google for. Cards are at most about 450 css pixels wide.
 photoWidth :: Int
 photoWidth = 1200
@@ -165,7 +171,13 @@ app env = scotty 5001 $ do
                 found <- liftIO $ searchWithFallback logMsg (envProviders env) l
                 case found of
                     Nothing -> errorResponse status502 "Couldn't get restaurants from any source"
-                    Just rs -> json rs
+                    Just rs -> do
+                        others <- liftIO $ withConn $ \c -> othersLiked c u
+                        json $
+                            object
+                                [ "restaurants" .= likedFirst others rs
+                                , "othersLiked" .= others
+                                ]
 
     -- Redirects to the photo with the given resource name, so the key stays here
     get "/photo" $ do
@@ -191,5 +203,5 @@ app env = scotty 5001 $ do
         case found of
             Nothing -> errorResponse status404 "Unknown user"
             Just u -> do
-                match <- liftIO $ withConn $ \c -> decide c u r l
-                json (object ["match" .= match])
+                (match, others) <- liftIO $ withConn $ \c -> (,) <$> decide c u r l <*> othersLiked c u
+                json (object ["match" .= match, "othersLiked" .= others])

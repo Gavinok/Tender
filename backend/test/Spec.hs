@@ -201,6 +201,15 @@ main = hspec $ do
             like conn me' "a"
             isMatch conn s "a" `shouldReturn` False
 
+    describe "othersLiked" $ do
+        it "lists what others in the session liked that this user hasn't decided on" $ withTestDb $ \conn -> do
+            (s, [me, friend, other]) <- sessionWith conn 3
+            (_, [stranger]) <- sessionWith conn 1
+            like conn friend "a" >> like conn friend "b" >> dislike conn other "c" >> like conn other "a"
+            like conn stranger "d"
+            dislike conn me "b"
+            othersLiked conn (User me s) `shouldReturn` ["a"]
+
     describe "sessionLocation" $ do
         it "uses the first location sent for everyone in the session" $ withTestDb $ \conn -> do
             (s, _) <- sessionWith conn 0

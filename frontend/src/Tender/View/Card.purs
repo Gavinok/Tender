@@ -48,10 +48,11 @@ stamp text classes opacity =
     ]
     [ HE.text text ]
 
--- | The restaurant's photo with its details over the bottom of it. Keyed on
--- | the restaurant so each new one animates in.
-restaurantCard :: forall a. Restaurant -> Html a
-restaurantCard r =
+-- | The restaurant's photo with its details over the bottom of it, and a
+-- | badge when someone else in the group already liked it. Keyed on the
+-- | restaurant so each new one animates in.
+restaurantCard :: forall a. { likedByOthers :: Boolean } -> Restaurant -> Html a
+restaurantCard { likedByOthers } r =
   HE.article
     [ HA.key (show r.id)
     , HA.createAttribute "data-swipe" ""
@@ -62,6 +63,10 @@ restaurantCard r =
     -- Fade in while dragging, see Swipe.js
     , stamp "YUM" "left-5 -rotate-12 border-star text-star" "var(--like, 0)"
     , stamp "NOPE" "right-5 rotate-12 border-white text-white" "var(--nope, 0)"
+    , if likedByOthers then
+        HE.span [ HA.class' "absolute left-4 top-4 flex items-center gap-1 rounded-lg border-2 border-ink bg-star px-3 py-1 text-sm font-bold text-ink shadow-pop" ]
+          [ icon Heart "h-4 w-4 fill-current", HE.text "Someone's keen" ]
+      else HE.text ""
     , mapsLink r "absolute right-4 top-4 rounded-lg bg-white/90 px-3 py-1 text-sm text-[#1F1F1F] shadow"
     , HE.div [ HA.class' "absolute inset-x-0 bottom-0 flex flex-col gap-2 p-5 text-left" ]
         [ HE.h2 [ HA.class' "font-display text-3xl leading-tight text-white drop-shadow" ] [ HE.text r.name ]

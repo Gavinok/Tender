@@ -35,13 +35,16 @@ bare :: String -> Restaurant
 bare id = (restaurant id) { url = Nothing, rating = Nothing, photo = Nothing }
 
 swiper :: Swiper
-swiper = { user: UserId "u", upcoming: [], matches: [], showMatches: false }
+swiper = { user: UserId "u", upcoming: [], othersLiked: [], matches: [], showMatches: false }
 
 here :: { latitude :: Number, longitude :: Number }
 here = { latitude: 1.0, longitude: 2.0 }
 
 lobbyAt :: Lobby
 lobbyAt = { session: SessionId "s", link: "http://example.com/s", copied: false }
+
+decided :: String -> Boolean -> Array String -> Message
+decided id match others = Decided { id: RestaurantId id, match, othersLiked: map RestaurantId others }
 
 -- | The model after a message, and how many requests it started
 step :: Model -> Message -> Tuple Model Int
@@ -56,22 +59,30 @@ main = runSpecAndExitProcess [ consoleReporter ] do
         `shouldEqual` Tuple (Active swiper Fetching) 1
 
     it "shows the first restaurant and keeps the rest" do
-      step (Active swiper Fetching) (Loaded [ restaurant "a", restaurant "b" ])
+      step (Active swiper Fetching) (Loaded { restaurants: [ restaurant "a", restaurant "b" ], othersLiked: [] })
         `shouldEqual` Tuple (Active swiper { upcoming = [ restaurant "b" ] } (Swiping (restaurant "a"))) 0
 
+    it "starts with what others already liked" do
+      step (Active swiper Fetching) (Loaded { restaurants: [ restaurant "a", restaurant "b", restaurant "c" ], othersLiked: [ RestaurantId "c" ] })
+        `shouldEqual` Tuple (Active swiper { upcoming = [ restaurant "a", restaurant "b" ], othersLiked = [ RestaurantId "c" ] } (Swiping (restaurant "c"))) 0
+
     it "says there are none when the search finds nothing" do
-      step (Active swiper Fetching) (Loaded []) `shouldEqual` Tuple (Active swiper NoneLeft) 0
+      step (Active swiper Fetching) (Loaded { restaurants: [], othersLiked: [] }) `shouldEqual` Tuple (Active swiper NoneLeft) 0
 
     it "moves to the next restaurant without asking the server" do
-      step (Active swiper { upcoming = [ restaurant "b" ] } (Swiping (restaurant "a"))) (Next (RestaurantId "a"))
+      step (Active swiper { upcoming = [ restaurant "b" ] } (Swiping (restaurant "a"))) (decided "a" false [])
         `shouldEqual` Tuple (Active swiper (Swiping (restaurant "b"))) 0
 
-    it "ignores a late Next for a restaurant already passed" do
-      step (Active swiper { upcoming = [ restaurant "c" ] } (Swiping (restaurant "b"))) (Next (RestaurantId "a"))
+    it "moves restaurants others just liked to the front" do
+      step (Active swiper { upcoming = [ restaurant "b", restaurant "c", restaurant "d" ] } (Swiping (restaurant "a"))) (decided "a" false [ "d" ])
+        `shouldEqual` Tuple (Active swiper { upcoming = [ restaurant "b", restaurant "c" ], othersLiked = [ RestaurantId "d" ] } (Swiping (restaurant "d"))) 0
+
+    it "ignores a late decision for a restaurant already passed" do
+      step (Active swiper { upcoming = [ restaurant "c" ] } (Swiping (restaurant "b"))) (decided "a" false [])
         `shouldEqual` Tuple (Active swiper { upcoming = [ restaurant "c" ] } (Swiping (restaurant "b"))) 0
 
     it "records a match" do
-      step (Active swiper (Swiping (restaurant "a"))) (GotMatch (restaurant "a"))
+      step (Active swiper (Swiping (restaurant "a"))) (decided "a" true [])
         `shouldEqual` Tuple (Active swiper { matches = [ restaurant "a" ] } (Matched (restaurant "a"))) 1
 
     it "sends a like while swiping" do
@@ -106,7 +117,7 @@ main = runSpecAndExitProcess [ consoleReporter ] do
         `shouldEqual` Tuple (Active swiper { showMatches = true } (Swiping (restaurant "a"))) 0
 
     it "shows when there are no restaurants left" do
-      step (Active swiper (Swiping (restaurant "a"))) (Next (RestaurantId "a"))
+      step (Active swiper (Swiping (restaurant "a"))) (decided "a" false [])
         `shouldEqual` Tuple (Active swiper NoneLeft) 0
 
     it "shows errors" do
@@ -131,6 +142,8 @@ main = runSpecAndExitProcess [ consoleReporter ] do
     it "shows the restaurant while swiping" do
       renders (Active swiper (Swiping (restaurant "Pho Real"))) "Pho Real"
       renders (Active swiper (Swiping (restaurant "Pho Real"))) "aria-label=\"0 matches\""
+    it "marks restaurants someone else liked" do
+      renders (Active swiper { othersLiked = [ RestaurantId "a" ] } (Swiping (restaurant "a"))) "Someone&#39;s keen"
     it "shows the photo through the backend with its credit and a Google Maps link" do
       renders (Active swiper (Swiping (restaurant "a"))) "src=\"/api/photo?name=places/a/photos/p1\""
       renders (Active swiper (Swiping (restaurant "a"))) "Photo: "

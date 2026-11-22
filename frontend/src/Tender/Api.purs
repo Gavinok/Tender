@@ -65,12 +65,13 @@ joinSession :: SessionId -> Maybe UserId -> Aff (Either ApiError UserId)
 joinSession (SessionId s) returning =
   get ("addtosession/" <> s <> maybe "" (\(UserId u) -> "?user=" <> u) returning)
 
--- | Record whether the user liked the restaurant, and whether that made it a match
-decide :: UserId -> RestaurantId -> Boolean -> Aff (Either ApiError Boolean)
-decide user restaurant liked =
-  map _.match <$> (post "decision" { user, restaurant, liked } :: Aff (Either ApiError { match :: Boolean }))
+-- | Record whether the user liked the restaurant. Says whether that made it a
+-- | match, and what others in the session have liked that this user hasn't
+-- | decided on yet.
+decide :: UserId -> RestaurantId -> Boolean -> Aff (Either ApiError { match :: Boolean, othersLiked :: Array RestaurantId })
+decide user restaurant liked = post "decision" { user, restaurant, liked }
 
 -- | Restaurants for the user's session. The session searches from the first
 -- | location anyone in it sent, so everyone gets the same restaurants.
-getRestaurants :: UserId -> Loc -> Aff (Either ApiError (Array Restaurant))
+getRestaurants :: UserId -> Loc -> Aff (Either ApiError { restaurants :: Array Restaurant, othersLiked :: Array RestaurantId })
 getRestaurants user loc = post "restaurants" { user, loc }

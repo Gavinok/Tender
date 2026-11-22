@@ -10,7 +10,7 @@ module Tender.App
 
 import Prelude
 
-import Data.Array (cons, elem, uncons)
+import Data.Array (cons, elem, filter, uncons)
 import Data.Either (Either(..), either)
 import Data.Generic.Rep (class Generic)
 import Data.Show.Generic (genericShow)
@@ -31,6 +31,8 @@ type Swiper =
   { user :: UserId
   -- | Restaurants still to show, fetched once when swiping starts
   , upcoming :: Array Restaurant
+  -- | Restaurants someone else in the session liked, shown first and badged
+  , othersLiked :: Array RestaurantId
   , matches :: Array Restaurant
   -- | Whether the list of matches is open
   , showMatches :: Boolean
@@ -80,10 +82,9 @@ data Message
   | KeyPressed String
   -- | Skip past the current match and keep swiping
   | Continue
-  | Loaded (Array Restaurant)
-  -- | Move on from the restaurant with this id, once its decision is saved
-  | Next RestaurantId
-  | GotMatch Restaurant
+  | Loaded { restaurants :: Array Restaurant, othersLiked :: Array RestaurantId }
+  -- | The decision on this restaurant is saved
+  | Decided { id :: RestaurantId, match :: Boolean, othersLiked :: Array RestaurantId }
   | FailedToLoad ErrorMessage
   -- | Start again from the session in the url
   | Retry
@@ -106,6 +107,12 @@ advance :: Swiper -> Tuple Model (Array (Aff (Maybe Message)))
 advance swiper = case uncons swiper.upcoming of
   Nothing -> Active swiper NoneLeft /\ []
   Just { head, tail } -> Active swiper { upcoming = tail } (Swiping head) /\ []
+
+-- | Restaurants someone else liked first, otherwise keeping the order
+likedFirst :: Array RestaurantId -> Array Restaurant -> Array Restaurant
+likedFirst ids rs = filter liked rs <> filter (not <<< liked) rs
+  where
+  liked r = elem r.id ids
 
 -- | Initial state of the app
 init :: Model
@@ -148,31 +155,34 @@ update model = case model, _ of
             Left e -> pure $ Just $ failed e
     ]
   _, Started user loc ->
-    Active { user, upcoming: [], matches: [], showMatches: false } Fetching
+    Active { user, upcoming: [], othersLiked: [], matches: [], showMatches: false } Fetching
       /\ [ Just <<< orFail Loaded <$> getRestaurants user loc ]
-  Active swiper Fetching, Loaded rs -> advance swiper { upcoming = rs }
+  Active swiper Fetching, Loaded found ->
+    advance swiper { upcoming = likedFirst found.othersLiked found.restaurants, othersLiked = found.othersLiked }
 
   Active swiper (Swiping r), Like -> model /\
     [ do
         liftEffect $ flyOut Swipe.Right
-        decide swiper.user r.id true <#> Just <<< case _ of
-          Left e -> failed e
-          Right true | not (elem r.id (_.id <$> swiper.matches)) -> GotMatch r
-          Right _ -> Next r.id
+        decide swiper.user r.id true <#> Just <<< either failed \d -> Decided { id: r.id, match: d.match, othersLiked: d.othersLiked }
     ]
   Active swiper (Swiping r), Dislike -> model /\
     [ do
         liftEffect $ flyOut Swipe.Left
-        decide swiper.user r.id false <#> Just <<< either failed (const (Next r.id))
+        decide swiper.user r.id false <#> Just <<< either failed \d -> Decided { id: r.id, match: false, othersLiked: d.othersLiked }
     ]
-  Active swiper (Swiping r), Next id | r.id == id -> advance swiper
+  -- Ignored if it's late and the card has already gone, so a doubled response can't skip one
+  Active swiper (Swiping r), Decided d | r.id == d.id ->
+    let
+      next = swiper { upcoming = likedFirst d.othersLiked swiper.upcoming, othersLiked = d.othersLiked }
+    in
+      if d.match && not (elem r.id (_.id <$> swiper.matches)) then
+        Active next { matches = cons r next.matches } (Matched r) /\ [ liftEffect vibrate $> Nothing ]
+      else advance next
   Active _ (Swiping _), KeyPressed "ArrowRight" -> update model Like
   Active _ (Swiping _), KeyPressed "ArrowLeft" -> update model Dislike
 
   Active swiper (Matched _), Continue -> advance swiper
 
-  Active swiper (Swiping r), GotMatch m | r.id == m.id ->
-    Active swiper { matches = cons r swiper.matches } (Matched r) /\ [ liftEffect vibrate $> Nothing ]
   Active swiper screen, ToggleMatches ->
     Active swiper { showMatches = not swiper.showMatches } screen /\ []
 

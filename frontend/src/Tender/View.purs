@@ -2,7 +2,7 @@ module Tender.View (view) where
 
 import Prelude
 
-import Data.Array (head, length)
+import Data.Array (elem, head, length)
 import Data.Maybe (Maybe(..), maybe)
 import Flame (Html)
 import Flame.Html.Attribute as HA
@@ -32,7 +32,7 @@ view (Active swiper screen) =
           HE.div [ HA.class' "flex max-h-[52rem] flex-1 flex-col gap-6" ]
             -- The card is keyed so each restaurant gets a fresh element. Flame
             -- needs keyed elements kept apart from unkeyed siblings.
-            [ HE.div [ HA.class' "flex flex-1 flex-col" ] [ restaurantCard r ]
+            [ HE.div [ HA.class' "flex flex-1 flex-col" ] [ restaurantCard { likedByOthers: elem r.id swiper.othersLiked } r ]
             , actionBar { nope: Dislike, like: Like }
             -- Start loading the next photo so it's there when this card goes
             , HE.div [ HA.class' "hidden" ]
