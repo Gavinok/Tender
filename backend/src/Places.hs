@@ -7,6 +7,9 @@ module Places (
     googlePlaces,
     searchNearby,
     searchText,
+    ringCircles,
+    inRing,
+    metres,
     photoUri,
     parsePlaces,
     isPhotoName,
@@ -16,6 +19,8 @@ import Data.Aeson (Value, object, withObject, (.!=), (.:), (.:?), (.=))
 import qualified Data.Aeson.Types as AT
 import qualified Data.ByteString as BS
 import Data.Char (isAlphaNum)
+import Data.Either (partitionEithers)
+import Data.List (nubBy, transpose)
 import Data.Maybe (listToMaybe)
 import Data.Text (Text)
 import qualified Data.Text as T
@@ -38,8 +43,51 @@ newtype PlacesKey = PlacesKey BS.ByteString
 
 -- | The most popular places nearby, or a text search when the group picked a vibe
 googlePlaces :: PlacesKey -> Provider
-googlePlaces key = Provider "Google Places" $ \(Search l chips radius) ->
-    if null chips then searchNearby key l radius else searchText key l chips radius
+googlePlaces key = Provider "Google Places" $ \(Search l chips radius inner) ->
+    let search centre r = if null chips then searchNearby key centre r else searchText key centre chips r
+     in if inner <= 0
+            then search l radius
+            else ringSearch l inner radius search
+
+{- | Search the ring between two radii around a location. Searching the
+whole wider circle would return mostly the same popular places as the
+inner one, so instead search six circles spread around the ring, keep
+what falls in it, and interleave them so the results cover every
+direction.
+-}
+ringSearch :: Loc -> Double -> Double -> (Loc -> Double -> IO (Either FetchError [Restaurant])) -> IO (Either FetchError [Restaurant])
+ringSearch l inner outer search = do
+    found <- traverse (uncurry search) (ringCircles l inner outer)
+    pure $ case partitionEithers found of
+        (e : _, []) -> Left e
+        (_, lists) -> Right (inRing l inner outer (interleave lists))
+
+-- | Six circles, each as wide as the ring, centred around it
+ringCircles :: Loc -> Double -> Double -> [(Loc, Double)]
+ringCircles (Loc lat lon) inner outer =
+    [ (Loc (lat + d * cos a / 111320) (lon + d * sin a / (111320 * cos (lat * pi / 180))), (outer - inner) / 2)
+    | i <- [0 .. 5 :: Int]
+    , let a = fromIntegral i * pi / 3
+    ]
+  where
+    d = (inner + outer) / 2
+
+-- | Places between the two radii, each once
+inRing :: Loc -> Double -> Double -> [Restaurant] -> [Restaurant]
+inRing centre inner outer = nubBy (\a b -> restaurantId a == restaurantId b) . filter within
+  where
+    within r = let m = metres centre (location r) in m >= inner && m <= outer
+
+-- | First of each list, then second of each, and so on
+interleave :: [[a]] -> [a]
+interleave = concat . transpose
+
+-- | Distance in metres, flat approximation that is fine within 50km
+metres :: Loc -> Loc -> Double
+metres (Loc lat lon) (Loc lat' lon') =
+    let dy = (lat' - lat) * 111320
+        dx = (lon' - lon) * 111320 * cos (lat * pi / 180)
+     in sqrt (dx * dx + dy * dy)
 
 -- | Photos kept per place, of the up to 10 Google returns
 maxPhotos :: Int

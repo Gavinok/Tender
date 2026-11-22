@@ -202,7 +202,9 @@ app port env = scotty port $ do
                     l <- sessionLocation c s here
                     radius <- maybe (sessionRadius c s) (widenSearch c s) wider
                     (l,,radius,) <$> getVibe c s <*> decidedBy c uid
-                found <- liftIO $ searchWithFallback logMsg (envProviders env) (Search l chips radius)
+                -- Searching further only needs the ring outside what the person saw
+                let inner = maybe 0 (min radius) wider
+                found <- liftIO $ searchWithFallback logMsg (envProviders env) (Search l chips radius inner)
                 case found of
                     Nothing -> errorResponse status502 "Couldn't get restaurants from any source"
                     Just rs -> do

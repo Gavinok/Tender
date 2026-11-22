@@ -28,6 +28,9 @@ data Search = Search
     , searchChips :: [Chip]
     , -- | Metres around the location
       searchRadius :: Double
+    , -- | Metres already searched when searching further, so only the ring
+      -- between this and the radius is new. 0 for a first search.
+      searchInner :: Double
     }
     deriving (Show)
 

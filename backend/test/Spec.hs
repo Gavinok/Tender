@@ -123,7 +123,7 @@ main = hspec $ do
     describe "searchWithFallback" $ do
         let here = Loc 48.43 (-123.35)
             found = [plain OpenStreetMap "a" here]
-            search ps = searchWithFallback (const (pure ())) ps (Search here [] defaultRadius)
+            search ps = searchWithFallback (const (pure ())) ps (Search here [] defaultRadius 0)
         it "uses the first source that finds something" $
             search [provider "down" (Left (ParseError "boom")), provider "empty" (Right []), provider "osm" (Right found)]
                 `shouldReturn` Just found
@@ -131,6 +131,17 @@ main = hspec $ do
             search [provider "down" (Left (ParseError "boom")), provider "empty" (Right [])] `shouldReturn` Just []
         it "fails when every source failed" $
             search [provider "down" (Left (ParseError "boom"))] `shouldReturn` Nothing
+
+    describe "searching a ring" $ do
+        let centre = Loc 48.43 (-123.35)
+        it "spreads six circles around the middle of the ring, each as wide as it" $ do
+            let circles = ringCircles centre 5000 10000
+            length circles `shouldBe` 6
+            mapM_ (\(c, r) -> (round (metres centre c) :: Int, r) `shouldBe` (7500, 2500)) circles
+        it "keeps each place between the radii once" $ do
+            let at i m = plain Google i (Loc (48.43 + m / 111320) (-123.35))
+            map restaurantId (inRing centre 5000 10000 [at "inside" 1000, at "ring" 7000, at "ring" 7000, at "beyond" 20000])
+                `shouldBe` ["ring"]
 
     describe "isPhotoName" $ do
         it "accepts a photo resource name" $
