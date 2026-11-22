@@ -14,4 +14,7 @@ frontend/.purs*
 frontend/.psa*
 frontend/.spago
 backend/.envrc
-backend/test.db
+backend/*.db
+backend/ltximg/
+frontend/.agent-shell/
+frontend/.spec-results

@@ -8,32 +8,67 @@ a similar approach to tinder but for finding an agreed upon place to eat.
 This is an active work in progress. Expect regular breaking changes
 
 * Running this project
-** Haskell versioning
-Haskell tooling is a little picky on versioning so be sure to use
-[[https://www.haskell.org/ghcup/][GHCup]] to ensure you are using the correct versions.
+** Toolchain
+The tools are pinned in =mise.toml=. With [[https://mise.jdx.dev][mise]] installed run
 #+begin_src bash
-  ghcup set ghc 9.4.8
-  ghcup set cabal 3.10.2.1
-  ghcup set hls 2.5.0.0 # for dev
+  mise trust
+  mise install
 #+end_src
+GHC and HLS are installed through ghcup so that HLS matches the GHC
+build exactly.
 ** Running Tender
-You will need a [[https://www.yelp.com/developers/v3/manage_app][Yelp API key]]
+You will need a [[https://developers.google.com/maps/documentation/places/web-service/get-api-key][Google Places API key]] with the Places API (New)
+enabled. Google needs a billing account on the project, but the monthly
+free usage covers a project like this; setting a daily quota in the
+Cloud console makes sure it stays free. A Maps Demo Key works too, but
+Google leaves photos and reviews out of its responses, so every card
+shows a placeholder.
 
-To run this project export the API key as shown and execute default
-make targets for both the front and backend
+The backend reads the key from =GOOGLE_PLACES_KEY=, or from
+=pass show GOOGLE_PLACES_KEY= if that isn't set. From the top of the repository run
 
 #+begin_src sh
-  export YELP_KEY="<your-key-here>"
-  cd frontend
-  make
-  cd ..
-  cd backend
-  make
+  make        # backend on http://localhost:5001, app on http://localhost:1234
+  make phone  # the same, also shared over https on your tailnet (see below)
+  make test   # test both halves
 #+end_src
 
-This will start both the front and backend for you
+=make= builds and starts both, and Ctrl+C stops both.
+
+Restaurants come fresh from Google for each session. Google's terms
+only allow storing place ids, so that is all the backend keeps.
+
+The backend stores sessions and likes in =test.db=. Set
+=TENDER_DB= to use a different file.
+
+** Trying it on a phone
+Browsers only give the location to https pages, so a phone can't use the
+plain http dev server. With [[https://tailscale.com][Tailscale]] on both the computer and the
+phone, serve it over https on your tailnet while =make= is running:
+#+begin_src sh
+  cd frontend
+  make share     # prints the https://<machine>.<tailnet>.ts.net:8443 address
+  make unshare   # stop serving it
+#+end_src
+Only devices on your tailnet can reach it. =SHARE_PORT= changes the port.
+
+** Running the tests
+#+begin_src sh
+  cd backend && make test
+  cd frontend && make test
+#+end_src
+
+=make watch= in either directory rebuilds on change (needs [[https://github.com/eradman/entr][entr]]).
 
 * Example UI
+
+** How it works
+1. Display a QR code for adding friends to a session
+2. Click "Start Swiping" to view close buy restaurants
+3. Prompt the user with a series of restaurants near them to Like and Dislike
+4. When two users in the same session like the same restaurant the
+   match displayed so both users know where to grab a bite.
+** How it looks
 [[https://www.engr.uvic.ca/~gavinfre/tender_demo.png]]
 
 

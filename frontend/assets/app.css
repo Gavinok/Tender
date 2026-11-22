@@ -1,56 +1,30 @@
-/* custom.css */
+/* Self-hosted fonts, no requests to third parties */
+@import "npm:@fontsource/bagel-fat-one/400.css";
+@import "npm:@fontsource/bricolage-grotesque/500.css";
+@import "npm:@fontsource/bricolage-grotesque/700.css";
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-@layer components {
-  /* main { */
-  /*   @apply mx-2; */
-  /* } */
-  .main-background {
-    @apply bg-gray-200;
+@layer base {
+  html,
+  body {
+    @apply bg-surface text-ink antialiased;
   }
-  .header-body {
-    @apply bg-white relative flex items-center shadow-md justify-center mt-2 rounded-lg;
-  }
-  .header-text {
-    @apply text-3xl lg:text-3xl font-bold mb-2 text-center;
-  }
-  .button {
-    @apply block py-2 px-10 text-white justify-center shadow-md rounded hover:shadow-lg;
-  }
-  .yelp-link {
-    @apply button bg-green-300 my-2;
-  }
-  .join-button {
-    @apply button bg-blue-100 my-2 text-black;
-  }
-  .image-frame {
-    @apply py-5 flex flex-col items-center justify-center;
-  }
-  .image {
-    @apply is-cropped rounded overflow-hidden shadow-lg;
-  }
-  .qr-main {
-    @apply flex flex-col items-center justify-center;
-  }
-  .loading-main {
-    @apply flex flex-col items-center justify-center;
-  }
-  .footer-body {
-    @apply bg-white py-2 shadow-lg px-2 rounded-lg mx-2;
-  }
-  .footer-content {
-    @apply grid grid-rows-1 grid-cols-3 items-center rounded;
-  } /* ... */
-  .footer-item {
-    @apply flex justify-center;
-  }
-  .centered {
-    @apply py-5 flex flex-col items-center justify-center pt-3;
+  /* Keep content clear of notches and the home indicator */
+  body {
+    padding: env(safe-area-inset-top) env(safe-area-inset-right)
+      env(safe-area-inset-bottom) env(safe-area-inset-left);
   }
 }
-.is-cropped {
-  width: auto;
-  height: 600px;
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+  }
 }
