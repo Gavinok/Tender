@@ -58,7 +58,7 @@ matchList rs =
           , HA.rel "noopener"
           , HA.class' "flex items-center gap-3 rounded-xl border-2 border-ink bg-white p-2 pr-4 text-left shadow-pop transition active:translate-y-0.5 active:shadow-none"
           ]
-          [ restaurantPhoto r "h-14 w-14 rounded-lg"
+          [ restaurantPhoto r 0 "h-14 w-14 rounded-lg"
           , HE.span [ HA.class' "flex-1 font-bold" ] [ HE.text r.name ]
           , icon ExternalLink "h-5 w-5 text-brand-500"
           ]

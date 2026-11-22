@@ -27,15 +27,18 @@ restaurant id =
   , price: Nothing
   , rating: Just 4.0
   , category: Nothing
-  , photo: Just { name: Just ("places/" <> id <> "/photos/p1"), url: Nothing, author: Just { name: "Sam", uri: Just "https://maps.google.com/contrib/1" } }
+  , photos:
+      [ { name: Just ("places/" <> id <> "/photos/p1"), url: Nothing, author: Just { name: "Sam", uri: Just "https://maps.google.com/contrib/1" } }
+      , { name: Just ("places/" <> id <> "/photos/p2"), url: Nothing, author: Just { name: "Kai", uri: Nothing } }
+      ]
   }
 
 -- | A place with nothing but a name, as Google sometimes returns
 bare :: String -> Restaurant
-bare id = (restaurant id) { url = Nothing, rating = Nothing, photo = Nothing }
+bare id = (restaurant id) { url = Nothing, rating = Nothing, photos = [] }
 
 swiper :: Swiper
-swiper = { user: UserId "u", upcoming: [], othersLiked: [], matches: [], showMatches: false, vibe: [] }
+swiper = { user: UserId "u", upcoming: [], photo: 0, othersLiked: [], matches: [], showMatches: false, vibe: [] }
 
 here :: { latitude :: Number, longitude :: Number }
 here = { latitude: 1.0, longitude: 2.0 }
@@ -112,6 +115,15 @@ main = runSpecAndExitProcess [ consoleReporter ] do
       step (QR lobbyAt) LinkCopied `shouldEqual` Tuple (QR lobbyAt { copied = true }) 1
       step (QR lobbyAt { copied = true }) HideCopied `shouldEqual` Tuple (QR lobbyAt) 0
 
+    it "flips through a card's photos without going past either end" do
+      step (Active swiper (Swiping (restaurant "a"))) NextPhoto `shouldEqual` Tuple (Active swiper { photo = 1 } (Swiping (restaurant "a"))) 0
+      step (Active swiper { photo = 1 } (Swiping (restaurant "a"))) NextPhoto `shouldEqual` Tuple (Active swiper { photo = 1 } (Swiping (restaurant "a"))) 0
+      step (Active swiper (Swiping (restaurant "a"))) PreviousPhoto `shouldEqual` Tuple (Active swiper (Swiping (restaurant "a"))) 0
+
+    it "starts each new card on its first photo" do
+      step (Active swiper { photo = 1, upcoming = [ restaurant "b" ] } (Swiping (restaurant "a"))) (decided "a" false [])
+        `shouldEqual` Tuple (Active swiper (Swiping (restaurant "b"))) 0
+
     it "toggles a vibe chip and saves it" do
       step (QR lobbyAt) (ToggleChip "patio") `shouldEqual` Tuple (QR lobbyAt { vibe = { chips: [ "patio" ], locked: false } }) 1
       step (QR lobbyAt { vibe = { chips: [ "patio" ], locked: false } }) (ToggleChip "patio") `shouldEqual` Tuple (QR lobbyAt) 1
@@ -173,8 +185,12 @@ main = runSpecAndExitProcess [ consoleReporter ] do
     it "credits OpenStreetMap for its places" do
       renders (Active swiper (Swiping ((bare "Pho Real") { source = "openstreetmap", url = Just "https://www.openstreetmap.org/node/1" }))) "© OpenStreetMap contributors"
       renders (Active swiper (Swiping ((bare "Pho Real") { source = "openstreetmap", url = Just "https://www.openstreetmap.org/node/1" }))) ">OpenStreetMap<"
+    it "shows the photo picked, its own credit, and a bar per photo" do
+      renders (Active swiper { photo = 1 } (Swiping (restaurant "a"))) "src=\"/api/photo?name=places/a/photos/p2\""
+      renders (Active swiper { photo = 1 } (Swiping (restaurant "a"))) "Photo: Kai"
+      renders (Active swiper { photo = 1 } (Swiping (restaurant "a"))) "aria-label=\"Photo 2 of 2\""
     it "loads Yelp photos straight from their url" do
-      renders (Active swiper (Swiping ((restaurant "a") { source = "yelp", photo = Just { name: Nothing, url: Just "https://s3-media1.fl.yelpcdn.com/a.jpg", author: Nothing } }))) "src=\"https://s3-media1.fl.yelpcdn.com/a.jpg\""
+      renders (Active swiper (Swiping ((restaurant "a") { source = "yelp", photos = [ { name: Nothing, url: Just "https://s3-media1.fl.yelpcdn.com/a.jpg", author: Nothing } ] }))) "src=\"https://s3-media1.fl.yelpcdn.com/a.jpg\""
     it "copes with a place that has no photo, rating or link" do
       renders (Active swiper (Swiping (bare "Mystery Diner"))) "Mystery Diner"
     it "celebrates a match" do

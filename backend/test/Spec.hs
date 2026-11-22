@@ -1,6 +1,6 @@
 module Main (main) where
 
-import Data.Aeson (Value (Null), eitherDecode, toJSON)
+import Data.Aeson (Value (Array, Null), eitherDecode, toJSON)
 import Data.Aeson.Types (Parser)
 import qualified Data.Aeson.KeyMap as KM
 import Data.Aeson.Types (Value (Object), parseEither)
@@ -59,7 +59,7 @@ parse = parseWith parsePlaces
 
 -- | A restaurant with only the given name and position
 plain :: Source -> Text -> Loc -> Restaurant
-plain src n = Restaurant src n n Nothing Nothing Nothing Nothing Nothing
+plain src n = Restaurant src n n Nothing Nothing Nothing Nothing []
 
 provider :: Text -> Either FetchError [Restaurant] -> Provider
 provider n result = Provider n (const (pure result))
@@ -78,10 +78,14 @@ main = hspec $ do
                         (Just 4.5)
                         (Just "$$")
                         (Just "Vietnamese Restaurant")
-                        (Just (Photo (GooglePhoto "places/ChIJ1/photos/AbC-1_x") (Just (Author "Sam" (Just "https://maps.google.com/maps/contrib/1")))))
+                        [Photo (GooglePhoto "places/ChIJ1/photos/AbC-1_x") (Just (Author "Sam" (Just "https://maps.google.com/maps/contrib/1")))]
                         (Loc 48.43 (-123.35))
-                    , Restaurant Google "ChIJ2" "New Spot" Nothing Nothing Nothing Nothing Nothing (Loc 48.44 (-123.36))
+                    , Restaurant Google "ChIJ2" "New Spot" Nothing Nothing Nothing Nothing [] (Loc 48.44 (-123.36))
                     ]
+        it "keeps at most five photos" $ do
+            let ph i = "{\"name\": \"places/P/photos/" <> L8.pack (show (i :: Int)) <> "\"}"
+                body = "{\"places\": [{\"id\": \"P\", \"displayName\": {\"text\": \"Busy\"}, \"location\": {\"latitude\": 1, \"longitude\": 2}, \"photos\": [" <> L8.intercalate "," (map ph [1 .. 10]) <> "]}]}"
+            map (length . photos) <$> parse body `shouldBe` Right [5]
         it "treats a response with no places as an empty list" $
             parse "{}" `shouldBe` Right []
 
@@ -89,7 +93,7 @@ main = hspec $ do
         it "reads a business, treating an empty image as no photo" $
             parseWith parseYelp
                 "{\"businesses\": [{\"id\": \"y1\", \"name\": \"Jam Cafe\", \"url\": \"https://www.yelp.com/biz/jam\", \"image_url\": \"\", \"rating\": 4.5, \"price\": \"$$\", \"categories\": [{\"alias\": \"breakfast\", \"title\": \"Breakfast & Brunch\"}], \"coordinates\": {\"latitude\": 48.42, \"longitude\": -123.36}}]}"
-                `shouldBe` Right [Restaurant Yelp "y1" "Jam Cafe" (Just "https://www.yelp.com/biz/jam") (Just 4.5) (Just "$$") (Just "Breakfast & Brunch") Nothing (Loc 48.42 (-123.36))]
+                `shouldBe` Right [Restaurant Yelp "y1" "Jam Cafe" (Just "https://www.yelp.com/biz/jam") (Just 4.5) (Just "$$") (Just "Breakfast & Brunch") [] (Loc 48.42 (-123.36))]
 
     describe "parseOverpass" $ do
         it "reads nodes and ways, skipping places without a name" $
@@ -103,8 +107,8 @@ main = hspec $ do
                     ]
                 )
                 `shouldBe` Right
-                    [ Restaurant OpenStreetMap "osm:node/1" "Pho Real" (Just "https://www.openstreetmap.org/node/1") Nothing Nothing (Just "Vietnamese") Nothing (Loc 48.43 (-123.35))
-                    , Restaurant OpenStreetMap "osm:way/2" "Fish Store" (Just "https://www.openstreetmap.org/way/2") Nothing Nothing (Just "Fish and chips") Nothing (Loc 48.44 (-123.36))
+                    [ Restaurant OpenStreetMap "osm:node/1" "Pho Real" (Just "https://www.openstreetmap.org/node/1") Nothing Nothing (Just "Vietnamese") [] (Loc 48.43 (-123.35))
+                    , Restaurant OpenStreetMap "osm:way/2" "Fish Store" (Just "https://www.openstreetmap.org/way/2") Nothing Nothing (Just "Fish and chips") [] (Loc 48.44 (-123.36))
                     ]
         it "puts the nearest first" $
             map restaurantId (nearest (Loc 0 0) 2 [plain OpenStreetMap "far" (Loc 0.03 0), plain OpenStreetMap "near" (Loc 0.001 0), plain OpenStreetMap "mid" (Loc 0 0.01)])
@@ -139,8 +143,8 @@ main = hspec $ do
 
     describe "Restaurant JSON" $ do
         it "sends null for missing details" $
-            case toJSON (Restaurant Google "ChIJ2" "New Spot" Nothing Nothing Nothing Nothing Nothing (Loc 1 2)) of
-                Object o -> (KM.lookup "photo" o, KM.lookup "rating" o) `shouldBe` (Just Null, Just Null)
+            case toJSON (Restaurant Google "ChIJ2" "New Spot" Nothing Nothing Nothing Nothing [] (Loc 1 2)) of
+                Object o -> (KM.lookup "photos" o, KM.lookup "rating" o) `shouldBe` (Just (Array mempty), Just Null)
                 v -> expectationFailure ("not an object: " ++ show v)
 
     describe "isMatch" $ do

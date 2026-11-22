@@ -57,7 +57,8 @@ type Restaurant =
   , price :: Maybe String
   , rating :: Maybe Number
   , category :: Maybe String
-  , photo :: Maybe Photo
+  -- | The first is shown first
+  , photos :: Array Photo
   }
 
 -- | Where to load the photo from. Google photos go through the backend, which

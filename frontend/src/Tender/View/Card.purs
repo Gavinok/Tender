@@ -2,7 +2,7 @@ module Tender.View.Card (restaurantCard, ratingStars, actionBar) where
 
 import Prelude
 
-import Data.Array (range)
+import Data.Array (length, range)
 import Data.Int (toNumber)
 import Data.Maybe (maybe)
 import Flame (Html)
@@ -48,32 +48,44 @@ stamp text classes opacity =
     ]
     [ HE.text text ]
 
+-- | A bar per photo across the top of the card, the one showing filled in.
+-- | Tapping the left or right of the card moves between them (see Swipe.js).
+photoBars :: forall a. Int -> Int -> Html a
+photoBars count showing
+  | count < 2 = HE.text ""
+  | otherwise =
+      HE.div [ HA.class' "absolute inset-x-3 top-2 flex gap-1", HA.createAttribute "aria-label" ("Photo " <> show (showing + 1) <> " of " <> show count) ]
+        (map bar (range 0 (count - 1)))
+  where
+  bar i = HE.span [ HA.class' ("h-1 flex-1 rounded-full " <> if i == showing then "bg-white" else "bg-white/40") ] []
+
 -- | The restaurant's photo with its details over the bottom of it, and a
 -- | badge when someone else in the group already liked it. Keyed on the
 -- | restaurant so each new one animates in.
-restaurantCard :: forall a. { likedByOthers :: Boolean } -> Restaurant -> Html a
-restaurantCard { likedByOthers } r =
+restaurantCard :: forall a. { likedByOthers :: Boolean, photo :: Int } -> Restaurant -> Html a
+restaurantCard { likedByOthers, photo } r =
   HE.article
     [ HA.key (show r.id)
     , HA.createAttribute "data-swipe" ""
     , HA.class' "relative min-h-[22rem] w-full flex-1 animate-card-in cursor-grab touch-none select-none overflow-hidden rounded-[2rem] border-[3px] border-ink bg-brand-200 shadow-card active:cursor-grabbing"
     ]
-    [ restaurantPhoto r "pointer-events-none absolute inset-0 h-full w-full"
+    [ restaurantPhoto r photo "pointer-events-none absolute inset-0 h-full w-full"
+    , photoBars (length r.photos) photo
     , HE.div [ HA.class' "absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" ] []
     -- Fade in while dragging, see Swipe.js
     , stamp "YUM" "left-5 -rotate-12 border-star text-star" "var(--like, 0)"
     , stamp "NOPE" "right-5 rotate-12 border-white text-white" "var(--nope, 0)"
     , if likedByOthers then
-        HE.span [ HA.class' "absolute left-4 top-4 flex items-center gap-1 rounded-lg border-2 border-ink bg-star px-3 py-1 text-sm font-bold text-ink shadow-pop" ]
+        HE.span [ HA.class' "absolute left-4 top-6 flex items-center gap-1 rounded-lg border-2 border-ink bg-star px-3 py-1 text-sm font-bold text-ink shadow-pop" ]
           [ icon Heart "h-4 w-4 fill-current", HE.text "Someone's keen" ]
       else HE.text ""
-    , mapsLink r "absolute right-4 top-4 rounded-lg bg-white/90 px-3 py-1 text-sm text-[#1F1F1F] shadow"
+    , mapsLink r "absolute right-4 top-6 rounded-lg bg-white/90 px-3 py-1 text-sm text-[#1F1F1F] shadow"
     , HE.div [ HA.class' "absolute inset-x-0 bottom-0 flex flex-col gap-2 p-5 text-left" ]
         [ HE.h2 [ HA.class' "font-display text-3xl leading-tight text-white drop-shadow" ] [ HE.text r.name ]
         , HE.div [ HA.class' "flex items-center gap-2" ]
             (maybe [] (pure <<< ratingStars) r.rating <> maybe [] (pure <<< chip) r.price)
         , HE.div [ HA.class' "flex flex-wrap gap-2" ] (maybe [] (pure <<< chip) r.category)
-        , photoCredit r "text-white/70"
+        , photoCredit r photo "text-white/70"
         ]
     ]
 

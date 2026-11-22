@@ -17,7 +17,7 @@ main = do
   listen
   F.mount_ (QuerySelector "body")
     { model: init
-    , subscribe: [ FSW.onLoad DetermineSession, FSD.onKeydown KeyPressed ] <> onSwipe { like: Like, nope: Dislike }
+    , subscribe: [ FSW.onLoad DetermineSession, FSD.onKeydown KeyPressed ] <> onSwipe { like: Like, nope: Dislike, previous: PreviousPhoto, next: NextPhoto }
     , update
     , view
     }

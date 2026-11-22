@@ -42,6 +42,10 @@ googlePlaces :: PlacesKey -> Provider
 googlePlaces key = Provider "Google Places" $ \(Search l chips) ->
     if null chips then searchNearby key l else searchText key l chips
 
+-- | Photos kept per place, of the up to 10 Google returns
+maxPhotos :: Int
+maxPhotos = 5
+
 -- | How far from the user to search, in metres
 searchRadius :: Double
 searchRadius = 5000
@@ -127,7 +131,7 @@ parsePlaces = withObject "SearchNearbyResponse" $ \o ->
     o .:? "places" .!= [] >>= traverse place
   where
     place = withObject "Place" $ \p -> do
-        photos <- p .:? "photos" .!= []
+        found <- p .:? "photos" .!= []
         Restaurant Google
             <$> p .: "id"
             <*> (p .: "displayName" >>= (.: "text"))
@@ -135,7 +139,8 @@ parsePlaces = withObject "SearchNearbyResponse" $ \o ->
             <*> p .:? "rating"
             <*> (maybe Nothing priceSymbol <$> p .:? "priceLevel")
             <*> (p .:? "primaryTypeDisplayName" >>= traverse (.: "text"))
-            <*> traverse parsePhoto (listToMaybe photos)
+            -- Each photo shown is a billed request, so only the first few
+            <*> traverse parsePhoto (take maxPhotos found)
             <*> p .: "location"
     parsePhoto = withObject "Photo" $ \ph -> do
         authors <- ph .:? "authorAttributions" .!= []

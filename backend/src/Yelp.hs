@@ -48,7 +48,7 @@ parseYelp = withObject "BusinessSearchResponse" $ \o ->
             <*> b .:? "rating"
             <*> b .:? "price"
             <*> traverse (withObject "Category" (.: "title")) (listToMaybe categories)
-            <*> (fmap urlPhoto . nonEmpty <$> b .:? "image_url")
+            <*> (maybe [] (pure . urlPhoto) . nonEmpty <$> b .:? "image_url")
             <*> (Loc <$> coords .: "latitude" <*> coords .: "longitude")
     urlPhoto u = Photo (PhotoUrl u) Nothing
     -- Yelp sends "" for businesses without a photo

@@ -55,7 +55,8 @@ data Restaurant = Restaurant
     , -- | $ to $$$$
       price :: Maybe Text
     , category :: Maybe Text
-    , photo :: Maybe Photo
+    , -- | The first is shown on the card first
+      photos :: [Photo]
     , location :: Loc
     }
     deriving stock (Eq, Show)
@@ -70,7 +71,7 @@ instance ToJSON Restaurant where
             , "rating" .= rating r
             , "price" .= price r
             , "category" .= category r
-            , "photo" .= fmap photoJSON (photo r)
+            , "photos" .= map photoJSON (photos r)
             ]
       where
         sourceName :: Source -> Text

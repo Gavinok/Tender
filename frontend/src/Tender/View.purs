@@ -40,11 +40,11 @@ view (Active swiper screen) =
             -- The card is keyed so each restaurant gets a fresh element. Flame
             -- needs keyed elements kept apart from unkeyed siblings.
             [ vibeLine swiper.vibe
-            , HE.div [ HA.class' "flex flex-1 flex-col" ] [ restaurantCard { likedByOthers: elem r.id swiper.othersLiked } r ]
+            , HE.div [ HA.class' "flex flex-1 flex-col" ] [ restaurantCard { likedByOthers: elem r.id swiper.othersLiked, photo: swiper.photo } r ]
             , actionBar { nope: Dislike, like: Like }
             -- Start loading the next photo so it's there when this card goes
             , HE.div [ HA.class' "hidden" ]
-                (map (\url -> HE.img [ HA.src url, HA.alt "" ]) (maybe [] pure (head swiper.upcoming >>= _.photo >>= photoUrl)))
+                (map (\url -> HE.img [ HA.src url, HA.alt "" ]) (maybe [] pure (head swiper.upcoming >>= (_.photos >>> head) >>= photoUrl)))
             ]
         Matched r -> celebration r Continue
     ]

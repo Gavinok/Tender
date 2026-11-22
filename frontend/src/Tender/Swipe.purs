@@ -23,8 +23,11 @@ flyOut = case _ of
   Right -> _flyOut "like"
   Left -> _flyOut "nope"
 
-onSwipe :: forall message. { like :: message, nope :: message } -> Array (Subscription message)
-onSwipe { like, nope } =
+-- | Swipes, and taps on the left third or the rest of the card
+onSwipe :: forall message. { like :: message, nope :: message, previous :: message, next :: message } -> Array (Subscription message)
+onSwipe { like, nope, previous, next } =
   [ onCustomEvent' (EventType "swipe-like") like
   , onCustomEvent' (EventType "swipe-nope") nope
+  , onCustomEvent' (EventType "card-tap-left") previous
+  , onCustomEvent' (EventType "card-tap-right") next
   ]

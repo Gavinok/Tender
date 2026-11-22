@@ -10,7 +10,7 @@ module Tender.App
 
 import Prelude
 
-import Data.Array (cons, elem, filter, snoc, uncons)
+import Data.Array (cons, elem, filter, length, snoc, uncons)
 import Data.Either (Either(..), either)
 import Data.Generic.Rep (class Generic)
 import Data.Show.Generic (genericShow)
@@ -32,6 +32,8 @@ type Swiper =
   { user :: UserId
   -- | Restaurants still to show, fetched once when swiping starts
   , upcoming :: Array Restaurant
+  -- | Which of the current card's photos is showing
+  , photo :: Int
   -- | Restaurants someone else in the session liked, shown first and badged
   , othersLiked :: Array RestaurantId
   , matches :: Array Restaurant
@@ -87,6 +89,8 @@ data Message
   -- | Skip past the current match and keep swiping
   | Continue
   | Loaded { restaurants :: Array Restaurant, othersLiked :: Array RestaurantId, vibe :: Array String }
+  | NextPhoto
+  | PreviousPhoto
   | ToggleChip String
   -- | The vibe as saved after this person changed it
   | VibeSaved Vibe
@@ -116,7 +120,7 @@ orFail = either failed
 advance :: Swiper -> Tuple Model (Array (Aff (Maybe Message)))
 advance swiper = case uncons swiper.upcoming of
   Nothing -> Active swiper NoneLeft /\ []
-  Just { head, tail } -> Active swiper { upcoming = tail } (Swiping head) /\ []
+  Just { head, tail } -> Active swiper { upcoming = tail, photo = 0 } (Swiping head) /\ []
 
 -- | Restaurants someone else liked first, otherwise keeping the order
 likedFirst :: Array RestaurantId -> Array Restaurant -> Array Restaurant
@@ -182,7 +186,7 @@ update model = case model, _ of
             Left e -> pure $ Just $ failed e
     ]
   _, Started user loc ->
-    Active { user, upcoming: [], othersLiked: [], matches: [], showMatches: false, vibe: [] } Fetching
+    Active { user, upcoming: [], photo: 0, othersLiked: [], matches: [], showMatches: false, vibe: [] } Fetching
       /\ [ Just <<< orFail Loaded <$> getRestaurants user loc ]
   Active swiper Fetching, Loaded found ->
     advance swiper { upcoming = likedFirst found.othersLiked found.restaurants, othersLiked = found.othersLiked, vibe = found.vibe }
@@ -205,6 +209,10 @@ update model = case model, _ of
       if d.match && not (elem r.id (_.id <$> swiper.matches)) then
         Active next { matches = cons r next.matches } (Matched r) /\ [ liftEffect vibrate $> Nothing ]
       else advance next
+  Active swiper (Swiping r), NextPhoto ->
+    Active swiper { photo = min (swiper.photo + 1) (max 0 (length r.photos - 1)) } (Swiping r) /\ []
+  Active swiper (Swiping r), PreviousPhoto ->
+    Active swiper { photo = max 0 (swiper.photo - 1) } (Swiping r) /\ []
   Active _ (Swiping _), KeyPressed "ArrowRight" -> update model Like
   Active _ (Swiping _), KeyPressed "ArrowLeft" -> update model Dislike
 

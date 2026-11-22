@@ -78,7 +78,7 @@ parseOverpass = withObject "OverpassResponse" $ \o ->
                     , rating = Nothing
                     , price = Nothing
                     , category = cuisine >>= cuisineName
-                    , photo = Nothing
+                    , photos = []
                     , location = pos
                     }
 
