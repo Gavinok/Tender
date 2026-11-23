@@ -3,6 +3,12 @@
 For when you and your friends can't decide where to eat. This applies
 a similar approach to tinder but for finding an agreed upon place to eat.
 
+* Try it
+
+Tender is live at https://tender-184242101953.us-west1.run.app. Start a
+session, share the link or QR code with your friends, and swipe. When
+two of you like the same place, it's a match.
+
 * WARNING
 
 This is an active work in progress. Expect regular breaking changes
