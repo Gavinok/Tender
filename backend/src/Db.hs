@@ -15,6 +15,7 @@ import Database.SQLite.Simple (
     query,
     query_,
     withConnection,
+    withImmediateTransaction,
     withTransaction,
  )
 import Data.List (nub)
@@ -103,10 +104,12 @@ maxPerSession = 30
 {- | The user's id in the session. Someone coming back (after a reload, say)
 keeps the id they had, so their earlier likes still count as theirs and
 not as another person's. Anyone else, including an id from another
-session, joins as a new user.
+session, joins as a new user. Counting and adding happen in one write
+transaction, so two people joining at once can't take a session past
+the limit.
 -}
 joinSession :: Connection -> U.SessionId -> Maybe U.UserId -> IO (Maybe U.UserId)
-joinSession conn s returning = do
+joinSession conn s returning = withImmediateTransaction conn $ do
     known <- maybe (pure Nothing) (getUser conn) returning
     case known of
         Just u | U.session u == s -> pure (Just (U.userId u))
@@ -176,9 +179,13 @@ getVibe conn s = do
             _ -> []
     pure (chips, started /= [Only (0 :: Int)])
 
--- | Replace the session's chips unless they are locked, returning the result
+{- | Replace the session's chips unless they are locked, returning the
+result. The transaction takes the write lock up front: in WAL mode a
+transaction that reads and then writes fails with SQLITE_BUSY, without
+waiting, if another write lands in between.
+-}
 setVibe :: Connection -> U.SessionId -> [Chip] -> IO ([Chip], Bool)
-setVibe conn s chips = withTransaction conn $ do
+setVibe conn s chips = withImmediateTransaction conn $ do
     (_, locked) <- getVibe conn s
     if locked
         then getVibe conn s
