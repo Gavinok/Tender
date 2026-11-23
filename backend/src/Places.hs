@@ -16,6 +16,7 @@ module Places (
     isPhotoName,
 ) where
 
+import Control.Concurrent.Async (mapConcurrently)
 import Data.Aeson (Value, object, withObject, (.!=), (.:), (.:?), (.=))
 import qualified Data.Aeson.Types as AT
 import qualified Data.ByteString as BS
@@ -56,11 +57,11 @@ googlePlaces key = Provider "Google Places" $ \(Search l chips radius inner) ->
 whole wider circle would return mostly the same popular places as the
 inner one, so instead search six circles spread around the ring, keep
 what falls in it, and interleave them so the results cover every
-direction.
+direction. The six searches run at once.
 -}
 ringSearch :: Loc -> Double -> Double -> (Loc -> Double -> IO (Either FetchError [Restaurant])) -> IO (Either FetchError [Restaurant])
 ringSearch l inner outer search = do
-    found <- traverse (uncurry search) (ringCircles l inner outer)
+    found <- mapConcurrently (uncurry search) (ringCircles l inner outer)
     pure $ case partitionEithers found of
         (e : _, []) -> Left e
         (_, lists) -> Right (inRing l inner outer (interleave lists))

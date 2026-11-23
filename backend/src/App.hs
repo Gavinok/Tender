@@ -4,9 +4,10 @@
 
 module App (server) where
 
-import Control.Concurrent (forkIO, threadDelay)
+import Control.Concurrent (threadDelay)
+import Control.Concurrent.Async (async, link)
 import Control.Exception (SomeException, try)
-import Control.Monad (forever, unless, void)
+import Control.Monad (forever, unless)
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Data.Maybe (fromMaybe)
 import Data.Word (Word64)
@@ -210,13 +211,17 @@ server = do
     app port (Env dbPath providers placesKey static limits)
 
 {- | Delete sessions older than a day, every hour, so the database (in
-memory on Cloud Run) doesn't grow for as long as the server runs
+memory on Cloud Run) doesn't grow for as long as the server runs. Should
+the thread die anyway, the server goes down with it rather than carrying
+on without pruning.
 -}
 pruneHourly :: FilePath -> IO ()
-pruneHourly dbPath = void . forkIO . forever $ do
-    threadDelay (60 * 60 * 1000000)
-    result <- try (withDb dbPath (`pruneOlderThan` (24 * 60 * 60)))
-    either (\e -> logMsg ("Pruning failed: " ++ show (e :: SomeException))) pure result
+pruneHourly dbPath = link =<< async (forever prune)
+  where
+    prune = do
+        threadDelay (60 * 60 * 1000000)
+        result <- try (withDb dbPath (`pruneOlderThan` (24 * 60 * 60)))
+        either (\e -> logMsg ("Pruning failed: " ++ show (e :: SomeException))) pure result
 
 logMsg :: MonadIO m => String -> m ()
 logMsg = liftIO . hPutStrLn stderr
