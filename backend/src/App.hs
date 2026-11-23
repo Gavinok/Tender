@@ -33,6 +33,8 @@ import Data.Text (Text)
 import qualified Data.Text.Encoding as TE
 import qualified Data.Text.Lazy as TL
 import Network.HTTP.Types (Status, status400, status404, status502)
+import qualified Data.ByteString as BS
+import Network.Wai.Middleware.AddHeaders (addHeaders)
 import Network.Wai.Middleware.RequestLogger (logStdout)
 import Control.Applicative ((<|>))
 import Network.Wai (rawPathInfo)
@@ -144,6 +146,37 @@ decide conn u r l = do
 likedFirst :: [Text] -> [Restaurant] -> [Restaurant]
 likedFirst ids rs = uncurry (<>) (partition ((`elem` ids) . R.restaurantId) rs)
 
+{- | Sent with every response. Scripts, fonts and requests only come from
+this site. Images can also be data urls (the QR code) and Google's and
+Yelp's image servers, which photos redirect to. Styles allow inline
+attributes, used for the confetti and the swipe stamps. The app can't be
+put in a frame on another site.
+-}
+securityHeaders :: [(BS.ByteString, BS.ByteString)]
+securityHeaders =
+    [
+        ( "Content-Security-Policy"
+        , BS.intercalate
+            "; "
+            [ "default-src 'self'"
+            , "script-src 'self'"
+            , "style-src 'self' 'unsafe-inline'"
+            , "img-src 'self' data: https://*.googleusercontent.com https://*.yelpcdn.com"
+            , "font-src 'self'"
+            , "connect-src 'self'"
+            , "object-src 'none'"
+            , "base-uri 'self'"
+            , "form-action 'self'"
+            , "frame-ancestors 'none'"
+            ]
+        )
+    , ("X-Content-Type-Options", "nosniff")
+    , ("X-Frame-Options", "DENY")
+    , ("Referrer-Policy", "strict-origin-when-cross-origin")
+    , ("Permissions-Policy", "geolocation=(self), camera=(), microphone=()")
+    , ("Strict-Transport-Security", "max-age=31536000")
+    ]
+
 -- | Width to ask Google for. Cards are at most about 450 css pixels wide.
 photoWidth :: Int
 photoWidth = 1200
@@ -153,6 +186,7 @@ app port env = scotty port $ do
     let withConn :: (Connection -> IO a) -> IO a
         withConn = withDb (envDbPath env)
     middleware logStdout
+    middleware (addHeaders securityHeaders)
 
     get "/api/newsession" $
         liftIO U.newSessionId >>= json
