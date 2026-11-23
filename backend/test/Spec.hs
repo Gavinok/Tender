@@ -34,6 +34,10 @@ sessionWith conn n = do
     mapM_ (\u -> addUserToDb conn (User u s)) us
     pure (s, us)
 
+-- | Join a session that isn't full
+joinOk :: Connection -> SessionId -> Maybe UserId -> IO UserId
+joinOk conn s returning = maybe (fail "session full") pure =<< joinSession conn s returning
+
 like, dislike :: Connection -> UserId -> Text -> IO ()
 like conn u r = recordDecision conn (Decision u r True)
 dislike conn u r = recordDecision conn (Decision u r False)
@@ -238,31 +242,53 @@ main = hspec $ do
     describe "joinSession" $ do
         it "gives a new person a new id" $ withTestDb $ \conn -> do
             (s, _) <- sessionWith conn 0
-            a <- joinSession conn s Nothing
-            b <- joinSession conn s Nothing
+            a <- joinOk conn s Nothing
+            b <- joinOk conn s Nothing
             a `shouldNotBe` b
         it "keeps the id of someone coming back to the session" $ withTestDb $ \conn -> do
             (s, _) <- sessionWith conn 0
-            a <- joinSession conn s Nothing
-            joinSession conn s (Just a) `shouldReturn` a
+            a <- joinOk conn s Nothing
+            joinSession conn s (Just a) `shouldReturn` Just a
         it "doesn't let an id from another session in" $ withTestDb $ \conn -> do
             (s, _) <- sessionWith conn 0
             (other, _) <- sessionWith conn 0
-            a <- joinSession conn other Nothing
-            b <- joinSession conn s (Just a)
+            a <- joinOk conn other Nothing
+            b <- joinOk conn s (Just a)
             b `shouldNotBe` a
         it "treats an unknown id as a new person" $ withTestDb $ \conn -> do
             (s, _) <- sessionWith conn 0
             stranger <- newUserId
-            b <- joinSession conn s (Just stranger)
+            b <- joinOk conn s (Just stranger)
             b `shouldNotBe` stranger
         it "means a reload doesn't turn one person's like into a match" $ withTestDb $ \conn -> do
             (s, _) <- sessionWith conn 0
-            me <- joinSession conn s Nothing
+            me <- joinOk conn s Nothing
             like conn me "a"
-            me' <- joinSession conn s (Just me)
+            me' <- joinOk conn s (Just me)
             like conn me' "a"
             isMatch conn s "a" `shouldReturn` False
+        it "turns away new people once the session is full, but not returning ones" $ withTestDb $ \conn -> do
+            (s, u : _) <- sessionWith conn maxPerSession
+            joinSession conn s Nothing `shouldReturn` Nothing
+            joinSession conn s (Just u) `shouldReturn` Just u
+
+    describe "pruneOlderThan" $ do
+        it "deletes old people with their likes and their sessions, keeping recent ones" $ withTestDb $ \conn -> do
+            (old, [o]) <- sessionWith conn 1
+            (fresh, [f]) <- sessionWith conn 1
+            like conn o "a" >> like conn f "a"
+            _ <- sessionLocation conn old (Loc 0 0)
+            _ <- sessionLocation conn fresh (Loc 0 0)
+            _ <- setVibe conn old []
+            execute_ conn "UPDATE users SET joined = joined - 100000 WHERE rowid = 1"
+            execute_ conn "UPDATE session_vibes SET updated = updated - 100000"
+            pruneOlderThan conn 86400
+            fmap session <$> getUser conn o `shouldReturn` Nothing
+            fmap session <$> getUser conn f `shouldReturn` Just fresh
+            decidedBy conn o `shouldReturn` []
+            decidedBy conn f `shouldReturn` ["a"]
+            query_ conn "SELECT count(*) FROM sessions" `shouldReturn` [Only (1 :: Int)]
+            query_ conn "SELECT count(*) FROM session_vibes" `shouldReturn` [Only (0 :: Int)]
 
     describe "othersLiked" $ do
         it "lists what others in the session liked that this user hasn't decided on" $ withTestDb $ \conn -> do

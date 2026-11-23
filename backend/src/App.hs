@@ -1,10 +1,15 @@
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE DeriveGeneric #-}
 
 module App (server) where
 
+import Control.Concurrent (forkIO, threadDelay)
+import Control.Exception (SomeException, try)
+import Control.Monad (forever, unless, void)
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Data.Maybe (fromMaybe)
+import Data.Word (Word64)
 import Database.SQLite.Simple (Connection)
 import qualified Data.Text as T
 import GHC.Generics (Generic)
@@ -20,6 +25,8 @@ import Web.Scotty (
     json,
     jsonData,
     middleware,
+    defaultHandler,
+    Handler (..),
     pathParam,
     post,
     queryParam,
@@ -34,10 +41,12 @@ import Data.Aeson (FromJSON (parseJSON), Value, object, withObject, (.:), (.:?),
 import Data.Text (Text)
 import qualified Data.Text.Encoding as TE
 import qualified Data.Text.Lazy as TL
-import Network.HTTP.Types (Status, status400, status404, status429, status502)
+import Network.HTTP.Types (Status, status400, status404, status409, status413, status429, status502)
 import qualified Data.ByteString as BS
 import Network.Wai.Middleware.AddHeaders (addHeaders)
 import Network.Wai.Middleware.RequestLogger (logStdout)
+import Network.Wai.Request (RequestSizeException)
+import Network.Wai.Middleware.RequestSizeLimit (defaultRequestSizeLimitSettings, requestSizeLimitMiddleware, setMaxLengthForRequest)
 import Control.Applicative ((<|>))
 import Network.Wai (rawPathInfo, remoteHost)
 import System.Directory (doesFileExist)
@@ -47,7 +56,6 @@ import System.IO (hPutStrLn, stderr)
 import Db
 import OpenStreetMap (openStreetMap)
 import Places
-import Control.Monad (unless)
 import Limits (Counter, Limit (..), Recent, newCounter, newRecent, remember, seenRecently, trySpend)
 import Provider (Provider (..), searchWithFallback)
 import Data.List (partition)
@@ -78,6 +86,8 @@ data Limits = Limits
     , photosToday :: Counter
     , searchesPerVisitor :: Counter
     , photosPerVisitor :: Counter
+    , -- | Joins, vibe changes and likes, which all add to the database
+      writesPerVisitor :: Counter
     , -- | Places our searches returned lately; photos are only served for these
       recentPlaces :: Recent
     }
@@ -94,6 +104,7 @@ newLimits = do
         <*> newCounter (Limit day photos)
         <*> newCounter (Limit hour 30)
         <*> newCounter (Limit hour 400)
+        <*> newCounter (Limit hour 600)
         -- Long enough for a session, and place ids may be kept
         <*> newRecent (6 * hour)
 
@@ -112,6 +123,13 @@ allowed perVisitor site visitor cost = do
                     then Nothing
                     else Just "Tender has hit its daily limit. Try again tomorrow."
 
+-- | Refuse once the visitor has changed too much this hour
+spendWrite :: Env -> ActionM ()
+spendWrite env = do
+    visitor <- visitorOf
+    ok <- liftIO $ trySpend (writesPerVisitor (envLimits env)) visitor 1
+    unless ok $ errorResponse status429 "You've hit Tender's limit for now. Try again in an hour." >> finish
+
 {- | Who is asking, for per-visitor limits. Cloud Run's front end appends the
 address it got the request from to X-Forwarded-For, so the last entry is
 the real one; earlier entries can be anything the visitor sent.
@@ -121,7 +139,8 @@ visitorOf = do
     forwarded <- header "X-Forwarded-For"
     case reverse (map T.strip (T.splitOn "," (maybe "" TL.toStrict forwarded))) of
         (lastHop : _) | not (T.null lastHop) -> pure lastHop
-        _ -> T.pack . show . remoteHost <$> request
+        -- Running locally: the connection's address, without its port
+        _ -> T.dropWhileEnd (/= ':') . T.pack . show . remoteHost <$> request
 
 -- | Body of a /restaurants request: who is asking, and where they are
 data RestaurantsRequest = RestaurantsRequest
@@ -186,8 +205,18 @@ server = do
     port <- maybe 5001 read <$> ((<|>) <$> getEnv "TENDER_PORT" <*> getEnv "PORT")
     static <- getEnv "TENDER_STATIC"
     initDb dbPath
+    pruneHourly dbPath
     limits <- newLimits
     app port (Env dbPath providers placesKey static limits)
+
+{- | Delete sessions older than a day, every hour, so the database (in
+memory on Cloud Run) doesn't grow for as long as the server runs
+-}
+pruneHourly :: FilePath -> IO ()
+pruneHourly dbPath = void . forkIO . forever $ do
+    threadDelay (60 * 60 * 1000000)
+    result <- try (withDb dbPath (`pruneOlderThan` (24 * 60 * 60)))
+    either (\e -> logMsg ("Pruning failed: " ++ show (e :: SomeException))) pure result
 
 logMsg :: MonadIO m => String -> m ()
 logMsg = liftIO . hPutStrLn stderr
@@ -237,6 +266,14 @@ securityHeaders =
     , ("Strict-Transport-Security", "max-age=31536000")
     ]
 
+-- | Largest request body accepted, in bytes
+maxBody :: Word64
+maxBody = 16 * 1024
+
+-- | Longest restaurant id accepted. Google's place ids are under 100 characters.
+maxIdLength :: Int
+maxIdLength = 200
+
 -- | Width to ask Google for. Cards are at most about 450 css pixels wide.
 photoWidth :: Int
 photoWidth = 1200
@@ -247,6 +284,11 @@ app port env = scotty port $ do
         withConn = withDb (envDbPath env)
     middleware logStdout
     middleware (addHeaders securityHeaders)
+    -- Every request body is a few ids at most
+    middleware (requestSizeLimitMiddleware (setMaxLengthForRequest (\_ -> pure (Just maxBody)) defaultRequestSizeLimitSettings))
+    -- The limit is hit while a handler reads the body, so it's caught here
+    defaultHandler $ Handler $ \(_ :: RequestSizeException) ->
+        errorResponse status413 "Request too large"
 
     get "/api/newsession" $
         liftIO U.newSessionId >>= json
@@ -258,8 +300,9 @@ app port env = scotty port $ do
             Just s -> do
                 -- Set when this browser has been in the session before
                 returning <- (>>= U.userFromText) <$> queryParamMaybe "user"
-                uid <- liftIO $ withConn $ \c -> joinSession c s returning
-                json uid
+                spendWrite env
+                joined <- liftIO $ withConn $ \c -> joinSession c s returning
+                maybe (errorResponse status409 "This session is full") json joined
 
     -- The session's vibe chips, and whether swiping has started and locked them
     get "/api/vibe/:session" $ do
@@ -274,7 +317,7 @@ app port env = scotty port $ do
         case (U.sessionFromText sessionText, traverse chipFromId ids) of
             (Nothing, _) -> errorResponse status400 "Invalid session"
             (_, Nothing) -> errorResponse status400 "Unknown vibe"
-            (Just s, Just chips) -> liftIO (withConn $ \c -> setVibe c s chips) >>= json . vibeJSON
+            (Just s, Just chips) -> spendWrite env >> liftIO (withConn $ \c -> setVibe c s chips) >>= json . vibeJSON
 
     -- Restaurants near the session's location, fresh for each person
     post "/api/restaurants" $ do
@@ -344,7 +387,9 @@ app port env = scotty port $ do
         found <- liftIO $ withConn $ \c -> getUser c uid
         case found of
             Nothing -> errorResponse status404 "Unknown user"
+            Just _ | T.length r > maxIdLength -> errorResponse status400 "Invalid restaurant"
             Just u -> do
+                spendWrite env
                 (match, others) <- liftIO $ withConn $ \c -> (,) <$> decide c u r l <*> othersLiked c u
                 json (object ["match" .= match, "othersLiked" .= others])
 

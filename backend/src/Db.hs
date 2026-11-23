@@ -2,7 +2,7 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DerivingStrategies #-}
 
-module Db (initDb, initSchema, withDb, addUserToDb, joinSession, sessionLocation, sessionRadius, widenSearch, decidedBy, getVibe, setVibe, recordDecision, isMatch, othersLiked, Decision (..), getUser) where
+module Db (initDb, initSchema, withDb, addUserToDb, joinSession, maxPerSession, pruneOlderThan, sessionLocation, sessionRadius, widenSearch, decidedBy, getVibe, setVibe, recordDecision, isMatch, othersLiked, Decision (..), getUser) where
 
 import Control.Monad (forM_)
 import Database.SQLite.Simple (
@@ -86,26 +86,50 @@ migrations =
       ["CREATE TABLE session_vibes (session TEXT PRIMARY KEY, chips TEXT NOT NULL)"]
     , -- 6: how far the session searches, in metres, widened by "search further"
       ["ALTER TABLE sessions ADD COLUMN radius REAL NOT NULL DEFAULT 5000"]
+    , -- 7: when people joined and vibes changed, so old ones can be deleted
+      [ "ALTER TABLE users ADD COLUMN joined INTEGER NOT NULL DEFAULT 0"
+      , "ALTER TABLE session_vibes ADD COLUMN updated INTEGER NOT NULL DEFAULT 0"
+      ]
     ]
 
 addUserToDb :: Connection -> U.User -> IO ()
 addUserToDb conn (U.User i s) =
-    execute conn "INSERT INTO users (userId, session) VALUES (?, ?)" (i, s)
+    execute conn "INSERT INTO users (userId, session, joined) VALUES (?, ?, strftime('%s', 'now'))" (i, s)
+
+-- | Most people in one session
+maxPerSession :: Int
+maxPerSession = 30
 
 {- | The user's id in the session. Someone coming back (after a reload, say)
 keeps the id they had, so their earlier likes still count as theirs and
 not as another person's. Anyone else, including an id from another
 session, joins as a new user.
 -}
-joinSession :: Connection -> U.SessionId -> Maybe U.UserId -> IO U.UserId
+joinSession :: Connection -> U.SessionId -> Maybe U.UserId -> IO (Maybe U.UserId)
 joinSession conn s returning = do
     known <- maybe (pure Nothing) (getUser conn) returning
     case known of
-        Just u | U.session u == s -> pure (U.userId u)
+        Just u | U.session u == s -> pure (Just (U.userId u))
         _ -> do
-            uid <- U.newUserId
-            addUserToDb conn (U.User uid s)
-            pure uid
+            members <- query conn "SELECT count(*) FROM users WHERE session = ?" (Only s)
+            if maybe 0 fromOnly (listToMaybe members) >= maxPerSession
+                then pure Nothing
+                else do
+                    uid <- U.newUserId
+                    addUserToDb conn (U.User uid s)
+                    pure (Just uid)
+
+{- | Delete people who joined more than the given number of seconds ago,
+with their likes, and sessions and vibes nobody is in anymore. Sessions
+only last as long as a meal decision, so a day is plenty.
+-}
+pruneOlderThan :: Connection -> Int -> IO ()
+pruneOlderThan conn secs = withTransaction conn $ do
+    let cutoff = "strftime('%s', 'now') - ?"
+    execute conn (fromString ("DELETE FROM decisions WHERE userId IN (SELECT userId FROM users WHERE joined < " ++ cutoff ++ ")")) (Only secs)
+    execute conn (fromString ("DELETE FROM users WHERE joined < " ++ cutoff)) (Only secs)
+    execute_ conn "DELETE FROM sessions WHERE session NOT IN (SELECT session FROM users)"
+    execute conn (fromString ("DELETE FROM session_vibes WHERE updated < " ++ cutoff ++ " AND session NOT IN (SELECT session FROM users)")) (Only secs)
 
 {- | Where the session searches for restaurants: the first location anyone
 in it sent. Everyone else gets that one too, so they all see the same
@@ -161,7 +185,7 @@ setVibe conn s chips = withTransaction conn $ do
         else do
             execute
                 conn
-                "INSERT INTO session_vibes (session, chips) VALUES (?, ?) ON CONFLICT (session) DO UPDATE SET chips = excluded.chips"
+                "INSERT INTO session_vibes (session, chips, updated) VALUES (?, ?, strftime('%s', 'now')) ON CONFLICT (session) DO UPDATE SET chips = excluded.chips, updated = excluded.updated"
                 (s, T.intercalate "," (map chipId (nub chips)))
             pure (nub chips, False)
 
