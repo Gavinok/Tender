@@ -112,10 +112,14 @@ withKey (PlacesKey k) headers req =
         { redactHeaders = Set.insert "X-Goog-Api-Key" (redactHeaders req)
         }
 
+-- | Seconds to wait for a search before falling back to the next source
+searchTimeout :: Int
+searchTimeout = 10
+
 -- | Up to 20 restaurants within the radius in metres, most popular first
 searchNearby :: PlacesKey -> Loc -> Double -> IO (Either FetchError [Restaurant])
 searchNearby key l radius =
-    fetchJSON parsePlaces $
+    fetchJSON searchTimeout parsePlaces $
         withKey key [("X-Goog-FieldMask", fieldMask)] $
             setRequestBodyJSON body $
                 parseRequest_ "POST https://places.googleapis.com/v1/places:searchNearby"
@@ -132,7 +136,7 @@ searchNearby key l radius =
 -- | Up to 20 places matching the vibe within the radius in metres
 searchText :: PlacesKey -> Loc -> [Chip] -> Double -> IO (Either FetchError [Restaurant])
 searchText key l chips radius =
-    fetchJSON parsePlaces $
+    fetchJSON searchTimeout parsePlaces $
         withKey key [("X-Goog-FieldMask", fieldMask)] $
             setRequestBodyJSON body $
                 parseRequest_ "POST https://places.googleapis.com/v1/places:searchText"
@@ -161,7 +165,8 @@ boxAround (Loc lat lon) radius =
 -- | A short lived url for the photo, at most the given width
 photoUri :: PlacesKey -> Text -> Int -> IO (Either FetchError Text)
 photoUri key resource width =
-    fetchJSON (withObject "Photo" (.: "photoUri")) $
+    -- Holds up a card's photo, so shorter than searches
+    fetchJSON 5 (withObject "Photo" (.: "photoUri")) $
         withKey key [] $
             setRequestQueryString [("maxWidthPx", Just (TE.encodeUtf8 (T.pack (show width)))), ("skipHttpRedirect", Just "true")] $
                 setRequestPath (TE.encodeUtf8 ("/v1/" <> resource <> "/media")) $

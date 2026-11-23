@@ -22,7 +22,7 @@ yelp key = Provider "Yelp" $ \s -> searchYelp key (searchLoc s) (searchRadius s)
 -- | Up to 20 restaurants within the radius in metres, Yelp's best matches first
 searchYelp :: YelpKey -> Loc -> Double -> IO (Either FetchError [Restaurant])
 searchYelp (YelpKey key) (Loc lat lon) radius =
-    fetchJSON parseYelp $
+    fetchJSON 10 parseYelp $
         setRequestHeaders [("Authorization", "Bearer " <> key)] $
             setRequestQueryString
                 [ ("latitude", Just (S8.pack (show lat)))

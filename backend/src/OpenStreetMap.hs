@@ -23,8 +23,9 @@ openStreetMap = Provider "OpenStreetMap" $ \s -> searchOverpass (searchLoc s) (s
 -- | The 20 nearest named restaurants between the inner radius (0 for none) and the radius, in metres
 searchOverpass :: Loc -> Double -> Double -> IO (Either FetchError [Restaurant])
 searchOverpass l@(Loc lat lon) inner radius =
-    fmap (nearest l 20 . filter beyondInner) <$> fetchJSON parseOverpass request
+    fmap (nearest l 20 . filter beyondInner) <$> fetchJSON 25 parseOverpass request
   where
+    -- The query tells Overpass to give up after 20 seconds; this allows a bit more
     request =
         -- Overpass asks clients to identify themselves
         setRequestHeaders [("User-Agent", "Tender (https://github.com/Gavinok/Tender)")] $
