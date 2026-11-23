@@ -7,6 +7,7 @@ import Data.Aeson.Types (Value (Object), parseEither)
 import qualified Data.ByteString.Lazy.Char8 as L8
 import Data.Text (Text)
 import Database.SQLite.Simple (Connection, Only (..), execute_, query_, withConnection)
+import Network.HTTP.Simple (parseRequest_, setRequestHeaders)
 import Test.Hspec
 
 import Db hiding (restaurantId)
@@ -142,6 +143,14 @@ main = hspec $ do
             let at i m = plain Google i (Loc (48.43 + m / 111320) (-123.35))
             map restaurantId (inRing centre 5000 10000 [at "inside" 1000, at "ring" 7000, at "ring" 7000, at "beyond" 20000])
                 `shouldBe` ["ring"]
+
+    describe "withKey" $ do
+        it "hides the key when the request is shown, as in a logged error" $ do
+            let req = withKey (PlacesKey "sekret-key") [] (parseRequest_ "https://places.googleapis.com")
+            show req `shouldNotContain` "sekret-key"
+        it "is needed: without it the key shows up" $
+            show (setRequestHeaders [("X-Goog-Api-Key", "sekret-key")] (parseRequest_ "https://places.googleapis.com"))
+                `shouldContain` "sekret-key"
 
     describe "isPhotoName" $ do
         it "accepts a photo resource name" $

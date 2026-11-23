@@ -19,6 +19,8 @@ library
     build-depends:    aeson         >=2.1   && <2.3
                     , bytestring    >=0.11  && <0.13
                     , http-conduit  >=2.3   && <2.4
+                    , http-client   >=0.7.13 && <0.8
+                    , containers    >=0.6   && <0.7
                     , http-types    >=0.12  && <0.13
                     , scotty        >=0.20  && <0.23
                     , sqlite-simple >=0.4.18 && <0.5
@@ -44,6 +46,7 @@ test-suite spec
     build-depends:    tender
                     , aeson
                     , hspec         >=2.10  && <2.12
+                    , http-conduit
                     , bytestring
                     , text
                     , sqlite-simple
