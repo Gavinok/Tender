@@ -6,7 +6,7 @@ import Control.Monad (forever, unless, void)
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Data.Maybe (fromMaybe)
 import Data.Word (Word64)
-import Database.SQLite.Simple (Connection)
+import Database.SQLite.Simple (Connection, withImmediateTransaction)
 import qualified Data.Text as T
 import GHC.Generics (Generic)
 import System.Environment.Blank (getEnv)
@@ -67,7 +67,7 @@ import Yelp (YelpKey (..), yelp)
 
 -- | Configuration shared by every request
 data Env = Env
-    { envDbPath :: FilePath
+    { envDb :: DbPool
     , -- | Tried in order until one finds restaurants
       envProviders :: [Provider]
     , -- | Needed to show Google's photos
@@ -212,19 +212,20 @@ server = do
         numberSetting (maybe "PORT" (const "TENDER_PORT") tenderPort) 5001
     static <- getEnv "TENDER_STATIC"
     initDb dbPath
-    pruneHourly dbPath
+    pool <- openPool dbPath
+    pruneHourly pool
     limits <- newLimits
     scotty port $ do
         middleware logStdout
-        app (Env dbPath providers placesKey static limits)
+        app (Env pool providers placesKey static limits)
 
 {- | Delete sessions older than a day, every hour, so the database (in
 memory on Cloud Run) doesn't grow for as long as the server runs
 -}
-pruneHourly :: FilePath -> IO ()
-pruneHourly dbPath = void . forkIO . forever $ do
+pruneHourly :: DbPool -> IO ()
+pruneHourly pool = void . forkIO . forever $ do
     threadDelay (60 * 60 * 1000000)
-    result <- try (withDb dbPath (`pruneOlderThan` (24 * 60 * 60)))
+    result <- try (withConn pool (`pruneOlderThan` (24 * 60 * 60)))
     either (\e -> logMsg ("Pruning failed: " ++ show (e :: SomeException))) pure result
 
 {- | A number from the environment, or the default when it isn't set.
@@ -298,8 +299,8 @@ application = scottyApp . app
 
 app :: Env -> ScottyM ()
 app env = do
-    let withConn :: (Connection -> IO a) -> IO a
-        withConn = withDb (envDbPath env)
+    let db :: (Connection -> IO a) -> IO a
+        db = withConn (envDb env)
     middleware (addHeaders securityHeaders)
     -- Every request body is a few ids at most
     middleware (requestSizeLimitMiddleware (setMaxLengthForRequest (\_ -> pure (Just maxBody)) defaultRequestSizeLimitSettings))
@@ -318,7 +319,7 @@ app env = do
                 -- Set when this browser has been in the session before
                 returning <- (>>= U.userFromText) <$> queryParamMaybe "user"
                 spendWrite env
-                joined <- liftIO $ withConn $ \c -> joinSession c s returning
+                joined <- liftIO $ db $ \c -> joinSession c s returning
                 maybe (errorResponse status409 "This session is full") json joined
 
     -- The session's vibe chips, and whether swiping has started and locked them
@@ -326,7 +327,7 @@ app env = do
         sessionText <- pathParam "session"
         case U.sessionFromText sessionText of
             Nothing -> errorResponse status400 "Invalid session"
-            Just s -> liftIO (withConn $ \c -> getVibe c s) >>= json . vibeJSON
+            Just s -> liftIO (db $ \c -> getVibe c s) >>= json . vibeJSON
 
     post "/api/vibe/:session" $ do
         sessionText <- pathParam "session"
@@ -334,16 +335,18 @@ app env = do
         case (U.sessionFromText sessionText, traverse chipFromId ids) of
             (Nothing, _) -> errorResponse status400 "Invalid session"
             (_, Nothing) -> errorResponse status400 "Unknown vibe"
-            (Just s, Just chips) -> spendWrite env >> liftIO (withConn $ \c -> setVibe c s chips) >>= json . vibeJSON
+            (Just s, Just chips) -> spendWrite env >> liftIO (db $ \c -> setVibe c s chips) >>= json . vibeJSON
 
     -- Restaurants near the session's location, fresh for each person
     post "/api/restaurants" $ do
         RestaurantsRequest uid here wider <- jsonData
-        known <- liftIO $ withConn $ \c -> getUser c uid
+        known <- liftIO $ db $ \c -> getUser c uid
         case known of
             Nothing -> errorResponse status404 "Unknown user"
             Just u -> do
-                (l, (chips, _), radius, decided) <- liftIO $ withConn $ \c -> do
+                -- One transaction, so these all come from the same moment. It writes
+                -- (the location, a wider radius), so it takes the write lock up front.
+                (l, (chips, _), radius, decided) <- liftIO $ db $ \c -> withImmediateTransaction c $ do
                     let s = U.session u
                     l <- sessionLocation c s here
                     radius <- maybe (sessionRadius c s) (widenSearch c s) wider
@@ -362,7 +365,7 @@ app env = do
                     Nothing -> errorResponse status502 "Couldn't get restaurants from any source"
                     Just rs -> do
                         liftIO $ remember (recentPlaces (envLimits env)) (map R.restaurantId rs)
-                        others <- liftIO $ withConn $ \c -> othersLiked c u
+                        others <- liftIO $ db $ \c -> othersLiked c u
                         json $
                             object
                                 [ -- Leaving out ones this person already decided on, e.g. before a reload
@@ -401,13 +404,13 @@ app env = do
 
     post "/api/decision" $ do
         DecisionRequest uid r l <- jsonData
-        found <- liftIO $ withConn $ \c -> getUser c uid
+        found <- liftIO $ db $ \c -> getUser c uid
         case found of
             Nothing -> errorResponse status404 "Unknown user"
             Just _ | T.length r > maxIdLength -> errorResponse status400 "Invalid restaurant"
             Just u -> do
                 spendWrite env
-                (matches, others) <- liftIO $ withConn $ \c -> do
+                (matches, others) <- liftIO $ db $ \c -> do
                     recordDecision c (Decision (U.userId u) r l)
                     (,) <$> matchesFor c u <*> othersLiked c u
                 json (object ["matches" .= matches, "othersLiked" .= others])

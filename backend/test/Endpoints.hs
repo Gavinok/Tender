@@ -17,7 +17,7 @@ import Test.Hspec
 import Test.Hspec.Wai
 
 import App (Env (..), application, newLimitsWith)
-import Db (initDb)
+import Db (initDb, openPool)
 import Places (PlacesKey (..))
 import Provider (Provider (..))
 import Restaurant
@@ -42,7 +42,8 @@ appWith :: Int -> Int -> Maybe FilePath -> IO Application
 appWith searchCap photoCap static = do
     db <- freshDb
     limits <- newLimitsWith searchCap photoCap
-    application (Env db [fake] (Just (PlacesKey "not a real key")) static limits)
+    pool <- openPool db
+    application (Env pool [fake] (Just (PlacesKey "not a real key")) static limits)
 
 app :: IO Application
 app = appWith 1000 1000 Nothing
