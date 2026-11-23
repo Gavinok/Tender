@@ -8,13 +8,6 @@ import Data.Maybe (fromMaybe)
 import Database.SQLite.Simple (Connection)
 import qualified Data.Text as T
 import GHC.Generics (Generic)
-import Network.Wai.Middleware.Cors (
-    CorsResourcePolicy (corsMethods, corsOrigins, corsRequestHeaders),
-    cors,
-    simpleCorsResourcePolicy,
-    simpleHeaders,
-    simpleMethods,
- )
 import System.Environment.Blank (getEnv)
 import Web.Scotty (
     ActionM,
@@ -68,17 +61,6 @@ data Env = Env
     , -- | The built frontend to serve, when set (in production)
       envStatic :: Maybe FilePath
     }
-
-{- | A preset version of cors with added OPTIONS method and
-   Content-Type, Authorization headers
--}
-apiCors :: CorsResourcePolicy
-apiCors =
-    simpleCorsResourcePolicy
-        { corsOrigins = Nothing
-        , corsMethods = simpleMethods <> ["OPTIONS", "PATCH"]
-        , corsRequestHeaders = simpleHeaders
-        }
 
 -- | Body of a /restaurants request: who is asking, and where they are
 data RestaurantsRequest = RestaurantsRequest
@@ -171,8 +153,6 @@ app port env = scotty port $ do
     let withConn :: (Connection -> IO a) -> IO a
         withConn = withDb (envDbPath env)
     middleware logStdout
-    -- Also answers CORS preflight requests
-    middleware (cors $ const $ Just apiCors)
 
     get "/api/newsession" $
         liftIO U.newSessionId >>= json
