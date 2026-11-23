@@ -137,7 +137,7 @@ spec = do
     with frontend $
         describe "the frontend" $ do
             it "serves its files" $
-                get "/app.js" `shouldRespondWith` "console.log(1)"
+                get "/app.js" `shouldRespondWith` "console.log(1)" {matchHeaders = ["Content-Type" <:> "text/javascript"]}
             it "serves the app for a session link" $
                 get "/0b3f" `shouldRespondWith` "<html></html>"
             it "never serves anything outside its directory" $

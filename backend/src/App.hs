@@ -45,9 +45,10 @@ import Network.Wai.Middleware.AddHeaders (addHeaders)
 import Network.Wai.Middleware.RequestLogger (logStdout)
 import Network.Wai.Request (RequestSizeException)
 import Network.Wai.Middleware.RequestSizeLimit (defaultRequestSizeLimitSettings, requestSizeLimitMiddleware, setMaxLengthForRequest)
+import Network.Mime (defaultMimeLookup)
 import Network.Wai (Application, rawPathInfo, remoteHost)
 import System.Directory (doesFileExist)
-import System.FilePath (takeExtension, (</>))
+import System.FilePath ((</>))
 import System.Exit (die)
 import Text.Read (readMaybe)
 
@@ -455,17 +456,6 @@ serveFrontend dir path = do
             setHeader "Cache-Control" "no-cache"
             file (dir </> "index.html")
 
+-- | From the file's extension, by mime-types' table of the common ones
 contentType :: FilePath -> TL.Text
-contentType f = case takeExtension f of
-    ".html" -> "text/html; charset=utf-8"
-    ".js" -> "text/javascript"
-    ".css" -> "text/css"
-    ".svg" -> "image/svg+xml"
-    ".png" -> "image/png"
-    ".jpg" -> "image/jpeg"
-    ".ico" -> "image/x-icon"
-    ".woff2" -> "font/woff2"
-    ".woff" -> "font/woff"
-    ".json" -> "application/json"
-    ".webmanifest" -> "application/manifest+json"
-    _ -> "application/octet-stream"
+contentType = TL.fromStrict . TE.decodeUtf8 . defaultMimeLookup . T.pack
