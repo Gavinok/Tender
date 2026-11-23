@@ -47,11 +47,12 @@ import Network.Wai.Middleware.AddHeaders (addHeaders)
 import Network.Wai.Middleware.RequestLogger (logStdout)
 import Network.Wai.Request (RequestSizeException)
 import Network.Wai.Middleware.RequestSizeLimit (defaultRequestSizeLimitSettings, requestSizeLimitMiddleware, setMaxLengthForRequest)
-import Control.Applicative ((<|>))
 import Network.Wai (rawPathInfo, remoteHost)
 import System.Directory (doesFileExist)
 import System.FilePath (takeExtension, (</>))
+import System.Exit (die)
 import System.IO (hPutStrLn, stderr)
+import Text.Read (readMaybe)
 
 import Db
 import OpenStreetMap (openStreetMap)
@@ -95,8 +96,8 @@ data Limits = Limits
 -- | Read from TENDER_MAX_SEARCHES_PER_DAY and TENDER_MAX_PHOTOS_PER_DAY, or defaults
 newLimits :: IO Limits
 newLimits = do
-    searches <- maybe 300 read <$> getEnv "TENDER_MAX_SEARCHES_PER_DAY"
-    photos <- maybe 3000 read <$> getEnv "TENDER_MAX_PHOTOS_PER_DAY"
+    searches <- numberSetting "TENDER_MAX_SEARCHES_PER_DAY" 300
+    photos <- numberSetting "TENDER_MAX_PHOTOS_PER_DAY" 3000
     let day = 24 * 60 * 60
         hour = 60 * 60
     Limits
@@ -202,7 +203,9 @@ server = do
     logMsg $ "Restaurant sources: " ++ T.unpack (T.intercalate ", " (map providerName providers))
     dbPath <- fromMaybe "test.db" <$> getEnv "TENDER_DB"
     -- Cloud Run tells the server its port through PORT
-    port <- maybe 5001 read <$> ((<|>) <$> getEnv "TENDER_PORT" <*> getEnv "PORT")
+    port <- do
+        tenderPort <- getEnv "TENDER_PORT"
+        numberSetting (maybe "PORT" (const "TENDER_PORT") tenderPort) 5001
     static <- getEnv "TENDER_STATIC"
     initDb dbPath
     pruneHourly dbPath
@@ -217,6 +220,16 @@ pruneHourly dbPath = void . forkIO . forever $ do
     threadDelay (60 * 60 * 1000000)
     result <- try (withDb dbPath (`pruneOlderThan` (24 * 60 * 60)))
     either (\e -> logMsg ("Pruning failed: " ++ show (e :: SomeException))) pure result
+
+{- | A number from the environment, or the default when it isn't set.
+Anything else stops the server, saying which setting is wrong.
+-}
+numberSetting :: String -> Int -> IO Int
+numberSetting name def = do
+    value <- getEnv name
+    case value of
+        Nothing -> pure def
+        Just v -> maybe (die (name ++ " should be a whole number, not " ++ show v)) pure (readMaybe v)
 
 logMsg :: MonadIO m => String -> m ()
 logMsg = liftIO . hPutStrLn stderr
