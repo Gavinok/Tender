@@ -7,6 +7,10 @@ import Data.Aeson.Types (Value (Object), parseEither)
 import qualified Data.ByteString.Lazy.Char8 as L8
 import Data.Text (Text)
 import Database.SQLite.Simple (Connection, Only (..), execute_, query_, withConnection)
+import Network.HTTP.Simple (parseRequest_, setRequestHeaders)
+import qualified Data.Map.Strict as Map
+import Data.Time (UTCTime (..), addUTCTime, fromGregorian)
+import Limits (Limit (..), rememberAt, seenAt, spend)
 import Test.Hspec
 
 import Db hiding (restaurantId)
@@ -29,6 +33,10 @@ sessionWith conn n = do
     us <- traverse (const newUserId) [1 .. n]
     mapM_ (\u -> addUserToDb conn (User u s)) us
     pure (s, us)
+
+-- | Join a session that isn't full
+joinOk :: Connection -> SessionId -> Maybe UserId -> IO UserId
+joinOk conn s returning = maybe (fail "session full") pure =<< joinSession conn s returning
 
 like, dislike :: Connection -> UserId -> Text -> IO ()
 like conn u r = recordDecision conn (Decision u r True)
@@ -143,6 +151,43 @@ main = hspec $ do
             map restaurantId (inRing centre 5000 10000 [at "inside" 1000, at "ring" 7000, at "ring" 7000, at "beyond" 20000])
                 `shouldBe` ["ring"]
 
+    describe "spend" $ do
+        let t0 = UTCTime (fromGregorian 2026 11 22) 0
+            at secs = addUTCTime secs t0
+            limit = Limit 3600 5
+            run = foldl (\(_, u) (t, key, cost) -> spend limit t key cost u) (True, Map.empty)
+        it "allows up to the limit, then refuses" $ do
+            fst (run [(at 0, "a", 1), (at 1, "a", 4)]) `shouldBe` True
+            fst (run [(at 0, "a", 1), (at 1, "a", 4), (at 2, "a", 1)]) `shouldBe` False
+        it "counts each key separately" $
+            fst (run [(at 0, "a", 5), (at 1, "b", 5)]) `shouldBe` True
+        it "refuses a cost bigger than what's left, keeping the rest" $ do
+            fst (run [(at 0, "a", 2), (at 1, "a", 6)]) `shouldBe` False
+            fst (run [(at 0, "a", 2), (at 1, "a", 6), (at 2, "a", 3)]) `shouldBe` True
+        it "starts again once the window is over" $
+            fst (run [(at 0, "a", 5), (at 3601, "a", 5)]) `shouldBe` True
+        it "forgets keys whose window is over" $
+            Map.keys (snd (run [(at 0, "a", 1), (at 3601, "b", 1)])) `shouldBe` ["b"]
+
+    describe "recently seen places" $ do
+        let t0 = UTCTime (fromGregorian 2026 11 22) 0
+            at secs = addUTCTime secs t0
+            seen = rememberAt 3600 (at 0) ["p1", "p2"] Map.empty
+        it "knows places it was told about" $
+            (seenAt 3600 (at 10) "p1" seen, seenAt 3600 (at 10) "other" seen) `shouldBe` (True, False)
+        it "forgets them after a while" $
+            seenAt 3600 (at 3601) "p1" seen `shouldBe` False
+        it "drops old ones when remembering new ones" $
+            Map.keys (rememberAt 3600 (at 4000) ["p3"] seen) `shouldBe` ["p3"]
+
+    describe "withKey" $ do
+        it "hides the key when the request is shown, as in a logged error" $ do
+            let req = withKey (PlacesKey "sekret-key") [] (parseRequest_ "https://places.googleapis.com")
+            show req `shouldNotContain` "sekret-key"
+        it "is needed: without it the key shows up" $
+            show (setRequestHeaders [("X-Goog-Api-Key", "sekret-key")] (parseRequest_ "https://places.googleapis.com"))
+                `shouldContain` "sekret-key"
+
     describe "isPhotoName" $ do
         it "accepts a photo resource name" $
             isPhotoName "places/ChIJ1/photos/AbC-1_x" `shouldBe` True
@@ -197,31 +242,70 @@ main = hspec $ do
     describe "joinSession" $ do
         it "gives a new person a new id" $ withTestDb $ \conn -> do
             (s, _) <- sessionWith conn 0
-            a <- joinSession conn s Nothing
-            b <- joinSession conn s Nothing
+            a <- joinOk conn s Nothing
+            b <- joinOk conn s Nothing
             a `shouldNotBe` b
         it "keeps the id of someone coming back to the session" $ withTestDb $ \conn -> do
             (s, _) <- sessionWith conn 0
-            a <- joinSession conn s Nothing
-            joinSession conn s (Just a) `shouldReturn` a
+            a <- joinOk conn s Nothing
+            joinSession conn s (Just a) `shouldReturn` Just a
         it "doesn't let an id from another session in" $ withTestDb $ \conn -> do
             (s, _) <- sessionWith conn 0
             (other, _) <- sessionWith conn 0
-            a <- joinSession conn other Nothing
-            b <- joinSession conn s (Just a)
+            a <- joinOk conn other Nothing
+            b <- joinOk conn s (Just a)
             b `shouldNotBe` a
         it "treats an unknown id as a new person" $ withTestDb $ \conn -> do
             (s, _) <- sessionWith conn 0
             stranger <- newUserId
-            b <- joinSession conn s (Just stranger)
+            b <- joinOk conn s (Just stranger)
             b `shouldNotBe` stranger
         it "means a reload doesn't turn one person's like into a match" $ withTestDb $ \conn -> do
             (s, _) <- sessionWith conn 0
-            me <- joinSession conn s Nothing
+            me <- joinOk conn s Nothing
             like conn me "a"
-            me' <- joinSession conn s (Just me)
+            me' <- joinOk conn s (Just me)
             like conn me' "a"
             isMatch conn s "a" `shouldReturn` False
+        it "turns away new people once the session is full, but not returning ones" $ withTestDb $ \conn -> do
+            (s, u : _) <- sessionWith conn maxPerSession
+            joinSession conn s Nothing `shouldReturn` Nothing
+            joinSession conn s (Just u) `shouldReturn` Just u
+
+    describe "pruneOlderThan" $ do
+        it "deletes old people with their likes and their sessions, keeping recent ones" $ withTestDb $ \conn -> do
+            (old, [o]) <- sessionWith conn 1
+            (fresh, [f]) <- sessionWith conn 1
+            like conn o "a" >> like conn f "a"
+            _ <- sessionLocation conn old (Loc 0 0)
+            _ <- sessionLocation conn fresh (Loc 0 0)
+            _ <- setVibe conn old []
+            execute_ conn "UPDATE users SET joined = joined - 100000 WHERE rowid = 1"
+            execute_ conn "UPDATE session_vibes SET updated = updated - 100000"
+            pruneOlderThan conn 86400
+            fmap session <$> getUser conn o `shouldReturn` Nothing
+            fmap session <$> getUser conn f `shouldReturn` Just fresh
+            decidedBy conn o `shouldReturn` []
+            decidedBy conn f `shouldReturn` ["a"]
+            query_ conn "SELECT count(*) FROM sessions" `shouldReturn` [Only (1 :: Int)]
+            query_ conn "SELECT count(*) FROM session_vibes" `shouldReturn` [Only (0 :: Int)]
+
+    describe "matchesFor" $ do
+        it "lists what this user and someone else in the session both liked" $ withTestDb $ \conn -> do
+            (s, [me, friend, other]) <- sessionWith conn 3
+            (_, [stranger]) <- sessionWith conn 1
+            mapM_ (like conn me) ["a", "b", "c", "d"]
+            like conn friend "a" >> like conn other "a" >> like conn other "b"
+            dislike conn friend "c"
+            like conn stranger "d"
+            like conn friend "e" >> like conn other "e"
+            matchesFor conn (User me s) `shouldReturn` ["a", "b"]
+        it "includes a match someone else completed" $ withTestDb $ \conn -> do
+            (s, [first, second]) <- sessionWith conn 2
+            like conn first "a"
+            matchesFor conn (User first s) `shouldReturn` []
+            like conn second "a"
+            matchesFor conn (User first s) `shouldReturn` ["a"]
 
     describe "othersLiked" $ do
         it "lists what others in the session liked that this user hasn't decided on" $ withTestDb $ \conn -> do

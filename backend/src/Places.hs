@@ -4,6 +4,7 @@
 -- | Restaurants and photos from the Google Places API (New)
 module Places (
     PlacesKey (..),
+    withKey,
     googlePlaces,
     searchNearby,
     searchText,
@@ -35,6 +36,8 @@ import Network.HTTP.Simple (
     setRequestPath,
     setRequestQueryString,
  )
+import Network.HTTP.Client (redactHeaders)
+import qualified Data.Set as Set
 import Provider (Provider (..))
 import Vibe (Chip, Search (..), priceLevels, queryTerms, wantsOpenNow)
 import Restaurant (Author (..), Loc (..), Photo (..), PhotoSource (..), Restaurant (..), Source (..), Summary (..))
@@ -99,9 +102,15 @@ field asked for, and rating and priceLevel put this in the Enterprise SKU.
 fieldMask :: BS.ByteString
 fieldMask = "places.id,places.displayName,places.location,places.rating,places.priceLevel,places.googleMapsUri,places.primaryTypeDisplayName,places.photos,places.generativeSummary,places.editorialSummary"
 
--- | The key goes in a header rather than the url so it can't end up in logs
+{- | The key goes in a header rather than the url so it can't end up in
+logs. http-client only hides Authorization when it shows a request (as
+in a logged error), so this header is added to the ones it hides.
+-}
 withKey :: PlacesKey -> [Header] -> Request -> Request
-withKey (PlacesKey k) headers = setRequestHeaders (("X-Goog-Api-Key", k) : headers)
+withKey (PlacesKey k) headers req =
+    (setRequestHeaders (("X-Goog-Api-Key", k) : headers) req)
+        { redactHeaders = Set.insert "X-Goog-Api-Key" (redactHeaders req)
+        }
 
 -- | Up to 20 restaurants within the radius in metres, most popular first
 searchNearby :: PlacesKey -> Loc -> Double -> IO (Either FetchError [Restaurant])

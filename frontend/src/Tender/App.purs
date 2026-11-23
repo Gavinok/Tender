@@ -10,7 +10,7 @@ module Tender.App
 
 import Prelude
 
-import Data.Array (cons, elem, filter, length, snoc, uncons)
+import Data.Array (cons, elem, filter, head, length, snoc, uncons)
 import Data.Either (Either(..), either)
 import Data.Generic.Rep (class Generic)
 import Data.Show.Generic (genericShow)
@@ -42,6 +42,8 @@ type Swiper =
   , summaryOpen :: Boolean
   -- | Restaurants someone else in the session liked, shown first and badged
   , othersLiked :: Array RestaurantId
+  -- | Restaurants this person liked, newest first, to show when one becomes a match
+  , liked :: Array Restaurant
   , matches :: Array Restaurant
   -- | Whether the list of matches is open
   , showMatches :: Boolean
@@ -105,8 +107,9 @@ data Message
   -- | The vibe as fetched by the lobby's regular check, which then schedules the next one
   | VibePolled Vibe
   | PollVibe
-  -- | The decision on this restaurant is saved
-  | Decided { id :: RestaurantId, match :: Boolean, othersLiked :: Array RestaurantId }
+  -- | The decision on this restaurant is saved. Brings the session's matches
+  -- | this person is part of, including ones others completed since.
+  | Decided { id :: RestaurantId, liked :: Boolean, matches :: Array RestaurantId, othersLiked :: Array RestaurantId }
   | FailedToLoad ErrorMessage
   -- | Start again from the session in the url
   | Retry
@@ -194,7 +197,7 @@ update model = case model, _ of
             Left e -> pure $ Just $ failed e
     ]
   _, Started user loc ->
-    Active { user, loc, radius: 0.0, maxRadius: 0.0, upcoming: [], photo: 0, summaryOpen: false, othersLiked: [], matches: [], showMatches: false, vibe: [] } Fetching
+    Active { user, loc, radius: 0.0, maxRadius: 0.0, upcoming: [], photo: 0, summaryOpen: false, othersLiked: [], liked: [], matches: [], showMatches: false, vibe: [] } Fetching
       /\ [ Just <<< orFail Loaded <$> getRestaurants user loc Nothing ]
   Active swiper Fetching, Loaded found ->
     advance swiper
@@ -210,21 +213,24 @@ update model = case model, _ of
   Active swiper (Swiping r), Like -> model /\
     [ do
         liftEffect $ flyOut Swipe.Right
-        decide swiper.user r.id true <#> Just <<< either failed \d -> Decided { id: r.id, match: d.match, othersLiked: d.othersLiked }
+        decide swiper.user r.id true <#> Just <<< either failed \d -> Decided { id: r.id, liked: true, matches: d.matches, othersLiked: d.othersLiked }
     ]
   Active swiper (Swiping r), Dislike -> model /\
     [ do
         liftEffect $ flyOut Swipe.Left
-        decide swiper.user r.id false <#> Just <<< either failed \d -> Decided { id: r.id, match: false, othersLiked: d.othersLiked }
+        decide swiper.user r.id false <#> Just <<< either failed \d -> Decided { id: r.id, liked: false, matches: d.matches, othersLiked: d.othersLiked }
     ]
   -- Ignored if it's late and the card has already gone, so a doubled response can't skip one
   Active swiper (Swiping r), Decided d | r.id == d.id ->
     let
-      next = swiper { upcoming = likedFirst d.othersLiked swiper.upcoming, othersLiked = d.othersLiked }
+      liked = if d.liked then cons r swiper.liked else swiper.liked
+      new = filter (\l -> elem l.id d.matches && not (elem l.id (_.id <$> swiper.matches))) liked
+      next = swiper { upcoming = likedFirst d.othersLiked swiper.upcoming, othersLiked = d.othersLiked, liked = liked, matches = new <> swiper.matches }
     in
-      if d.match && not (elem r.id (_.id <$> swiper.matches)) then
-        Active next { matches = cons r next.matches } (Matched r) /\ [ liftEffect vibrate $> Nothing ]
-      else advance next
+      -- Celebrate one, newest first; any others are in the list of matches
+      case head new of
+        Just m -> Active next (Matched m) /\ [ liftEffect vibrate $> Nothing ]
+        Nothing -> advance next
   Active swiper (Swiping r), NextPhoto ->
     Active swiper { photo = min (swiper.photo + 1) (max 0 (length r.photos - 1)) } (Swiping r) /\ []
   Active swiper (Swiping r), ToggleSummary ->

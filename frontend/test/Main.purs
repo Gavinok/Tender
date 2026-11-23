@@ -39,7 +39,7 @@ bare :: String -> Restaurant
 bare id = (restaurant id) { url = Nothing, rating = Nothing, photos = [], summary = Nothing }
 
 swiper :: Swiper
-swiper = { user: UserId "u", loc: here, radius: 5000.0, maxRadius: 50000.0, upcoming: [], photo: 0, summaryOpen: false, othersLiked: [], matches: [], showMatches: false, vibe: [] }
+swiper = { user: UserId "u", loc: here, radius: 5000.0, maxRadius: 50000.0, upcoming: [], photo: 0, summaryOpen: false, othersLiked: [], liked: [], matches: [], showMatches: false, vibe: [] }
 
 here :: { latitude :: Number, longitude :: Number }
 here = { latitude: 1.0, longitude: 2.0 }
@@ -47,8 +47,18 @@ here = { latitude: 1.0, longitude: 2.0 }
 lobbyAt :: Lobby
 lobbyAt = { session: SessionId "s", link: "http://example.com/s", copied: false, vibe: { chips: [], locked: false } }
 
+-- | A decision saved, with what others liked and no matches
 decided :: String -> Boolean -> Array String -> Message
-decided id match others = Decided { id: RestaurantId id, match, othersLiked: map RestaurantId others }
+decided id liked others = Decided { id: RestaurantId id, liked, matches: [], othersLiked: map RestaurantId others }
+
+-- | A like saved, with the session's matches this person is part of
+likedWithMatches :: String -> Array String -> Message
+likedWithMatches id matches = Decided { id: RestaurantId id, liked: true, matches: map RestaurantId matches, othersLiked: [] }
+
+withMatches :: Array String -> Message -> Message
+withMatches ids = case _ of
+  Decided d -> Decided d { matches = map RestaurantId ids }
+  m -> m
 
 -- | The model after a message, and how many requests it started
 step :: Model -> Message -> Tuple Model Int
@@ -86,8 +96,20 @@ main = runSpecAndExitProcess [ consoleReporter ] do
         `shouldEqual` Tuple (Active swiper { upcoming = [ restaurant "c" ] } (Swiping (restaurant "b"))) 0
 
     it "records a match" do
-      step (Active swiper (Swiping (restaurant "a"))) (decided "a" true [])
-        `shouldEqual` Tuple (Active swiper { matches = [ restaurant "a" ] } (Matched (restaurant "a"))) 1
+      step (Active swiper (Swiping (restaurant "a"))) (likedWithMatches "a" [ "a" ])
+        `shouldEqual` Tuple (Active swiper { liked = [ restaurant "a" ], matches = [ restaurant "a" ] } (Matched (restaurant "a"))) 1
+
+    it "remembers a like that isn't a match yet" do
+      step (Active swiper { upcoming = [ restaurant "b" ] } (Swiping (restaurant "a"))) (likedWithMatches "a" [])
+        `shouldEqual` Tuple (Active swiper { liked = [ restaurant "a" ] } (Swiping (restaurant "b"))) 0
+
+    it "celebrates a match someone else completed after this person liked it" do
+      step (Active swiper { liked = [ restaurant "a" ] } (Swiping (restaurant "b"))) (decided "b" false [] # withMatches [ "a" ])
+        `shouldEqual` Tuple (Active swiper { liked = [ restaurant "a" ], matches = [ restaurant "a" ] } (Matched (restaurant "a"))) 1
+
+    it "doesn't celebrate a match twice" do
+      step (Active swiper { liked = [ restaurant "a" ], matches = [ restaurant "a" ], upcoming = [ restaurant "c" ] } (Swiping (restaurant "b"))) (decided "b" false [] # withMatches [ "a" ])
+        `shouldEqual` Tuple (Active swiper { liked = [ restaurant "a" ], matches = [ restaurant "a" ] } (Swiping (restaurant "c"))) 0
 
     it "sends a like while swiping" do
       step (Active swiper (Swiping (restaurant "a"))) Like

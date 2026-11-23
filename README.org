@@ -3,6 +3,12 @@
 For when you and your friends can't decide where to eat. This applies
 a similar approach to tinder but for finding an agreed upon place to eat.
 
+* Try it
+
+Tender is live at https://tender-184242101953.us-west1.run.app. Start a
+session, share the link or QR code with your friends, and swipe. When
+two of you like the same place, it's a match.
+
 * WARNING
 
 This is an active work in progress. Expect regular breaking changes
@@ -59,6 +65,30 @@ Only devices on your tailnet can reach it. =SHARE_PORT= changes the port.
 #+end_src
 
 =make watch= in either directory rebuilds on change (needs [[https://github.com/eradman/entr][entr]]).
+
+** Deploying to Google Cloud Run
+The app runs for free within Cloud Run's free tier at low traffic, as a
+single container: the backend serves the built frontend, with the API
+under =/api=. It is limited to one instance, since sessions live in
+that instance's in-memory database. Sessions are short lived, so losing
+them when Cloud Run stops the idle instance is fine.
+
+Once, with the Google Cloud CLI logged in and the Places project
+selected:
+#+begin_src sh
+  gcloud auth login
+  gcloud config set project <your-project>
+  make deploy-setup   # services, image registry, the Places key as a secret
+#+end_src
+
+Then each time:
+#+begin_src sh
+  make deploy         # builds with Docker, pushes, deploys; prints the https address
+#+end_src
+
+=make deploy-secret= stores a new key from pass for the next deploy.
+Google Places is the main cost, so set daily quotas and a budget alert
+on the Places API before sharing the link.
 
 * Example UI
 

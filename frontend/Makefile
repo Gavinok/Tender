@@ -31,4 +31,9 @@ unshare:
 	tailscale serve --https=$(SHARE_PORT) off \
 	  || sudo tailscale serve --https=$(SHARE_PORT) off
 
-.PHONY: all build watch serve test clean share unshare
+.PHONY: all build watch serve test clean share unshare dist
+
+# Production build into dist/, as the Dockerfile does
+dist:
+	npx spago bundle
+	npx parcel build assets/index.html --dist-dir dist --public-url / --no-source-maps
