@@ -47,7 +47,8 @@ import System.IO (hPutStrLn, stderr)
 import Db
 import OpenStreetMap (openStreetMap)
 import Places
-import Limits (Counter, Limit (..), newCounter, trySpend)
+import Control.Monad (unless)
+import Limits (Counter, Limit (..), Recent, newCounter, newRecent, remember, seenRecently, trySpend)
 import Provider (Provider (..), searchWithFallback)
 import Data.List (partition)
 import Restaurant (Loc, Restaurant)
@@ -77,6 +78,8 @@ data Limits = Limits
     , photosToday :: Counter
     , searchesPerVisitor :: Counter
     , photosPerVisitor :: Counter
+    , -- | Places our searches returned lately; photos are only served for these
+      recentPlaces :: Recent
     }
 
 -- | Read from TENDER_MAX_SEARCHES_PER_DAY and TENDER_MAX_PHOTOS_PER_DAY, or defaults
@@ -91,6 +94,8 @@ newLimits = do
         <*> newCounter (Limit day photos)
         <*> newCounter (Limit hour 30)
         <*> newCounter (Limit hour 400)
+        -- Long enough for a session, and place ids may be kept
+        <*> newRecent (6 * hour)
 
 {- | Spend from a visitor's and the site's allowance. Says why not when
 either has run out.
@@ -296,6 +301,7 @@ app port env = scotty port $ do
                 case found of
                     Nothing -> errorResponse status502 "Couldn't get restaurants from any source"
                     Just rs -> do
+                        liftIO $ remember (recentPlaces (envLimits env)) (map R.restaurantId rs)
                         others <- liftIO $ withConn $ \c -> othersLiked c u
                         json $
                             object
@@ -315,6 +321,10 @@ app port env = scotty port $ do
           Just key
             | not (isPhotoName photo) -> errorResponse status400 "Not a photo name"
             | otherwise -> do
+                -- Names look like places/<place>/photos/<photo>
+                let place = T.takeWhile (/= '/') (T.drop (T.length "places/") photo)
+                known <- liftIO $ seenRecently (recentPlaces (envLimits env)) place
+                unless known $ errorResponse status404 "Not a place we showed" >> finish
                 visitor <- visitorOf
                 let limits = envLimits env
                 refused <- liftIO $ allowed (photosPerVisitor limits) (photosToday limits) visitor 1

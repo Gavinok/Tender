@@ -8,9 +8,15 @@ module Limits (
     Counter,
     newCounter,
     trySpend,
+    Recent,
+    newRecent,
+    remember,
+    seenRecently,
+    rememberAt,
+    seenAt,
 ) where
 
-import Data.IORef (IORef, atomicModifyIORef', newIORef)
+import Data.IORef (IORef, atomicModifyIORef', newIORef, readIORef)
 import qualified Data.Map.Strict as Map
 import Data.Text (Text)
 import Data.Time (NominalDiffTime, UTCTime, addUTCTime, getCurrentTime)
@@ -52,3 +58,30 @@ trySpend :: Counter -> Text -> Int -> IO Bool
 trySpend (Counter l ref) key cost = do
     now <- getCurrentTime
     atomicModifyIORef' ref (\usage -> let (ok, usage') = spend l now key cost usage in (usage', ok))
+
+{- | Ids seen in the last few hours, with when each was last seen. Used to
+only serve photos of places our own searches returned.
+-}
+data Recent = Recent NominalDiffTime (IORef (Map.Map Text UTCTime))
+
+newRecent :: NominalDiffTime -> IO Recent
+newRecent for = Recent for <$> newIORef Map.empty
+
+-- | Record the ids as seen at the given time, dropping ones seen too long ago
+rememberAt :: NominalDiffTime -> UTCTime -> [Text] -> Map.Map Text UTCTime -> Map.Map Text UTCTime
+rememberAt for now ids seen =
+    Map.union (Map.fromList [(i, now) | i <- ids]) (Map.filter (\t -> addUTCTime for t > now) seen)
+
+-- | Whether the id was seen recently enough at the given time
+seenAt :: NominalDiffTime -> UTCTime -> Text -> Map.Map Text UTCTime -> Bool
+seenAt for now i seen = maybe False (\t -> addUTCTime for t > now) (Map.lookup i seen)
+
+remember :: Recent -> [Text] -> IO ()
+remember (Recent for ref) ids = do
+    now <- getCurrentTime
+    atomicModifyIORef' ref (\seen -> (rememberAt for now ids seen, ()))
+
+seenRecently :: Recent -> Text -> IO Bool
+seenRecently (Recent for ref) i = do
+    now <- getCurrentTime
+    seenAt for now i <$> readIORef ref

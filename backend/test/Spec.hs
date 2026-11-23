@@ -10,7 +10,7 @@ import Database.SQLite.Simple (Connection, Only (..), execute_, query_, withConn
 import Network.HTTP.Simple (parseRequest_, setRequestHeaders)
 import qualified Data.Map.Strict as Map
 import Data.Time (UTCTime (..), addUTCTime, fromGregorian)
-import Limits (Limit (..), spend)
+import Limits (Limit (..), rememberAt, seenAt, spend)
 import Test.Hspec
 
 import Db hiding (restaurantId)
@@ -164,6 +164,17 @@ main = hspec $ do
             fst (run [(at 0, "a", 5), (at 3601, "a", 5)]) `shouldBe` True
         it "forgets keys whose window is over" $
             Map.keys (snd (run [(at 0, "a", 1), (at 3601, "b", 1)])) `shouldBe` ["b"]
+
+    describe "recently seen places" $ do
+        let t0 = UTCTime (fromGregorian 2026 11 22) 0
+            at secs = addUTCTime secs t0
+            seen = rememberAt 3600 (at 0) ["p1", "p2"] Map.empty
+        it "knows places it was told about" $
+            (seenAt 3600 (at 10) "p1" seen, seenAt 3600 (at 10) "other" seen) `shouldBe` (True, False)
+        it "forgets them after a while" $
+            seenAt 3600 (at 3601) "p1" seen `shouldBe` False
+        it "drops old ones when remembering new ones" $
+            Map.keys (rememberAt 3600 (at 4000) ["p3"] seen) `shouldBe` ["p3"]
 
     describe "withKey" $ do
         it "hides the key when the request is shown, as in a logged error" $ do
