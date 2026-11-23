@@ -131,7 +131,8 @@ providersFromEnv placesKey yelpKey order = concat <$> traverse provider (T.split
 
 server :: IO ()
 server = do
-    let key = fmap (TE.encodeUtf8 . T.pack)
+    -- Keys pasted into a secret or env var often end with a newline
+    let key = fmap (TE.encodeUtf8 . T.strip . T.pack)
     placesKey <- fmap PlacesKey . key <$> getEnv "GOOGLE_PLACES_KEY"
     yelpKey <- fmap YelpKey . key <$> getEnv "YELP_KEY"
     order <- fromMaybe "google,yelp,openstreetmap" <$> getEnv "TENDER_SOURCES"
