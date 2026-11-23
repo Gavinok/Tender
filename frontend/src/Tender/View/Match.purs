@@ -52,9 +52,9 @@ celebration r continue =
     -- The tilt is on a wrapper since the entrance animation ends at no transform
     , HE.div [ HA.class' "rotate-2" ]
         [ HE.div [ HA.class' "w-64 animate-card-in rounded-3xl border-[3px] border-ink bg-white p-3 text-ink shadow-card" ]
-            [ restaurantPhoto r "aspect-square w-full rounded-2xl"
+            [ restaurantPhoto r 0 "aspect-square w-full rounded-2xl"
             , HE.p [ HA.class' "pt-3 text-2xl font-display" ] [ HE.text r.name ]
-            , photoCredit r "text-ink/50"
+            , photoCredit r 0 "text-ink/50"
             ]
         ]
     , HE.div [ HA.class' "flex flex-col items-center gap-3" ]

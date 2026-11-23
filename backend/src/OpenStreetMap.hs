@@ -18,22 +18,30 @@ import Restaurant (Loc (..), Restaurant (..), Source (..))
 import Vibe (Search (..))
 
 openStreetMap :: Provider
-openStreetMap = Provider "OpenStreetMap" (searchOverpass . searchLoc)
+openStreetMap = Provider "OpenStreetMap" $ \s -> searchOverpass (searchLoc s) (searchInner s) (searchRadius s)
 
--- | The 20 nearest named restaurants within 5km
-searchOverpass :: Loc -> IO (Either FetchError [Restaurant])
-searchOverpass l@(Loc lat lon) =
-    fmap (nearest l 20) <$> fetchJSON parseOverpass request
+-- | The 20 nearest named restaurants between the inner radius (0 for none) and the radius, in metres
+searchOverpass :: Loc -> Double -> Double -> IO (Either FetchError [Restaurant])
+searchOverpass l@(Loc lat lon) inner radius =
+    fmap (nearest l 20 . filter beyondInner) <$> fetchJSON parseOverpass request
   where
     request =
         -- Overpass asks clients to identify themselves
         setRequestHeaders [("User-Agent", "Tender (https://github.com/Gavinok/Tender)")] $
             setRequestBodyURLEncoded [("data", TE.encodeUtf8 query)] $
                 parseRequest_ "POST https://overpass-api.de/api/interpreter"
+    -- Already searched when searching further
+    beyondInner r =
+        let Loc lat' lon' = location r
+            dy = (lat' - lat) * 111320
+            dx = (lon' - lon) * 111320 * cos (lat * pi / 180)
+         in sqrt (dx * dx + dy * dy) >= inner
     query =
         T.concat
             [ "[out:json][timeout:20];"
-            , "nwr[\"amenity\"=\"restaurant\"][\"name\"](around:5000,"
+            , "nwr[\"amenity\"=\"restaurant\"][\"name\"](around:"
+            , T.pack (show (round radius :: Int))
+            , ","
             , T.pack (show lat)
             , ","
             , T.pack (show lon)
@@ -78,7 +86,8 @@ parseOverpass = withObject "OverpassResponse" $ \o ->
                     , rating = Nothing
                     , price = Nothing
                     , category = cuisine >>= cuisineName
-                    , photo = Nothing
+                    , photos = []
+                    , summary = Nothing
                     , location = pos
                     }
 

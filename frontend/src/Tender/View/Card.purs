@@ -2,9 +2,9 @@ module Tender.View.Card (restaurantCard, ratingStars, actionBar) where
 
 import Prelude
 
-import Data.Array (range)
+import Data.Array (length, range)
 import Data.Int (toNumber)
-import Data.Maybe (maybe)
+import Data.Maybe (Maybe(..), maybe)
 import Flame (Html)
 import Flame.Html.Attribute as HA
 import Flame.Html.Element as HE
@@ -48,33 +48,74 @@ stamp text classes opacity =
     ]
     [ HE.text text ]
 
+-- | The whole summary over the lower part of the card. Dragging inside it
+-- | doesn't swipe the card (see Swipe.js).
+summaryBox :: forall a. { text :: String, disclosure :: Maybe String } -> a -> Html a
+summaryBox s close =
+  HE.section
+    [ HA.createAttribute "data-no-swipe" ""
+    , HA.class' "absolute inset-x-0 bottom-0 flex max-h-[70%] animate-card-in flex-col gap-3 overflow-y-auto rounded-t-2xl border-t-[3px] border-ink bg-surface p-5 text-left text-ink touch-pan-y"
+    ]
+    [ HE.div [ HA.class' "flex items-center justify-between" ]
+        [ HE.h3 [ HA.class' "font-display text-xl" ] [ HE.text "The lowdown" ]
+        , HE.button [ HA.class' "rounded-lg p-1 text-ink/60 hover:bg-ink/5", HA.onClick close, HA.createAttribute "aria-label" "Close summary" ]
+            [ icon Close "h-5 w-5" ]
+        ]
+    , HE.p [ HA.class' "leading-relaxed" ] [ HE.text s.text ]
+    , case s.disclosure of
+        Just d -> HE.p [ HA.class' "text-xs italic text-ink/50" ] [ HE.text d ]
+        Nothing -> HE.text ""
+    ]
+
+-- | A bar per photo across the top of the card, the one showing filled in.
+-- | Tapping the left or right of the card moves between them (see Swipe.js).
+photoBars :: forall a. Int -> Int -> Html a
+photoBars count showing
+  | count < 2 = HE.text ""
+  | otherwise =
+      HE.div [ HA.class' "absolute inset-x-3 top-2 flex gap-1", HA.createAttribute "aria-label" ("Photo " <> show (showing + 1) <> " of " <> show count) ]
+        (map bar (range 0 (count - 1)))
+  where
+  bar i = HE.span [ HA.class' ("h-1 flex-1 rounded-full " <> if i == showing then "bg-white" else "bg-white/40") ] []
+
 -- | The restaurant's photo with its details over the bottom of it, and a
 -- | badge when someone else in the group already liked it. Keyed on the
 -- | restaurant so each new one animates in.
-restaurantCard :: forall a. { likedByOthers :: Boolean } -> Restaurant -> Html a
-restaurantCard { likedByOthers } r =
+restaurantCard :: forall a. { likedByOthers :: Boolean, photo :: Int, summaryOpen :: Boolean, toggleSummary :: a } -> Restaurant -> Html a
+restaurantCard { likedByOthers, photo, summaryOpen, toggleSummary } r =
   HE.article
     [ HA.key (show r.id)
     , HA.createAttribute "data-swipe" ""
     , HA.class' "relative min-h-[22rem] w-full flex-1 animate-card-in cursor-grab touch-none select-none overflow-hidden rounded-[2rem] border-[3px] border-ink bg-brand-200 shadow-card active:cursor-grabbing"
     ]
-    [ restaurantPhoto r "pointer-events-none absolute inset-0 h-full w-full"
+    [ restaurantPhoto r photo "pointer-events-none absolute inset-0 h-full w-full"
+    , photoBars (length r.photos) photo
     , HE.div [ HA.class' "absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" ] []
     -- Fade in while dragging, see Swipe.js
     , stamp "YUM" "left-5 -rotate-12 border-star text-star" "var(--like, 0)"
     , stamp "NOPE" "right-5 rotate-12 border-white text-white" "var(--nope, 0)"
     , if likedByOthers then
-        HE.span [ HA.class' "absolute left-4 top-4 flex items-center gap-1 rounded-lg border-2 border-ink bg-star px-3 py-1 text-sm font-bold text-ink shadow-pop" ]
+        HE.span [ HA.class' "absolute left-4 top-6 flex items-center gap-1 rounded-lg border-2 border-ink bg-star px-3 py-1 text-sm font-bold text-ink shadow-pop" ]
           [ icon Heart "h-4 w-4 fill-current", HE.text "Someone's keen" ]
       else HE.text ""
-    , mapsLink r "absolute right-4 top-4 rounded-lg bg-white/90 px-3 py-1 text-sm text-[#1F1F1F] shadow"
+    , mapsLink r "absolute right-4 top-6 rounded-lg bg-white/90 px-3 py-1 text-sm text-[#1F1F1F] shadow"
     , HE.div [ HA.class' "absolute inset-x-0 bottom-0 flex flex-col gap-2 p-5 text-left" ]
         [ HE.h2 [ HA.class' "font-display text-3xl leading-tight text-white drop-shadow" ] [ HE.text r.name ]
         , HE.div [ HA.class' "flex items-center gap-2" ]
             (maybe [] (pure <<< ratingStars) r.rating <> maybe [] (pure <<< chip) r.price)
         , HE.div [ HA.class' "flex flex-wrap gap-2" ] (maybe [] (pure <<< chip) r.category)
-        , photoCredit r "text-white/70"
+        , case r.summary of
+            Just s | not summaryOpen ->
+              HE.button [ HA.class' "text-left text-sm text-white/90", HA.onClick toggleSummary ]
+                [ HE.span [ HA.class' "line-clamp-2" ] [ HE.text s.text ]
+                , HE.span [ HA.class' "font-bold underline" ] [ HE.text "More" ]
+                ]
+            _ -> HE.text ""
+        , photoCredit r photo "text-white/70"
         ]
+    , case r.summary of
+        Just s | summaryOpen -> summaryBox s toggleSummary
+        _ -> HE.text ""
     ]
 
 -- | Nope and like, sized for thumbs

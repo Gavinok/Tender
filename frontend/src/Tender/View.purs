@@ -3,6 +3,7 @@ module Tender.View (view) where
 import Prelude
 
 import Data.Array (elem, head, length)
+import Data.Int (round)
 import Data.Maybe (Maybe(..), maybe)
 import Flame (Html)
 import Flame.Html.Attribute as HA
@@ -15,6 +16,10 @@ import Tender.View.Layout (page)
 import Tender.View.Lobby (lobby)
 import Tender.View.Match (celebration, matchesSheet)
 import Tender.View.States (cardSkeleton, outOfRestaurants, problem, setting)
+
+-- | Metres as whole kilometres, e.g. "10 km"
+km :: Number -> String
+km m = show (round (m / 1000.0)) <> " km"
 
 -- | The session's vibe above the cards, when it has one
 vibeLine :: forall a. Array String -> Html a
@@ -34,17 +39,24 @@ view (Active swiper screen) =
   page (Just { count: length swiper.matches, open: ToggleMatches }) $
     [ case screen of
         Fetching -> cardSkeleton
-        NoneLeft -> outOfRestaurants swiper.matches Retry
+        NoneLeft ->
+          outOfRestaurants swiper.matches
+            { startOver: Retry
+            , further:
+                if swiper.radius < swiper.maxRadius then
+                  Just { label: "Search further (up to " <> km (min swiper.maxRadius (swiper.radius * 2.0)) <> ")", search: SearchFurther }
+                else Nothing
+            }
         Swiping r ->
           HE.div [ HA.class' "flex max-h-[52rem] flex-1 flex-col gap-6" ]
             -- The card is keyed so each restaurant gets a fresh element. Flame
             -- needs keyed elements kept apart from unkeyed siblings.
             [ vibeLine swiper.vibe
-            , HE.div [ HA.class' "flex flex-1 flex-col" ] [ restaurantCard { likedByOthers: elem r.id swiper.othersLiked } r ]
+            , HE.div [ HA.class' "flex flex-1 flex-col" ] [ restaurantCard { likedByOthers: elem r.id swiper.othersLiked, photo: swiper.photo, summaryOpen: swiper.summaryOpen, toggleSummary: ToggleSummary } r ]
             , actionBar { nope: Dislike, like: Like }
             -- Start loading the next photo so it's there when this card goes
             , HE.div [ HA.class' "hidden" ]
-                (map (\url -> HE.img [ HA.src url, HA.alt "" ]) (maybe [] pure (head swiper.upcoming >>= _.photo >>= photoUrl)))
+                (map (\url -> HE.img [ HA.src url, HA.alt "" ]) (maybe [] pure (head swiper.upcoming >>= (_.photos >>> head) >>= photoUrl)))
             ]
         Matched r -> celebration r Continue
     ]

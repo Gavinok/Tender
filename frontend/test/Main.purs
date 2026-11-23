@@ -27,15 +27,19 @@ restaurant id =
   , price: Nothing
   , rating: Just 4.0
   , category: Nothing
-  , photo: Just { name: Just ("places/" <> id <> "/photos/p1"), url: Nothing, author: Just { name: "Sam", uri: Just "https://maps.google.com/contrib/1" } }
+  , photos:
+      [ { name: Just ("places/" <> id <> "/photos/p1"), url: Nothing, author: Just { name: "Sam", uri: Just "https://maps.google.com/contrib/1" } }
+      , { name: Just ("places/" <> id <> "/photos/p2"), url: Nothing, author: Just { name: "Kai", uri: Nothing } }
+      ]
+  , summary: Just { text: "Bright noodle spot known for its broth.", disclosure: Just "Summarized with Gemini" }
   }
 
 -- | A place with nothing but a name, as Google sometimes returns
 bare :: String -> Restaurant
-bare id = (restaurant id) { url = Nothing, rating = Nothing, photo = Nothing }
+bare id = (restaurant id) { url = Nothing, rating = Nothing, photos = [], summary = Nothing }
 
 swiper :: Swiper
-swiper = { user: UserId "u", upcoming: [], othersLiked: [], matches: [], showMatches: false, vibe: [] }
+swiper = { user: UserId "u", loc: here, radius: 5000.0, maxRadius: 50000.0, upcoming: [], photo: 0, summaryOpen: false, othersLiked: [], matches: [], showMatches: false, vibe: [] }
 
 here :: { latitude :: Number, longitude :: Number }
 here = { latitude: 1.0, longitude: 2.0 }
@@ -56,18 +60,18 @@ main = runSpecAndExitProcess [ consoleReporter ] do
   describe "update" do
     it "fetches the restaurants once started" do
       step (QR lobbyAt) (Started (UserId "u") here)
-        `shouldEqual` Tuple (Active swiper Fetching) 1
+        `shouldEqual` Tuple (Active swiper { radius = 0.0, maxRadius = 0.0 } Fetching) 1
 
     it "shows the first restaurant and keeps the rest" do
-      step (Active swiper Fetching) (Loaded { restaurants: [ restaurant "a", restaurant "b" ], othersLiked: [], vibe: [] })
+      step (Active swiper Fetching) (Loaded { restaurants: [ restaurant "a", restaurant "b" ], othersLiked: [], vibe: [], radius: 5000.0, maxRadius: 50000.0 })
         `shouldEqual` Tuple (Active swiper { upcoming = [ restaurant "b" ] } (Swiping (restaurant "a"))) 0
 
     it "starts with what others already liked" do
-      step (Active swiper Fetching) (Loaded { restaurants: [ restaurant "a", restaurant "b", restaurant "c" ], othersLiked: [ RestaurantId "c" ], vibe: [] })
+      step (Active swiper Fetching) (Loaded { restaurants: [ restaurant "a", restaurant "b", restaurant "c" ], othersLiked: [ RestaurantId "c" ], vibe: [], radius: 5000.0, maxRadius: 50000.0 })
         `shouldEqual` Tuple (Active swiper { upcoming = [ restaurant "a", restaurant "b" ], othersLiked = [ RestaurantId "c" ] } (Swiping (restaurant "c"))) 0
 
     it "says there are none when the search finds nothing" do
-      step (Active swiper Fetching) (Loaded { restaurants: [], othersLiked: [], vibe: [] }) `shouldEqual` Tuple (Active swiper NoneLeft) 0
+      step (Active swiper Fetching) (Loaded { restaurants: [], othersLiked: [], vibe: [], radius: 5000.0, maxRadius: 50000.0 }) `shouldEqual` Tuple (Active swiper NoneLeft) 0
 
     it "moves to the next restaurant without asking the server" do
       step (Active swiper { upcoming = [ restaurant "b" ] } (Swiping (restaurant "a"))) (decided "a" false [])
@@ -112,6 +116,20 @@ main = runSpecAndExitProcess [ consoleReporter ] do
       step (QR lobbyAt) LinkCopied `shouldEqual` Tuple (QR lobbyAt { copied = true }) 1
       step (QR lobbyAt { copied = true }) HideCopied `shouldEqual` Tuple (QR lobbyAt) 0
 
+    it "flips through a card's photos without going past either end" do
+      step (Active swiper (Swiping (restaurant "a"))) NextPhoto `shouldEqual` Tuple (Active swiper { photo = 1 } (Swiping (restaurant "a"))) 0
+      step (Active swiper { photo = 1 } (Swiping (restaurant "a"))) NextPhoto `shouldEqual` Tuple (Active swiper { photo = 1 } (Swiping (restaurant "a"))) 0
+      step (Active swiper (Swiping (restaurant "a"))) PreviousPhoto `shouldEqual` Tuple (Active swiper (Swiping (restaurant "a"))) 0
+
+    it "opens and closes the summary, closed again on the next card" do
+      step (Active swiper (Swiping (restaurant "a"))) ToggleSummary `shouldEqual` Tuple (Active swiper { summaryOpen = true } (Swiping (restaurant "a"))) 0
+      step (Active swiper { summaryOpen = true, upcoming = [ restaurant "b" ] } (Swiping (restaurant "a"))) (decided "a" false [])
+        `shouldEqual` Tuple (Active swiper (Swiping (restaurant "b"))) 0
+
+    it "starts each new card on its first photo" do
+      step (Active swiper { photo = 1, upcoming = [ restaurant "b" ] } (Swiping (restaurant "a"))) (decided "a" false [])
+        `shouldEqual` Tuple (Active swiper (Swiping (restaurant "b"))) 0
+
     it "toggles a vibe chip and saves it" do
       step (QR lobbyAt) (ToggleChip "patio") `shouldEqual` Tuple (QR lobbyAt { vibe = { chips: [ "patio" ], locked: false } }) 1
       step (QR lobbyAt { vibe = { chips: [ "patio" ], locked: false } }) (ToggleChip "patio") `shouldEqual` Tuple (QR lobbyAt) 1
@@ -128,8 +146,18 @@ main = runSpecAndExitProcess [ consoleReporter ] do
       step (Active swiper Fetching) PollVibe `shouldEqual` Tuple (Active swiper Fetching) 0
 
     it "keeps the session's vibe for the swiping screen" do
-      step (Active swiper Fetching) (Loaded { restaurants: [ restaurant "a" ], othersLiked: [], vibe: [ "patio" ] })
+      step (Active swiper Fetching) (Loaded { restaurants: [ restaurant "a" ], othersLiked: [], vibe: [ "patio" ], radius: 5000.0, maxRadius: 50000.0 })
         `shouldEqual` Tuple (Active swiper { vibe = [ "patio" ] } (Swiping (restaurant "a"))) 0
+
+    it "searches further from the out of restaurants screen" do
+      step (Active swiper NoneLeft) SearchFurther `shouldEqual` Tuple (Active swiper Fetching) 1
+
+    it "doesn't search further than the furthest Google goes" do
+      step (Active swiper { radius = 50000.0 } NoneLeft) SearchFurther `shouldEqual` Tuple (Active swiper { radius = 50000.0 } NoneLeft) 0
+
+    it "keeps the wider radius it was given" do
+      step (Active swiper Fetching) (Loaded { restaurants: [ restaurant "z" ], othersLiked: [], vibe: [], radius: 10000.0, maxRadius: 50000.0 })
+        `shouldEqual` Tuple (Active swiper { radius = 10000.0 } (Swiping (restaurant "z"))) 0
 
     it "opens and closes the list of matches" do
       step (Active swiper (Swiping (restaurant "a"))) ToggleMatches
@@ -173,13 +201,23 @@ main = runSpecAndExitProcess [ consoleReporter ] do
     it "credits OpenStreetMap for its places" do
       renders (Active swiper (Swiping ((bare "Pho Real") { source = "openstreetmap", url = Just "https://www.openstreetmap.org/node/1" }))) "© OpenStreetMap contributors"
       renders (Active swiper (Swiping ((bare "Pho Real") { source = "openstreetmap", url = Just "https://www.openstreetmap.org/node/1" }))) ">OpenStreetMap<"
+    it "shows the photo picked, its own credit, and a bar per photo" do
+      renders (Active swiper { photo = 1 } (Swiping (restaurant "a"))) "src=\"/api/photo?name=places/a/photos/p2\""
+      renders (Active swiper { photo = 1 } (Swiping (restaurant "a"))) "Photo: Kai"
+      renders (Active swiper { photo = 1 } (Swiping (restaurant "a"))) "aria-label=\"Photo 2 of 2\""
+    it "previews the summary and shows it in full with Google's disclosure when opened" do
+      renders (Active swiper (Swiping (restaurant "a"))) "line-clamp-2\">Bright noodle spot"
+      renders (Active swiper { summaryOpen = true } (Swiping (restaurant "a"))) "Summarized with Gemini"
     it "loads Yelp photos straight from their url" do
-      renders (Active swiper (Swiping ((restaurant "a") { source = "yelp", photo = Just { name: Nothing, url: Just "https://s3-media1.fl.yelpcdn.com/a.jpg", author: Nothing } }))) "src=\"https://s3-media1.fl.yelpcdn.com/a.jpg\""
+      renders (Active swiper (Swiping ((restaurant "a") { source = "yelp", photos = [ { name: Nothing, url: Just "https://s3-media1.fl.yelpcdn.com/a.jpg", author: Nothing } ] }))) "src=\"https://s3-media1.fl.yelpcdn.com/a.jpg\""
     it "copes with a place that has no photo, rating or link" do
       renders (Active swiper (Swiping (bare "Mystery Diner"))) "Mystery Diner"
     it "celebrates a match" do
       renders (Active swiper (Matched (restaurant "a"))) "a match!"
     it "offers to try again after an error" do
       renders (ServerError "Could not reach the server") "Try again"
+    it "offers to search further, saying how far" do
+      renders (Active swiper NoneLeft) "Search further (up to 10 km)"
+      renders (Active swiper { radius = 40000.0 } NoneLeft) "Search further (up to 50 km)"
     it "says when there is nothing left" do
       renders (Active swiper NoneLeft) "everything nearby"

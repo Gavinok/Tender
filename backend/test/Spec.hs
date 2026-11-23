@@ -1,6 +1,6 @@
 module Main (main) where
 
-import Data.Aeson (Value (Null), eitherDecode, toJSON)
+import Data.Aeson (Value (Array, Null), eitherDecode, toJSON)
 import Data.Aeson.Types (Parser)
 import qualified Data.Aeson.KeyMap as KM
 import Data.Aeson.Types (Value (Object), parseEither)
@@ -45,7 +45,9 @@ searchResponse =
         , "   \"googleMapsUri\": \"https://maps.google.com/?cid=1\","
         , "   \"primaryTypeDisplayName\": {\"text\": \"Vietnamese Restaurant\", \"languageCode\": \"en\"},"
         , "   \"photos\": [{\"name\": \"places/ChIJ1/photos/AbC-1_x\", \"widthPx\": 800, \"heightPx\": 600,"
-        , "     \"authorAttributions\": [{\"displayName\": \"Sam\", \"uri\": \"//maps.google.com/maps/contrib/1\", \"photoUri\": \"//lh3.googleusercontent.com/a\"}]}]},"
+        , "     \"authorAttributions\": [{\"displayName\": \"Sam\", \"uri\": \"//maps.google.com/maps/contrib/1\", \"photoUri\": \"//lh3.googleusercontent.com/a\"}]}],"
+        , "   \"generativeSummary\": {\"overview\": {\"text\": \"Bright noodle spot known for its broth.\", \"languageCode\": \"en\"}, \"disclosureText\": {\"text\": \"Summarized with Gemini\", \"languageCode\": \"en\"}},"
+        , "   \"editorialSummary\": {\"text\": \"Noodles.\", \"languageCode\": \"en\"}},"
         , "  {\"id\": \"ChIJ2\", \"displayName\": {\"text\": \"New Spot\"},"
         , "   \"location\": {\"latitude\": 48.44, \"longitude\": -123.36}}"
         , "]}"
@@ -59,7 +61,7 @@ parse = parseWith parsePlaces
 
 -- | A restaurant with only the given name and position
 plain :: Source -> Text -> Loc -> Restaurant
-plain src n = Restaurant src n n Nothing Nothing Nothing Nothing Nothing
+plain src n = Restaurant src n n Nothing Nothing Nothing Nothing [] Nothing
 
 provider :: Text -> Either FetchError [Restaurant] -> Provider
 provider n result = Provider n (const (pure result))
@@ -78,10 +80,18 @@ main = hspec $ do
                         (Just 4.5)
                         (Just "$$")
                         (Just "Vietnamese Restaurant")
-                        (Just (Photo (GooglePhoto "places/ChIJ1/photos/AbC-1_x") (Just (Author "Sam" (Just "https://maps.google.com/maps/contrib/1")))))
+                        [Photo (GooglePhoto "places/ChIJ1/photos/AbC-1_x") (Just (Author "Sam" (Just "https://maps.google.com/maps/contrib/1")))]
+                        (Just (Summary "Bright noodle spot known for its broth." (Just "Summarized with Gemini")))
                         (Loc 48.43 (-123.35))
-                    , Restaurant Google "ChIJ2" "New Spot" Nothing Nothing Nothing Nothing Nothing (Loc 48.44 (-123.36))
+                    , Restaurant Google "ChIJ2" "New Spot" Nothing Nothing Nothing Nothing [] Nothing (Loc 48.44 (-123.36))
                     ]
+        it "keeps at most five photos" $ do
+            let ph i = "{\"name\": \"places/P/photos/" <> L8.pack (show (i :: Int)) <> "\"}"
+                body = "{\"places\": [{\"id\": \"P\", \"displayName\": {\"text\": \"Busy\"}, \"location\": {\"latitude\": 1, \"longitude\": 2}, \"photos\": [" <> L8.intercalate "," (map ph [1 .. 10]) <> "]}]}"
+            map (length . photos) <$> parse body `shouldBe` Right [5]
+        it "uses the editorial summary when there is no AI one" $ do
+            let body = "{\"places\": [{\"id\": \"P\", \"displayName\": {\"text\": \"Cafe\"}, \"location\": {\"latitude\": 1, \"longitude\": 2}, \"editorialSummary\": {\"text\": \"Cosy cafe.\"}}]}"
+            map summary <$> parse body `shouldBe` Right [Just (Summary "Cosy cafe." Nothing)]
         it "treats a response with no places as an empty list" $
             parse "{}" `shouldBe` Right []
 
@@ -89,7 +99,7 @@ main = hspec $ do
         it "reads a business, treating an empty image as no photo" $
             parseWith parseYelp
                 "{\"businesses\": [{\"id\": \"y1\", \"name\": \"Jam Cafe\", \"url\": \"https://www.yelp.com/biz/jam\", \"image_url\": \"\", \"rating\": 4.5, \"price\": \"$$\", \"categories\": [{\"alias\": \"breakfast\", \"title\": \"Breakfast & Brunch\"}], \"coordinates\": {\"latitude\": 48.42, \"longitude\": -123.36}}]}"
-                `shouldBe` Right [Restaurant Yelp "y1" "Jam Cafe" (Just "https://www.yelp.com/biz/jam") (Just 4.5) (Just "$$") (Just "Breakfast & Brunch") Nothing (Loc 48.42 (-123.36))]
+                `shouldBe` Right [Restaurant Yelp "y1" "Jam Cafe" (Just "https://www.yelp.com/biz/jam") (Just 4.5) (Just "$$") (Just "Breakfast & Brunch") [] Nothing (Loc 48.42 (-123.36))]
 
     describe "parseOverpass" $ do
         it "reads nodes and ways, skipping places without a name" $
@@ -103,8 +113,8 @@ main = hspec $ do
                     ]
                 )
                 `shouldBe` Right
-                    [ Restaurant OpenStreetMap "osm:node/1" "Pho Real" (Just "https://www.openstreetmap.org/node/1") Nothing Nothing (Just "Vietnamese") Nothing (Loc 48.43 (-123.35))
-                    , Restaurant OpenStreetMap "osm:way/2" "Fish Store" (Just "https://www.openstreetmap.org/way/2") Nothing Nothing (Just "Fish and chips") Nothing (Loc 48.44 (-123.36))
+                    [ Restaurant OpenStreetMap "osm:node/1" "Pho Real" (Just "https://www.openstreetmap.org/node/1") Nothing Nothing (Just "Vietnamese") [] Nothing (Loc 48.43 (-123.35))
+                    , Restaurant OpenStreetMap "osm:way/2" "Fish Store" (Just "https://www.openstreetmap.org/way/2") Nothing Nothing (Just "Fish and chips") [] Nothing (Loc 48.44 (-123.36))
                     ]
         it "puts the nearest first" $
             map restaurantId (nearest (Loc 0 0) 2 [plain OpenStreetMap "far" (Loc 0.03 0), plain OpenStreetMap "near" (Loc 0.001 0), plain OpenStreetMap "mid" (Loc 0 0.01)])
@@ -113,7 +123,7 @@ main = hspec $ do
     describe "searchWithFallback" $ do
         let here = Loc 48.43 (-123.35)
             found = [plain OpenStreetMap "a" here]
-            search ps = searchWithFallback (const (pure ())) ps (Search here [])
+            search ps = searchWithFallback (const (pure ())) ps (Search here [] defaultRadius 0)
         it "uses the first source that finds something" $
             search [provider "down" (Left (ParseError "boom")), provider "empty" (Right []), provider "osm" (Right found)]
                 `shouldReturn` Just found
@@ -121,6 +131,17 @@ main = hspec $ do
             search [provider "down" (Left (ParseError "boom")), provider "empty" (Right [])] `shouldReturn` Just []
         it "fails when every source failed" $
             search [provider "down" (Left (ParseError "boom"))] `shouldReturn` Nothing
+
+    describe "searching a ring" $ do
+        let centre = Loc 48.43 (-123.35)
+        it "spreads six circles around the middle of the ring, each as wide as it" $ do
+            let circles = ringCircles centre 5000 10000
+            length circles `shouldBe` 6
+            mapM_ (\(c, r) -> (round (metres centre c) :: Int, r) `shouldBe` (7500, 2500)) circles
+        it "keeps each place between the radii once" $ do
+            let at i m = plain Google i (Loc (48.43 + m / 111320) (-123.35))
+            map restaurantId (inRing centre 5000 10000 [at "inside" 1000, at "ring" 7000, at "ring" 7000, at "beyond" 20000])
+                `shouldBe` ["ring"]
 
     describe "isPhotoName" $ do
         it "accepts a photo resource name" $
@@ -139,8 +160,8 @@ main = hspec $ do
 
     describe "Restaurant JSON" $ do
         it "sends null for missing details" $
-            case toJSON (Restaurant Google "ChIJ2" "New Spot" Nothing Nothing Nothing Nothing Nothing (Loc 1 2)) of
-                Object o -> (KM.lookup "photo" o, KM.lookup "rating" o) `shouldBe` (Just Null, Just Null)
+            case toJSON (Restaurant Google "ChIJ2" "New Spot" Nothing Nothing Nothing Nothing [] Nothing (Loc 1 2)) of
+                Object o -> (KM.lookup "photos" o, KM.lookup "rating" o) `shouldBe` (Just (Array mempty), Just Null)
                 v -> expectationFailure ("not an object: " ++ show v)
 
     describe "isMatch" $ do
@@ -234,6 +255,28 @@ main = hspec $ do
             _ <- setVibe conn s [Patio]
             _ <- sessionLocation conn s (Loc 48.43 (-123.35))
             setVibe conn s [Fancy] `shouldReturn` ([Patio], True)
+
+    describe "searching further" $ do
+        it "starts at the default radius" $ withTestDb $ \conn -> do
+            (s, _) <- sessionWith conn 0
+            _ <- sessionLocation conn s (Loc 48.43 (-123.35))
+            sessionRadius conn s `shouldReturn` defaultRadius
+        it "doubles the radius up to the maximum" $ withTestDb $ \conn -> do
+            (s, _) <- sessionWith conn 0
+            _ <- sessionLocation conn s (Loc 48.43 (-123.35))
+            widenSearch conn s 5000 `shouldReturn` 10000
+            widenSearch conn s 10000 `shouldReturn` 20000
+            widenSearch conn s 40000 `shouldReturn` maxRadius
+            widenSearch conn s maxRadius `shouldReturn` maxRadius
+        it "only widens one step when two people ask at once" $ withTestDb $ \conn -> do
+            (s, _) <- sessionWith conn 0
+            _ <- sessionLocation conn s (Loc 48.43 (-123.35))
+            _ <- widenSearch conn s 5000
+            widenSearch conn s 5000 `shouldReturn` 10000
+        it "knows what each person has already decided on" $ withTestDb $ \conn -> do
+            (_, [me, friend]) <- sessionWith conn 2
+            like conn me "a" >> dislike conn me "b" >> like conn friend "c"
+            decidedBy conn me `shouldReturn` ["a", "b"]
 
     describe "sessionLocation" $ do
         it "uses the first location sent for everyone in the session" $ withTestDb $ \conn -> do

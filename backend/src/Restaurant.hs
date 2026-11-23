@@ -6,7 +6,7 @@
 -- | Restaurants as sent to the frontend. They come fresh from a source
 -- | (Google Places, Yelp or OpenStreetMap) for each search and are not
 -- | stored, since Google's and Yelp's terms only allow keeping ids.
-module Restaurant (Restaurant (..), Source (..), Photo (..), PhotoSource (..), Author (..), Loc (..)) where
+module Restaurant (Restaurant (..), Source (..), Photo (..), PhotoSource (..), Author (..), Summary (..), Loc (..)) where
 
 import Data.Aeson (FromJSON, ToJSON (toJSON), object, (.=))
 import Data.Text (Text)
@@ -45,6 +45,14 @@ data Photo = Photo
     }
     deriving stock (Eq, Show)
 
+-- | A few sentences about the place
+data Summary = Summary
+    { summaryText :: Text
+    , -- | Google asks for this to be shown with its AI summaries, e.g. "Summarized with Gemini"
+      summaryDisclosure :: Maybe Text
+    }
+    deriving stock (Eq, Show)
+
 data Restaurant = Restaurant
     { source :: Source
     , restaurantId :: Text
@@ -55,7 +63,9 @@ data Restaurant = Restaurant
     , -- | $ to $$$$
       price :: Maybe Text
     , category :: Maybe Text
-    , photo :: Maybe Photo
+    , -- | The first is shown on the card first
+      photos :: [Photo]
+    , summary :: Maybe Summary
     , location :: Loc
     }
     deriving stock (Eq, Show)
@@ -70,7 +80,8 @@ instance ToJSON Restaurant where
             , "rating" .= rating r
             , "price" .= price r
             , "category" .= category r
-            , "photo" .= fmap photoJSON (photo r)
+            , "photos" .= map photoJSON (photos r)
+            , "summary" .= fmap (\s -> object ["text" .= summaryText s, "disclosure" .= summaryDisclosure s]) (summary r)
             ]
       where
         sourceName :: Source -> Text

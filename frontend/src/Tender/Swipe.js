@@ -35,8 +35,8 @@ export const listen = () => {
   let dx = 0;
 
   document.addEventListener("pointerdown", (e) => {
-    // Links and buttons on the card still work as normal
-    if (e.target.closest("a, button")) return;
+    // Links, buttons and the summary box on the card still work as normal
+    if (e.target.closest("a, button, [data-no-swipe]")) return;
     card = e.target.closest("[data-swipe]");
     if (!card) return;
     startX = e.clientX;
@@ -55,10 +55,19 @@ export const listen = () => {
     setStamps(card, dx);
   });
 
-  const release = () => {
+  const release = (e) => {
     if (!card) return;
     const released = card;
     card = null;
+    // Barely moved: a tap, which flips between the card's photos
+    if (Math.abs(dx) < 6 && Math.abs(e.clientY - startY) < 6) {
+      released.style.transform = "";
+      setStamps(released, 0);
+      const box = released.getBoundingClientRect();
+      const side = e.clientX < box.left + box.width / 3 ? "left" : "right";
+      document.dispatchEvent(new CustomEvent(`card-tap-${side}`));
+      return;
+    }
     if (Math.abs(dx) > released.offsetWidth * threshold) {
       document.dispatchEvent(new CustomEvent(dx > 0 ? "swipe-like" : "swipe-nope"));
     } else {

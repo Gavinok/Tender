@@ -10,7 +10,7 @@ module Tender.App
 
 import Prelude
 
-import Data.Array (cons, elem, filter, snoc, uncons)
+import Data.Array (cons, elem, filter, length, snoc, uncons)
 import Data.Either (Either(..), either)
 import Data.Generic.Rep (class Generic)
 import Data.Show.Generic (genericShow)
@@ -30,8 +30,16 @@ import Tender.Types (ErrorMessage, Loc, Restaurant, RestaurantId, SessionId, Url
 -- | What we know once the user has joined a session
 type Swiper =
   { user :: UserId
+  , loc :: Loc
+  -- | How far the session searches, in metres, and how far it can go
+  , radius :: Number
+  , maxRadius :: Number
   -- | Restaurants still to show, fetched once when swiping starts
   , upcoming :: Array Restaurant
+  -- | Which of the current card's photos is showing
+  , photo :: Int
+  -- | Whether the current card's summary is expanded
+  , summaryOpen :: Boolean
   -- | Restaurants someone else in the session liked, shown first and badged
   , othersLiked :: Array RestaurantId
   , matches :: Array Restaurant
@@ -86,7 +94,11 @@ data Message
   | KeyPressed String
   -- | Skip past the current match and keep swiping
   | Continue
-  | Loaded { restaurants :: Array Restaurant, othersLiked :: Array RestaurantId, vibe :: Array String }
+  | Loaded { restaurants :: Array Restaurant, othersLiked :: Array RestaurantId, vibe :: Array String, radius :: Number, maxRadius :: Number }
+  | SearchFurther
+  | NextPhoto
+  | PreviousPhoto
+  | ToggleSummary
   | ToggleChip String
   -- | The vibe as saved after this person changed it
   | VibeSaved Vibe
@@ -116,7 +128,7 @@ orFail = either failed
 advance :: Swiper -> Tuple Model (Array (Aff (Maybe Message)))
 advance swiper = case uncons swiper.upcoming of
   Nothing -> Active swiper NoneLeft /\ []
-  Just { head, tail } -> Active swiper { upcoming = tail } (Swiping head) /\ []
+  Just { head, tail } -> Active swiper { upcoming = tail, photo = 0, summaryOpen = false } (Swiping head) /\ []
 
 -- | Restaurants someone else liked first, otherwise keeping the order
 likedFirst :: Array RestaurantId -> Array Restaurant -> Array Restaurant
@@ -182,10 +194,18 @@ update model = case model, _ of
             Left e -> pure $ Just $ failed e
     ]
   _, Started user loc ->
-    Active { user, upcoming: [], othersLiked: [], matches: [], showMatches: false, vibe: [] } Fetching
-      /\ [ Just <<< orFail Loaded <$> getRestaurants user loc ]
+    Active { user, loc, radius: 0.0, maxRadius: 0.0, upcoming: [], photo: 0, summaryOpen: false, othersLiked: [], matches: [], showMatches: false, vibe: [] } Fetching
+      /\ [ Just <<< orFail Loaded <$> getRestaurants user loc Nothing ]
   Active swiper Fetching, Loaded found ->
-    advance swiper { upcoming = likedFirst found.othersLiked found.restaurants, othersLiked = found.othersLiked, vibe = found.vibe }
+    advance swiper
+      { upcoming = likedFirst found.othersLiked found.restaurants
+      , othersLiked = found.othersLiked
+      , vibe = found.vibe
+      , radius = found.radius
+      , maxRadius = found.maxRadius
+      }
+  Active swiper NoneLeft, SearchFurther | swiper.radius < swiper.maxRadius ->
+    Active swiper Fetching /\ [ Just <<< orFail Loaded <$> getRestaurants swiper.user swiper.loc (Just swiper.radius) ]
 
   Active swiper (Swiping r), Like -> model /\
     [ do
@@ -205,6 +225,12 @@ update model = case model, _ of
       if d.match && not (elem r.id (_.id <$> swiper.matches)) then
         Active next { matches = cons r next.matches } (Matched r) /\ [ liftEffect vibrate $> Nothing ]
       else advance next
+  Active swiper (Swiping r), NextPhoto ->
+    Active swiper { photo = min (swiper.photo + 1) (max 0 (length r.photos - 1)) } (Swiping r) /\ []
+  Active swiper (Swiping r), ToggleSummary ->
+    Active swiper { summaryOpen = not swiper.summaryOpen } (Swiping r) /\ []
+  Active swiper (Swiping r), PreviousPhoto ->
+    Active swiper { photo = max 0 (swiper.photo - 1) } (Swiping r) /\ []
   Active _ (Swiping _), KeyPressed "ArrowRight" -> update model Like
   Active _ (Swiping _), KeyPressed "ArrowLeft" -> update model Dislike
 

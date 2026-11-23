@@ -63,12 +63,16 @@ Only devices on your tailnet can reach it. =SHARE_PORT= changes the port.
 * Example UI
 
 ** How it works
-1. Display a QR code for adding friends to a session
-2. Click "Start Swiping" to view close buy restaurants
-3. Prompt the user with a series of restaurants near them to Like and Dislike
-4. When two users in the same session like the same restaurant the
-   match displayed so both users know where to grab a bite.
+1. Open the app to start a session, and get everyone to scan the QR
+   code or tap "Share invite".
+2. Pick the vibe together (patio, cheap eats, drinks, ...).
+3. Swipe right on restaurants you'd go to and left on the rest. Tap a
+   card to flip through its photos, or its summary to read more.
+4. Anything two people like is a match. Restaurants others liked come
+   up first, and "Search further" looks wider when you run out.
+
 ** How it looks
-[[https://www.engr.uvic.ca/~gavinfre/tender_demo.png]]
+[[./docs/screenshots.jpg]]
 
-
+The restaurants in the screenshots are made up; the food illustrations
+are [[https://github.com/jdecked/twemoji][Twemoji]] (CC-BY 4.0).

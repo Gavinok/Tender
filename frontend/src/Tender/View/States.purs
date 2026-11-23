@@ -4,7 +4,7 @@ module Tender.View.States (cardSkeleton, setting, outOfRestaurants, problem, mat
 import Prelude
 
 import Data.Array (null)
-import Data.Maybe (Maybe(..), fromMaybe)
+import Data.Maybe (Maybe(..), fromMaybe, maybe)
 import Flame (Html)
 import Flame.Html.Attribute as HA
 import Flame.Html.Element as HE
@@ -58,14 +58,14 @@ matchList rs =
           , HA.rel "noopener"
           , HA.class' "flex items-center gap-3 rounded-xl border-2 border-ink bg-white p-2 pr-4 text-left shadow-pop transition active:translate-y-0.5 active:shadow-none"
           ]
-          [ restaurantPhoto r "h-14 w-14 rounded-lg"
+          [ restaurantPhoto r 0 "h-14 w-14 rounded-lg"
           , HE.span [ HA.class' "flex-1 font-bold" ] [ HE.text r.name ]
           , icon ExternalLink "h-5 w-5 text-brand-500"
           ]
       ]
 
-outOfRestaurants :: forall a. Array Restaurant -> a -> Html a
-outOfRestaurants matches startOver =
+outOfRestaurants :: forall a. Array Restaurant -> { startOver :: a, further :: Maybe { label :: String, search :: a } } -> Html a
+outOfRestaurants matches { startOver, further } =
   HE.div [ HA.class' "flex flex-1 flex-col items-center justify-center gap-5 text-center" ]
     [ badge Utensils "bg-brand-100 text-brand-500"
     , HE.h1 [ HA.class' "text-3xl font-display" ] [ HE.text "That's everything nearby" ]
@@ -76,7 +76,10 @@ outOfRestaurants matches startOver =
           [ HE.p [ HA.class' "text-lg text-ink/70" ] [ HE.text "Here's where you all agreed:" ]
           , matchList matches
           ]
-    , button Secondary (Just Refresh) "Start over" startOver
+    , HE.div [ HA.class' "flex flex-col items-center gap-3" ]
+        ( maybe [] (\f -> [ button Primary (Just MapPin) f.label f.search ]) further
+            <> [ button Secondary (Just Refresh) "Start over" startOver ]
+        )
     ]
 
 -- | Something went wrong, with the message and a way to try again
