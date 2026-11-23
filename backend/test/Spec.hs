@@ -22,6 +22,7 @@ import Restaurant
 import User
 import Vibe
 import Yelp (parseYelp)
+import qualified Endpoints
 
 withTestDb :: (Connection -> IO a) -> IO a
 withTestDb act = withConnection ":memory:" $ \conn -> initSchema conn >> act conn
@@ -76,6 +77,7 @@ provider n result = Provider n (const (pure result))
 
 main :: IO ()
 main = hspec $ do
+    describe "endpoints" Endpoints.spec
     describe "parsePlaces" $ do
         it "reads the fields shown on the card" $
             parse searchResponse

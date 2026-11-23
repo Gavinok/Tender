@@ -43,7 +43,14 @@ test-suite spec
     type:             exitcode-stdio-1.0
     hs-source-dirs:   test
     main-is:          Spec.hs
+    other-modules:    Endpoints
     build-depends:    tender
+                    , hspec-wai
+                    , wai
+                    , wai-extra
+                    , http-types
+                    , directory
+                    , filepath
                     , aeson
                     , hspec         >=2.10  && <2.12
                     , http-conduit

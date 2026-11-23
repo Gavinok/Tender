@@ -2,7 +2,7 @@
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE DeriveGeneric #-}
 
-module App (server) where
+module App (server, application, Env (..), Limits, newLimitsWith) where
 
 import Control.Concurrent (forkIO, threadDelay)
 import Control.Exception (SomeException, try)
@@ -33,6 +33,8 @@ import Web.Scotty (
     queryParamMaybe,
     redirect,
     scotty,
+    scottyApp,
+    ScottyM,
     setHeader,
     status,
  )
@@ -41,13 +43,13 @@ import Data.Aeson (FromJSON (parseJSON), Value, object, withObject, (.:), (.:?),
 import Data.Text (Text)
 import qualified Data.Text.Encoding as TE
 import qualified Data.Text.Lazy as TL
-import Network.HTTP.Types (Status, status400, status404, status409, status413, status429, status502)
+import Network.HTTP.Types (Status, status200, status400, status404, status409, status413, status429, status502)
 import qualified Data.ByteString as BS
 import Network.Wai.Middleware.AddHeaders (addHeaders)
 import Network.Wai.Middleware.RequestLogger (logStdout)
 import Network.Wai.Request (RequestSizeException)
 import Network.Wai.Middleware.RequestSizeLimit (defaultRequestSizeLimitSettings, requestSizeLimitMiddleware, setMaxLengthForRequest)
-import Network.Wai (rawPathInfo, remoteHost)
+import Network.Wai (Application, rawPathInfo, remoteHost)
 import System.Directory (doesFileExist)
 import System.FilePath (takeExtension, (</>))
 import System.Exit (die)
@@ -98,6 +100,11 @@ newLimits :: IO Limits
 newLimits = do
     searches <- numberSetting "TENDER_MAX_SEARCHES_PER_DAY" 300
     photos <- numberSetting "TENDER_MAX_PHOTOS_PER_DAY" 3000
+    newLimitsWith searches photos
+
+-- | Limits with the given site-wide daily caps on searches and photos
+newLimitsWith :: Int -> Int -> IO Limits
+newLimitsWith searches photos = do
     let day = 24 * 60 * 60
         hour = 60 * 60
     Limits
@@ -210,7 +217,9 @@ server = do
     initDb dbPath
     pruneHourly dbPath
     limits <- newLimits
-    app port (Env dbPath providers placesKey static limits)
+    scotty port $ do
+        middleware logStdout
+        app (Env dbPath providers placesKey static limits)
 
 {- | Delete sessions older than a day, every hour, so the database (in
 memory on Cloud Run) doesn't grow for as long as the server runs
@@ -286,11 +295,14 @@ maxIdLength = 200
 photoWidth :: Int
 photoWidth = 1200
 
-app :: Int -> Env -> IO ()
-app port env = scotty port $ do
+-- | The app as a WAI application, for testing without a server
+application :: Env -> IO Application
+application = scottyApp . app
+
+app :: Env -> ScottyM ()
+app env = do
     let withConn :: (Connection -> IO a) -> IO a
         withConn = withDb (envDbPath env)
-    middleware logStdout
     middleware (addHeaders securityHeaders)
     -- Every request body is a few ids at most
     middleware (requestSizeLimitMiddleware (setMaxLengthForRequest (\_ -> pure (Just maxBody)) defaultRequestSizeLimitSettings))
@@ -424,6 +436,9 @@ serveFrontend dir path = do
         safe = all (`notElem` [".", ".."]) segments
         candidate = dir </> T.unpack (T.intercalate "/" segments)
     isFile <- liftIO $ if safe && not (null segments) then doesFileExist candidate else pure False
+    -- notFound starts out as 404. Warp happens to send files as 200 anyway,
+    -- but nothing else does.
+    status status200
     if isFile
         then do
             setHeader "Content-Type" (contentType candidate)
