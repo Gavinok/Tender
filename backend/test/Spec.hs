@@ -203,6 +203,17 @@ main = hspec $ do
                 , "v1/places:searchNearby"
                 ]
 
+    describe "Loc JSON" $ do
+        it "reads a real place" $
+            eitherDecode "{\"latitude\":48.43,\"longitude\":-123.35}" `shouldBe` Right (Loc 48.43 (-123.35))
+        it "rejects coordinates off the globe, and null" $
+            mapM_
+                (\body -> (eitherDecode body :: Either String Loc) `shouldSatisfy` either (const True) (const False))
+                [ "{\"latitude\":500,\"longitude\":0}"
+                , "{\"latitude\":0,\"longitude\":-180.5}"
+                , "{\"latitude\":null,\"longitude\":0}"
+                ]
+
     describe "Restaurant JSON" $ do
         it "sends null for missing details" $
             case toJSON (Restaurant Google "ChIJ2" "New Spot" Nothing Nothing Nothing Nothing [] Nothing (Loc 1 2)) of

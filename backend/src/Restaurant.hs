@@ -8,7 +8,7 @@
 -- | stored, since Google's and Yelp's terms only allow keeping ids.
 module Restaurant (Restaurant (..), Source (..), Photo (..), PhotoSource (..), Author (..), Summary (..), Loc (..)) where
 
-import Data.Aeson (FromJSON, ToJSON (toJSON), object, (.=))
+import Data.Aeson (FromJSON (parseJSON), ToJSON (toJSON), object, withObject, (.:), (.=))
 import Data.Text (Text)
 import GHC.Generics (Generic)
 
@@ -17,7 +17,20 @@ data Loc = Loc
     , longitude :: Double
     }
     deriving stock (Eq, Generic, Show)
-    deriving anyclass (FromJSON, ToJSON)
+    deriving anyclass (ToJSON)
+
+{- | Only real places: anything else would become the session's location and
+fail at every source, after counting against the search limits. aeson
+reads null as NaN, so finite is checked too.
+-}
+instance FromJSON Loc where
+    parseJSON = withObject "Loc" $ \o -> do
+        lat <- o .: "latitude"
+        lon <- o .: "longitude"
+        let within limit x = not (isNaN x || isInfinite x) && abs x <= limit
+        if within 90 lat && within 180 lon
+            then pure (Loc lat lon)
+            else fail "latitude must be within ±90 and longitude within ±180"
 
 -- | Who took a photo, which has to be shown with it
 data Author = Author
