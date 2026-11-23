@@ -37,7 +37,7 @@ import Network.HTTP.Client (redactHeaders)
 import qualified Data.Set as Set
 import Provider (Provider (..))
 import Vibe (Chip, Search (..), priceLevels, queryTerms, wantsOpenNow)
-import Restaurant (Author (..), Loc (..), Photo (..), PhotoSource (..), Restaurant (..), Source (..), Summary (..), metres)
+import Restaurant (Author (..), Loc (..), Photo (..), PhotoSource (..), Price (..), Restaurant (..), Source (..), Summary (..), metres)
 
 newtype PlacesKey = PlacesKey BS.ByteString
 
@@ -184,7 +184,7 @@ parsePlaces = withObject "SearchNearbyResponse" $ \o ->
             <*> (p .: "displayName" >>= (.: "text"))
             <*> p .:? "googleMapsUri"
             <*> p .:? "rating"
-            <*> (maybe Nothing priceSymbol <$> p .:? "priceLevel")
+            <*> ((>>= priceFromLevel) <$> p .:? "priceLevel")
             <*> (p .:? "primaryTypeDisplayName" >>= traverse (.: "text"))
             -- Each photo shown is a billed request, so only the first few
             <*> traverse parsePhoto (take maxPhotos found)
@@ -209,11 +209,11 @@ parsePlaces = withObject "SearchNearbyResponse" $ \o ->
     -- Author links come back without a scheme, e.g. //maps.google.com/...
     absolute u = if "//" `T.isPrefixOf` u then "https:" <> u else u
 
-priceSymbol :: Text -> Maybe Text
-priceSymbol = \case
-    "PRICE_LEVEL_FREE" -> Just "Free"
-    "PRICE_LEVEL_INEXPENSIVE" -> Just "$"
-    "PRICE_LEVEL_MODERATE" -> Just "$$"
-    "PRICE_LEVEL_EXPENSIVE" -> Just "$$$"
-    "PRICE_LEVEL_VERY_EXPENSIVE" -> Just "$$$$"
+priceFromLevel :: Text -> Maybe Price
+priceFromLevel = \case
+    "PRICE_LEVEL_FREE" -> Just Free
+    "PRICE_LEVEL_INEXPENSIVE" -> Just Inexpensive
+    "PRICE_LEVEL_MODERATE" -> Just Moderate
+    "PRICE_LEVEL_EXPENSIVE" -> Just Expensive
+    "PRICE_LEVEL_VERY_EXPENSIVE" -> Just VeryExpensive
     _ -> Nothing

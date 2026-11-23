@@ -3,10 +3,12 @@
 -- | Restaurants as sent to the frontend. They come fresh from a source
 -- | (Google Places, Yelp or OpenStreetMap) for each search and are not
 -- | stored, since Google's and Yelp's terms only allow keeping ids.
-module Restaurant (Restaurant (..), Source (..), Photo (..), PhotoSource (..), Author (..), Summary (..), Loc (..), metres) where
+module Restaurant (Restaurant (..), Source (..), Photo (..), PhotoSource (..), Author (..), Summary (..), Loc (..), metres, RestaurantId (..), Price (..), priceFromSymbol) where
 
 import Data.Aeson (FromJSON (parseJSON), ToJSON (toJSON), object, withObject, (.:), (.=))
 import Data.Text (Text)
+import Database.SQLite.Simple.FromField (FromField)
+import Database.SQLite.Simple.ToField (ToField)
 import GHC.Generics (Generic)
 
 data Loc = Loc
@@ -28,6 +30,32 @@ instance FromJSON Loc where
         if within 90 lat && within 180 lon
             then pure (Loc lat lon)
             else fail "latitude must be within ±90 and longitude within ±180"
+
+{- | A place's id at its source: Google's place id, Yelp's business id or
+osm:<type>/<id>. Decisions are stored by it.
+-}
+newtype RestaurantId = RestaurantId Text
+    deriving stock (Eq, Ord, Show)
+    deriving newtype (FromJSON, ToJSON, FromField, ToField)
+
+-- | How expensive a place is, shown as Free or $ to $$$$
+data Price = Free | Inexpensive | Moderate | Expensive | VeryExpensive
+    deriving stock (Bounded, Enum, Eq, Ord, Show)
+
+instance ToJSON Price where
+    toJSON = toJSON . priceSymbol
+
+priceSymbol :: Price -> Text
+priceSymbol = \case
+    Free -> "Free"
+    Inexpensive -> "$"
+    Moderate -> "$$"
+    Expensive -> "$$$"
+    VeryExpensive -> "$$$$"
+
+-- | From the symbols Yelp uses, "$" to "$$$$"
+priceFromSymbol :: Text -> Maybe Price
+priceFromSymbol t = lookup t [(priceSymbol p, p) | p <- [minBound .. maxBound]]
 
 -- | Distance in metres, flat approximation that is fine within 50km
 metres :: Loc -> Loc -> Double
@@ -72,13 +100,13 @@ data Summary = Summary
 
 data Restaurant = Restaurant
     { source :: Source
-    , restaurantId :: Text
+    , restaurantId :: RestaurantId
     , name :: Text
     , -- | The place's page on the source, e.g. Google Maps
       url :: Maybe Text
     , rating :: Maybe Double
     , -- | $ to $$$$
-      price :: Maybe Text
+      price :: Maybe Price
     , category :: Maybe Text
     , -- | The first is shown on the card first
       photos :: [Photo]

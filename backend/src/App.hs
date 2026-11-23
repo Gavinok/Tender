@@ -60,7 +60,7 @@ import Limits (Counter, Limit (..), Recent, newCounter, newRecent, remember, see
 import Provider (Provider (..), searchWithFallback)
 import Data.List (partition)
 import qualified Data.Set as Set
-import Restaurant (Loc, Restaurant)
+import Restaurant (Loc, Restaurant, RestaurantId (..))
 import qualified Restaurant as R
 import qualified User as U
 import Vibe (Chip, Search (..), chipFromId, chipId, maxRadius)
@@ -174,7 +174,7 @@ vibeJSON (chips, locked) = object ["chips" .= map chipId chips, "locked" .= lock
 -- | Body of a /decision request
 data DecisionRequest = DecisionRequest
     { user :: !U.UserId
-    , restaurant :: !Text
+    , restaurant :: !RestaurantId
     , liked :: !Bool
     }
     deriving stock (Generic, Show)
@@ -253,7 +253,7 @@ errorResponse s msg = status s >> json (object ["error" .= msg])
 
 
 -- | Restaurants someone else in the session liked first, otherwise in the source's order
-likedFirst :: Set.Set Text -> [Restaurant] -> [Restaurant]
+likedFirst :: Set.Set RestaurantId -> [Restaurant] -> [Restaurant]
 likedFirst ids = uncurry (<>) . partition ((`Set.member` ids) . R.restaurantId)
 
 {- | Sent with every response. Scripts, fonts and requests only come from
@@ -391,7 +391,7 @@ app env = do
             | not (isPhotoName photo) -> errorResponse status400 "Not a photo name"
             | otherwise -> do
                 -- Names look like places/<place>/photos/<photo>
-                let place = T.takeWhile (/= '/') (T.drop (T.length "places/") photo)
+                let place = RestaurantId $ T.takeWhile (/= '/') (T.drop (T.length "places/") photo)
                 known <- liftIO $ seenRecently (recentPlaces (envLimits env)) place
                 unless known $ errorResponse status404 "Not a place we showed" >> finish
                 visitor <- visitorOf
@@ -413,7 +413,7 @@ app env = do
         found <- liftIO $ db $ \c -> getUser c uid
         case found of
             Nothing -> errorResponse status404 "Unknown user"
-            Just _ | T.length r > maxIdLength -> errorResponse status400 "Invalid restaurant"
+            Just _ | let RestaurantId t = r in T.length t > maxIdLength -> errorResponse status400 "Invalid restaurant"
             Just u -> do
                 spendWrite env
                 (matches, others) <- liftIO $ db $ \c -> do

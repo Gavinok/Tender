@@ -14,7 +14,7 @@ import qualified Data.Text.Encoding as TE
 import Fetch (FetchError, fetchJSON)
 import Network.HTTP.Simple (parseRequest_, setRequestBodyURLEncoded, setRequestHeaders)
 import Provider (Provider (..))
-import Restaurant (Loc (..), Restaurant (..), Source (..), metres)
+import Restaurant (Loc (..), Restaurant (..), RestaurantId (..), Source (..), metres)
 import Vibe (Search (..))
 
 openStreetMap :: Provider
@@ -69,7 +69,7 @@ parseOverpass = withObject "OverpassResponse" $ \o ->
             pure $
                 Restaurant
                     { source = OpenStreetMap
-                    , restaurantId = "osm:" <> path
+                    , restaurantId = RestaurantId ("osm:" <> path)
                     , name = n
                     , url = Just ("https://www.openstreetmap.org/" <> path)
                     , rating = Nothing

@@ -26,7 +26,7 @@ import Restaurant
 fake :: Provider
 fake = Provider "Fake" (const (pure (Right [place "p1", place "p2"])))
   where
-    place i = Restaurant Google i i Nothing Nothing Nothing Nothing [] Nothing (Loc 48.43 (-123.35))
+    place i = Restaurant Google (RestaurantId i) i Nothing Nothing Nothing Nothing [] Nothing (Loc 48.43 (-123.35))
 
 -- | A fresh database file, so each test starts empty
 freshDb :: IO FilePath

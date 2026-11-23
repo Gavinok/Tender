@@ -24,8 +24,7 @@ import qualified Data.Text as T
 import Vibe (Chip, chipFromId, chipId, defaultRadius, maxRadius)
 import Data.String (fromString)
 import GHC.Generics (Generic)
-import Data.Text (Text)
-import Restaurant (Loc (..))
+import Restaurant (Loc (..), RestaurantId)
 import qualified User as U
 
 openDb :: FilePath -> IO Connection
@@ -173,7 +172,7 @@ widenSearch conn s from = do
     sessionRadius conn s
 
 -- | Restaurants the user has already liked or not, to leave out of new searches
-decidedBy :: Connection -> U.UserId -> IO [Text]
+decidedBy :: Connection -> U.UserId -> IO [RestaurantId]
 decidedBy conn u = map fromOnly <$> query conn "SELECT restaurantId FROM decisions WHERE userId = ? ORDER BY restaurantId" (Only u)
 
 {- | The session's vibe chips, and whether they are locked. They lock once
@@ -204,7 +203,7 @@ setVibe conn s chips = withTransaction conn $ do
 -- | Whether a user liked a restaurant
 data Decision = Decision
     { userId :: !U.UserId
-    , restaurantId :: !Text
+    , restaurantId :: !RestaurantId
     , liked :: !Bool
     }
     deriving stock (Show, Generic)
@@ -228,7 +227,7 @@ getUser conn u =
 {- | Restaurants someone else in the session has liked that this user hasn't
 decided on yet, so they can be shown first
 -}
-othersLiked :: Connection -> U.User -> IO [Text]
+othersLiked :: Connection -> U.User -> IO [RestaurantId]
 othersLiked conn u =
     map fromOnly
         <$> query
@@ -246,7 +245,7 @@ othersLiked conn u =
 too. Sent with every decision, so people hear about matches others made
 on their next swipe.
 -}
-matchesFor :: Connection -> U.User -> IO [Text]
+matchesFor :: Connection -> U.User -> IO [RestaurantId]
 matchesFor conn u =
     map fromOnly
         <$> query
@@ -262,7 +261,7 @@ matchesFor conn u =
             (U.session u, U.userId u, U.userId u)
 
 -- | Whether more than one person in the session has liked the restaurant
-isMatch :: Connection -> U.SessionId -> Text -> IO Bool
+isMatch :: Connection -> U.SessionId -> RestaurantId -> IO Bool
 isMatch conn s restaurant = do
     likes <-
         query

@@ -1,10 +1,14 @@
+{-# OPTIONS_GHC -Wno-orphans #-}
+
 module Main (main) where
 
 import Data.Aeson (Value (Array, Null), eitherDecode, toJSON)
 import qualified Data.Aeson.KeyMap as KM
 import Data.Aeson.Types (Parser, Value (Object), parseEither)
 import qualified Data.ByteString.Lazy.Char8 as L8
+import Data.String (IsString (..))
 import Data.Text (Text)
+import qualified Data.Text as T
 import Database.SQLite.Simple (Connection, Only (..), execute_, query_, withConnection)
 import Network.HTTP.Simple (parseRequest_, setRequestHeaders)
 import qualified Data.Map.Strict as Map
@@ -38,7 +42,11 @@ sessionWith conn n = do
 joinOk :: Connection -> SessionId -> Maybe UserId -> IO UserId
 joinOk conn s returning = maybe (fail "session full") pure =<< joinSession conn s returning
 
-like, dislike :: Connection -> UserId -> Text -> IO ()
+-- | Ids written as string literals, in the tests only
+instance IsString RestaurantId where
+    fromString = RestaurantId . T.pack
+
+like, dislike :: Connection -> UserId -> RestaurantId -> IO ()
 like conn u r = recordDecision conn (Decision u r True)
 dislike conn u r = recordDecision conn (Decision u r False)
 
@@ -69,7 +77,7 @@ parse = parseWith parsePlaces
 
 -- | A restaurant with only the given name and position
 plain :: Source -> Text -> Loc -> Restaurant
-plain src n = Restaurant src n n Nothing Nothing Nothing Nothing [] Nothing
+plain src n = Restaurant src (RestaurantId n) n Nothing Nothing Nothing Nothing [] Nothing
 
 provider :: Text -> Either FetchError [Restaurant] -> Provider
 provider n result = Provider n (const (pure result))
@@ -87,7 +95,7 @@ main = hspec $ do
                         "Pho Real"
                         (Just "https://maps.google.com/?cid=1")
                         (Just 4.5)
-                        (Just "$$")
+                        (Just Moderate)
                         (Just "Vietnamese Restaurant")
                         [Photo (GooglePhoto "places/ChIJ1/photos/AbC-1_x") (Just (Author "Sam" (Just "https://maps.google.com/maps/contrib/1")))]
                         (Just (Summary "Bright noodle spot known for its broth." (Just "Summarized with Gemini")))
@@ -108,7 +116,7 @@ main = hspec $ do
         it "reads a business, treating an empty image as no photo" $
             parseWith parseYelp
                 "{\"businesses\": [{\"id\": \"y1\", \"name\": \"Jam Cafe\", \"url\": \"https://www.yelp.com/biz/jam\", \"image_url\": \"\", \"rating\": 4.5, \"price\": \"$$\", \"categories\": [{\"alias\": \"breakfast\", \"title\": \"Breakfast & Brunch\"}], \"coordinates\": {\"latitude\": 48.42, \"longitude\": -123.36}}]}"
-                `shouldBe` Right [Restaurant Yelp "y1" "Jam Cafe" (Just "https://www.yelp.com/biz/jam") (Just 4.5) (Just "$$") (Just "Breakfast & Brunch") [] Nothing (Loc 48.42 (-123.36))]
+                `shouldBe` Right [Restaurant Yelp "y1" "Jam Cafe" (Just "https://www.yelp.com/biz/jam") (Just 4.5) (Just Moderate) (Just "Breakfast & Brunch") [] Nothing (Loc 48.42 (-123.36))]
 
     describe "parseOverpass" $ do
         it "reads nodes and ways, skipping places without a name" $
@@ -214,6 +222,12 @@ main = hspec $ do
                 , "{\"latitude\":0,\"longitude\":-180.5}"
                 , "{\"latitude\":null,\"longitude\":0}"
                 ]
+
+    describe "Price" $ do
+        it "is sent as the symbols the frontend shows" $
+            map toJSON [minBound .. maxBound :: Price] `shouldBe` ["Free", "$", "$$", "$$$", "$$$$"]
+        it "reads Yelp's symbols" $
+            map priceFromSymbol ["$", "$$$$", "cheap"] `shouldBe` [Just Inexpensive, Just VeryExpensive, Nothing]
 
     describe "Restaurant JSON" $ do
         it "sends null for missing details" $
