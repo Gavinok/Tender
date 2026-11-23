@@ -225,11 +225,6 @@ logMsg = liftIO . hPutStrLn stderr
 errorResponse :: Status -> Text -> ActionM ()
 errorResponse s msg = status s >> json (object ["error" .= msg])
 
--- | Record the decision and whether it made the restaurant a match
-decide :: Connection -> U.User -> Text -> Bool -> IO Bool
-decide conn u r l = do
-    recordDecision conn $ Decision (U.userId u) r l
-    if l then isMatch conn (U.session u) r else pure False
 
 -- | Restaurants someone else in the session liked first, otherwise in the source's order
 likedFirst :: [Text] -> [Restaurant] -> [Restaurant]
@@ -390,8 +385,10 @@ app port env = scotty port $ do
             Just _ | T.length r > maxIdLength -> errorResponse status400 "Invalid restaurant"
             Just u -> do
                 spendWrite env
-                (match, others) <- liftIO $ withConn $ \c -> (,) <$> decide c u r l <*> othersLiked c u
-                json (object ["match" .= match, "othersLiked" .= others])
+                (matches, others) <- liftIO $ withConn $ \c -> do
+                    recordDecision c (Decision (U.userId u) r l)
+                    (,) <$> matchesFor c u <*> othersLiked c u
+                json (object ["matches" .= matches, "othersLiked" .= others])
 
     -- Anything else: the frontend's files, and its page for every other path
     -- (such as /<session>) so links work. Only when a frontend is configured.

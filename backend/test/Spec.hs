@@ -290,6 +290,23 @@ main = hspec $ do
             query_ conn "SELECT count(*) FROM sessions" `shouldReturn` [Only (1 :: Int)]
             query_ conn "SELECT count(*) FROM session_vibes" `shouldReturn` [Only (0 :: Int)]
 
+    describe "matchesFor" $ do
+        it "lists what this user and someone else in the session both liked" $ withTestDb $ \conn -> do
+            (s, [me, friend, other]) <- sessionWith conn 3
+            (_, [stranger]) <- sessionWith conn 1
+            mapM_ (like conn me) ["a", "b", "c", "d"]
+            like conn friend "a" >> like conn other "a" >> like conn other "b"
+            dislike conn friend "c"
+            like conn stranger "d"
+            like conn friend "e" >> like conn other "e"
+            matchesFor conn (User me s) `shouldReturn` ["a", "b"]
+        it "includes a match someone else completed" $ withTestDb $ \conn -> do
+            (s, [first, second]) <- sessionWith conn 2
+            like conn first "a"
+            matchesFor conn (User first s) `shouldReturn` []
+            like conn second "a"
+            matchesFor conn (User first s) `shouldReturn` ["a"]
+
     describe "othersLiked" $ do
         it "lists what others in the session liked that this user hasn't decided on" $ withTestDb $ \conn -> do
             (s, [me, friend, other]) <- sessionWith conn 3

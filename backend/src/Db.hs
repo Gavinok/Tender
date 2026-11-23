@@ -2,7 +2,7 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DerivingStrategies #-}
 
-module Db (initDb, initSchema, withDb, addUserToDb, joinSession, maxPerSession, pruneOlderThan, sessionLocation, sessionRadius, widenSearch, decidedBy, getVibe, setVibe, recordDecision, isMatch, othersLiked, Decision (..), getUser) where
+module Db (initDb, initSchema, withDb, addUserToDb, joinSession, maxPerSession, pruneOlderThan, sessionLocation, sessionRadius, widenSearch, decidedBy, getVibe, setVibe, recordDecision, isMatch, matchesFor, othersLiked, Decision (..), getUser) where
 
 import Control.Monad (forM_)
 import Database.SQLite.Simple (
@@ -226,6 +226,25 @@ othersLiked conn u =
                 , "JOIN users ON users.userId = decisions.userId "
                 , "WHERE users.session = ? AND decisions.userId != ? AND decisions.liked "
                 , "AND decisions.restaurantId NOT IN (SELECT restaurantId FROM decisions WHERE userId = ?)"
+                ]
+            )
+            (U.session u, U.userId u, U.userId u)
+
+{- | Restaurants the user liked that someone else in their session liked
+too. Sent with every decision, so people hear about matches others made
+on their next swipe.
+-}
+matchesFor :: Connection -> U.User -> IO [Text]
+matchesFor conn u =
+    map fromOnly
+        <$> query
+            conn
+            ( mconcat
+                [ "SELECT decisions.restaurantId FROM decisions "
+                , "JOIN users ON users.userId = decisions.userId "
+                , "WHERE users.session = ? AND decisions.liked AND decisions.userId != ? "
+                , "AND decisions.restaurantId IN (SELECT restaurantId FROM decisions WHERE userId = ? AND liked) "
+                , "GROUP BY decisions.restaurantId ORDER BY decisions.restaurantId"
                 ]
             )
             (U.session u, U.userId u, U.userId u)

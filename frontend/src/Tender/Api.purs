@@ -75,10 +75,10 @@ joinSession :: SessionId -> Maybe UserId -> Aff (Either ApiError UserId)
 joinSession (SessionId s) returning =
   get ("addtosession/" <> s <> maybe "" (\(UserId u) -> "?user=" <> u) returning)
 
--- | Record whether the user liked the restaurant. Says whether that made it a
--- | match, and what others in the session have liked that this user hasn't
--- | decided on yet.
-decide :: UserId -> RestaurantId -> Boolean -> Aff (Either ApiError { match :: Boolean, othersLiked :: Array RestaurantId })
+-- | Record whether the user liked the restaurant. Says which restaurants the
+-- | user has matched on so far, and what others in the session have liked
+-- | that this user hasn't decided on yet.
+decide :: UserId -> RestaurantId -> Boolean -> Aff (Either ApiError { matches :: Array RestaurantId, othersLiked :: Array RestaurantId })
 decide user restaurant liked = post "decision" { user, restaurant, liked }
 
 -- | Restaurants for the user's session. The session searches from the first
