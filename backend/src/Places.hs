@@ -7,7 +7,6 @@ module Places (
     searchText,
     ringCircles,
     inRing,
-    metres,
     photoUri,
     parsePlaces,
     isPhotoName,
@@ -38,7 +37,7 @@ import Network.HTTP.Client (redactHeaders)
 import qualified Data.Set as Set
 import Provider (Provider (..))
 import Vibe (Chip, Search (..), priceLevels, queryTerms, wantsOpenNow)
-import Restaurant (Author (..), Loc (..), Photo (..), PhotoSource (..), Restaurant (..), Source (..), Summary (..))
+import Restaurant (Author (..), Loc (..), Photo (..), PhotoSource (..), Restaurant (..), Source (..), Summary (..), metres)
 
 newtype PlacesKey = PlacesKey BS.ByteString
 
@@ -82,13 +81,6 @@ inRing centre inner outer = nubBy (\a b -> restaurantId a == restaurantId b) . f
 -- | First of each list, then second of each, and so on
 interleave :: [[a]] -> [a]
 interleave = concat . transpose
-
--- | Distance in metres, flat approximation that is fine within 50km
-metres :: Loc -> Loc -> Double
-metres (Loc lat lon) (Loc lat' lon') =
-    let dy = (lat' - lat) * 111320
-        dx = (lon' - lon) * 111320 * cos (lat * pi / 180)
-     in sqrt (dx * dx + dy * dy)
 
 -- | Photos kept per place, of the up to 10 Google returns
 maxPhotos :: Int

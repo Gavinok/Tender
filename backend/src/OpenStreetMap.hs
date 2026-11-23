@@ -14,7 +14,7 @@ import qualified Data.Text.Encoding as TE
 import Fetch (FetchError, fetchJSON)
 import Network.HTTP.Simple (parseRequest_, setRequestBodyURLEncoded, setRequestHeaders)
 import Provider (Provider (..))
-import Restaurant (Loc (..), Restaurant (..), Source (..))
+import Restaurant (Loc (..), Restaurant (..), Source (..), metres)
 import Vibe (Search (..))
 
 openStreetMap :: Provider
@@ -23,7 +23,8 @@ openStreetMap = Provider "OpenStreetMap" $ \s -> searchOverpass (searchLoc s) (s
 -- | The 20 nearest named restaurants between the inner radius (0 for none) and the radius, in metres
 searchOverpass :: Loc -> Double -> Double -> IO (Either FetchError [Restaurant])
 searchOverpass l@(Loc lat lon) inner radius =
-    fmap (nearest l 20 . filter beyondInner) <$> fetchJSON 25 parseOverpass request
+    -- Places within the inner radius were already shown when searching further
+    fmap (nearest l 20 . filter ((>= inner) . metres l . location)) <$> fetchJSON 25 parseOverpass request
   where
     -- The query tells Overpass to give up after 20 seconds; this allows a bit more
     request =
@@ -31,12 +32,6 @@ searchOverpass l@(Loc lat lon) inner radius =
         setRequestHeaders [("User-Agent", "Tender (https://github.com/Gavinok/Tender)")] $
             setRequestBodyURLEncoded [("data", TE.encodeUtf8 query)] $
                 parseRequest_ "POST https://overpass-api.de/api/interpreter"
-    -- Already searched when searching further
-    beyondInner r =
-        let Loc lat' lon' = location r
-            dy = (lat' - lat) * 111320
-            dx = (lon' - lon) * 111320 * cos (lat * pi / 180)
-         in sqrt (dx * dx + dy * dy) >= inner
     query =
         T.concat
             [ "[out:json][timeout:20];"
@@ -51,14 +46,7 @@ searchOverpass l@(Loc lat lon) inner radius =
 
 -- | The closest restaurants first
 nearest :: Loc -> Int -> [Restaurant] -> [Restaurant]
-nearest (Loc lat lon) n = take n . sortOn distance
-  where
-    -- Flat approximation, plenty for sorting within a few km
-    distance r =
-        let Loc lat' lon' = location r
-            dx = (lon' - lon) * cos (lat * pi / 180)
-            dy = lat' - lat
-         in dx * dx + dy * dy
+nearest l n = take n . sortOn (metres l . location)
 
 parseOverpass :: Value -> AT.Parser [Restaurant]
 parseOverpass = withObject "OverpassResponse" $ \o ->
@@ -94,6 +82,6 @@ parseOverpass = withObject "OverpassResponse" $ \o ->
 
 -- | "vietnamese;noodle" becomes "Vietnamese"
 cuisineName :: Text -> Maybe Text
-cuisineName c = case T.strip (T.replace "_" " " (T.takeWhile (/= ';') c)) of
-    "" -> Nothing
-    t -> Just (T.cons (toUpper (T.head t)) (T.tail t))
+cuisineName c =
+    (\(first, rest) -> T.cons (toUpper first) rest)
+        <$> T.uncons (T.strip (T.replace "_" " " (T.takeWhile (/= ';') c)))

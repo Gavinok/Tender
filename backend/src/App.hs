@@ -58,6 +58,7 @@ import Places
 import Limits (Counter, Limit (..), Recent, newCounter, newRecent, remember, seenRecently, trySpend)
 import Provider (Provider (..), searchWithFallback)
 import Data.List (partition)
+import qualified Data.Set as Set
 import Restaurant (Loc, Restaurant)
 import qualified Restaurant as R
 import qualified User as U
@@ -245,8 +246,8 @@ errorResponse s msg = status s >> json (object ["error" .= msg])
 
 
 -- | Restaurants someone else in the session liked first, otherwise in the source's order
-likedFirst :: [Text] -> [Restaurant] -> [Restaurant]
-likedFirst ids rs = uncurry (<>) (partition ((`elem` ids) . R.restaurantId) rs)
+likedFirst :: Set.Set Text -> [Restaurant] -> [Restaurant]
+likedFirst ids = uncurry (<>) . partition ((`Set.member` ids) . R.restaurantId)
 
 {- | Sent with every response. Scripts, fonts and requests only come from
 this site. Images can also be data urls (the QR code) and Google's and
@@ -365,7 +366,7 @@ app env = do
                         json $
                             object
                                 [ -- Leaving out ones this person already decided on, e.g. before a reload
-                                  "restaurants" .= likedFirst others (filter ((`notElem` decided) . R.restaurantId) rs)
+                                  "restaurants" .= likedFirst (Set.fromList others) (filter ((`Set.notMember` Set.fromList decided) . R.restaurantId) rs)
                                 , "othersLiked" .= others
                                 , "vibe" .= map chipId chips
                                 , "radius" .= radius
