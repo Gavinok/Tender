@@ -18,6 +18,9 @@ import Network.Wai.Middleware.Cors (
 import System.Environment.Blank (getEnv)
 import Web.Scotty (
     ActionM,
+    file,
+    notFound,
+    request,
     get,
     json,
     jsonData,
@@ -38,6 +41,10 @@ import qualified Data.Text.Encoding as TE
 import qualified Data.Text.Lazy as TL
 import Network.HTTP.Types (Status, status400, status404, status502)
 import Network.Wai.Middleware.RequestLogger (logStdout)
+import Control.Applicative ((<|>))
+import Network.Wai (rawPathInfo)
+import System.Directory (doesFileExist)
+import System.FilePath (takeExtension, (</>))
 import System.IO (hPutStrLn, stderr)
 
 import Db
@@ -58,6 +65,8 @@ data Env = Env
       envProviders :: [Provider]
     , -- | Needed to show Google's photos
       envPlacesKey :: Maybe PlacesKey
+    , -- | The built frontend to serve, when set (in production)
+      envStatic :: Maybe FilePath
     }
 
 {- | A preset version of cors with added OPTIONS method and
@@ -129,9 +138,11 @@ server = do
     providers <- providersFromEnv placesKey yelpKey order
     logMsg $ "Restaurant sources: " ++ T.unpack (T.intercalate ", " (map providerName providers))
     dbPath <- fromMaybe "test.db" <$> getEnv "TENDER_DB"
-    port <- maybe 5001 read <$> getEnv "TENDER_PORT"
+    -- Cloud Run tells the server its port through PORT
+    port <- maybe 5001 read <$> ((<|>) <$> getEnv "TENDER_PORT" <*> getEnv "PORT")
+    static <- getEnv "TENDER_STATIC"
     initDb dbPath
-    app port (Env dbPath providers placesKey)
+    app port (Env dbPath providers placesKey static)
 
 logMsg :: MonadIO m => String -> m ()
 logMsg = liftIO . hPutStrLn stderr
@@ -162,10 +173,10 @@ app port env = scotty port $ do
     -- Also answers CORS preflight requests
     middleware (cors $ const $ Just apiCors)
 
-    get "/newsession" $
+    get "/api/newsession" $
         liftIO U.newSessionId >>= json
 
-    get "/addtosession/:session" $ do
+    get "/api/addtosession/:session" $ do
         sessionText <- pathParam "session"
         case U.sessionFromText sessionText of
             Nothing -> errorResponse status400 "Invalid session"
@@ -176,13 +187,13 @@ app port env = scotty port $ do
                 json uid
 
     -- The session's vibe chips, and whether swiping has started and locked them
-    get "/vibe/:session" $ do
+    get "/api/vibe/:session" $ do
         sessionText <- pathParam "session"
         case U.sessionFromText sessionText of
             Nothing -> errorResponse status400 "Invalid session"
             Just s -> liftIO (withConn $ \c -> getVibe c s) >>= json . vibeJSON
 
-    post "/vibe/:session" $ do
+    post "/api/vibe/:session" $ do
         sessionText <- pathParam "session"
         VibeRequest ids <- jsonData
         case (U.sessionFromText sessionText, traverse chipFromId ids) of
@@ -191,7 +202,7 @@ app port env = scotty port $ do
             (Just s, Just chips) -> liftIO (withConn $ \c -> setVibe c s chips) >>= json . vibeJSON
 
     -- Restaurants near the session's location, fresh for each person
-    post "/restaurants" $ do
+    post "/api/restaurants" $ do
         RestaurantsRequest uid here wider <- jsonData
         known <- liftIO $ withConn $ \c -> getUser c uid
         case known of
@@ -220,7 +231,7 @@ app port env = scotty port $ do
                                 ]
 
     -- Redirects to the photo with the given resource name, so the key stays here
-    get "/photo" $ do
+    get "/api/photo" $ do
         photo <- queryParam "name"
         case envPlacesKey env of
           Nothing -> errorResponse status404 "Google photos need GOOGLE_PLACES_KEY"
@@ -237,7 +248,7 @@ app port env = scotty port $ do
                         setHeader "Cache-Control" "private, max-age=3600"
                         redirect (TL.fromStrict uri)
 
-    post "/decision" $ do
+    post "/api/decision" $ do
         DecisionRequest uid r l <- jsonData
         found <- liftIO $ withConn $ \c -> getUser c uid
         case found of
@@ -245,3 +256,50 @@ app port env = scotty port $ do
             Just u -> do
                 (match, others) <- liftIO $ withConn $ \c -> (,) <$> decide c u r l <*> othersLiked c u
                 json (object ["match" .= match, "othersLiked" .= others])
+
+    -- Anything else: the frontend's files, and its page for every other path
+    -- (such as /<session>) so links work. Only when a frontend is configured.
+    notFound $ do
+        path <- requestPath
+        case envStatic env of
+            Just dir | not ("/api/" `T.isPrefixOf` path) -> serveFrontend dir path
+            _ -> errorResponse status404 "Not found"
+
+requestPath :: ActionM Text
+requestPath = TE.decodeUtf8 . rawPathInfo <$> request
+
+{- | A file from the built frontend, or its index.html when there is no such
+file. Paths with . or .. segments are refused, so nothing outside the
+directory can be served.
+-}
+serveFrontend :: FilePath -> Text -> ActionM ()
+serveFrontend dir path = do
+    let segments = filter (not . T.null) (T.splitOn "/" path)
+        safe = all (`notElem` [".", ".."]) segments
+        candidate = dir </> T.unpack (T.intercalate "/" segments)
+    isFile <- liftIO $ if safe && not (null segments) then doesFileExist candidate else pure False
+    if isFile
+        then do
+            setHeader "Content-Type" (contentType candidate)
+            -- Parcel puts a hash in every file name but index.html
+            setHeader "Cache-Control" "public, max-age=31536000, immutable"
+            file candidate
+        else do
+            setHeader "Content-Type" "text/html; charset=utf-8"
+            setHeader "Cache-Control" "no-cache"
+            file (dir </> "index.html")
+
+contentType :: FilePath -> TL.Text
+contentType f = case takeExtension f of
+    ".html" -> "text/html; charset=utf-8"
+    ".js" -> "text/javascript"
+    ".css" -> "text/css"
+    ".svg" -> "image/svg+xml"
+    ".png" -> "image/png"
+    ".jpg" -> "image/jpeg"
+    ".ico" -> "image/x-icon"
+    ".woff2" -> "font/woff2"
+    ".woff" -> "font/woff"
+    ".json" -> "application/json"
+    ".webmanifest" -> "application/manifest+json"
+    _ -> "application/octet-stream"

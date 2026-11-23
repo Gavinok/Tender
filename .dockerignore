@@ -1,0 +1,16 @@
+.git
+**/dist-newstyle
+**/node_modules
+**/.spago
+**/output
+**/.parcel-cache
+frontend/dist
+frontend/assets/app.js
+frontend/.spec-results
+frontend/.agent-shell
+backend/*.db*
+backend/ltximg
+# Editor settings, which can hold keys
+**/.dir-locals.el
+**/.project
+**/.envrc
