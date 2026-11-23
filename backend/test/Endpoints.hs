@@ -43,7 +43,7 @@ appWith searchCap photoCap static = do
     db <- freshDb
     limits <- newLimitsWith searchCap photoCap
     pool <- openPool db
-    application (Env pool [fake] (Just (PlacesKey "not a real key")) static limits)
+    application (Env pool [fake] (Just (PlacesKey "not a real key")) static limits (\_ _ -> pure ()))
 
 app :: IO Application
 app = appWith 1000 1000 Nothing

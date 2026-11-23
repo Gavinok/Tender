@@ -35,6 +35,7 @@ COPY --from=frontend /build/dist /app/frontend
 # Sessions only need to last as long as this instance, so the database lives
 # in /tmp. Cloud Run sets PORT.
 ENV PORT=8080 \
+    TENDER_LOG_FORMAT=json \
     TENDER_STATIC=/app/frontend \
     TENDER_DB=/tmp/tender.db
 USER nobody

@@ -3,7 +3,7 @@ module App (server, application, Env (..), Limits, newLimitsWith) where
 import Control.Concurrent (forkIO, threadDelay)
 import Control.Exception (SomeException, try)
 import Control.Monad (forever, unless, void)
-import Control.Monad.IO.Class (MonadIO, liftIO)
+import Control.Monad.IO.Class (liftIO)
 import Data.Maybe (fromMaybe)
 import Data.Word (Word64)
 import Database.SQLite.Simple (Connection, withImmediateTransaction)
@@ -49,10 +49,10 @@ import Network.Wai (Application, rawPathInfo, remoteHost)
 import System.Directory (doesFileExist)
 import System.FilePath (takeExtension, (</>))
 import System.Exit (die)
-import System.IO (hPutStrLn, stderr)
 import Text.Read (readMaybe)
 
 import Db
+import Log (LogFormat (..), Logger, Severity (..), newLogger)
 import OpenStreetMap (openStreetMap)
 import Places
 import Limits (Counter, Limit (..), Recent, newCounter, newRecent, remember, seenRecently, trySpend)
@@ -75,6 +75,7 @@ data Env = Env
     , -- | The built frontend to serve, when set (in production)
       envStatic :: Maybe FilePath
     , envLimits :: Limits
+    , envLog :: Logger
     }
 
 {- | Caps on what costs money. The site-wide daily caps are the hard stop on
@@ -182,8 +183,8 @@ instance FromJSON DecisionRequest
 {- | Restaurant sources in the order given by TENDER_SOURCES (default
 google,yelp,openstreetmap), leaving out the ones without a key
 -}
-providersFromEnv :: Maybe PlacesKey -> Maybe YelpKey -> String -> IO [Provider]
-providersFromEnv placesKey yelpKey order = concat <$> traverse provider (T.splitOn "," (T.pack order))
+providersFromEnv :: Logger -> Maybe PlacesKey -> Maybe YelpKey -> String -> IO [Provider]
+providersFromEnv logAt placesKey yelpKey order = concat <$> traverse provider (T.splitOn "," (T.pack order))
   where
     provider name = case (T.strip name, placesKey, yelpKey) of
         ("google", Just k, _) -> pure [googlePlaces k]
@@ -193,18 +194,24 @@ providersFromEnv placesKey yelpKey order = concat <$> traverse provider (T.split
         ("openstreetmap", _, _) -> pure [openStreetMap]
         (other, _, _) -> fail ("Unknown source in TENDER_SOURCES: " ++ T.unpack other)
     skip label var = do
-        logMsg $ "Not using " ++ label ++ " since " ++ var ++ " is not set"
+        logAt Info $ "Not using " ++ label ++ " since " ++ var ++ " is not set"
         pure []
 
 server :: IO ()
 server = do
+    format <- getEnv "TENDER_LOG_FORMAT"
+    logAt <- case format of
+        Nothing -> pure (newLogger Plain)
+        Just "plain" -> pure (newLogger Plain)
+        Just "json" -> pure (newLogger Json)
+        Just other -> die ("TENDER_LOG_FORMAT should be plain or json, not " ++ show other)
     -- Keys pasted into a secret or env var often end with a newline
     let key = fmap (TE.encodeUtf8 . T.strip . T.pack)
     placesKey <- fmap PlacesKey . key <$> getEnv "GOOGLE_PLACES_KEY"
     yelpKey <- fmap YelpKey . key <$> getEnv "YELP_KEY"
     order <- fromMaybe "google,yelp,openstreetmap" <$> getEnv "TENDER_SOURCES"
-    providers <- providersFromEnv placesKey yelpKey order
-    logMsg $ "Restaurant sources: " ++ T.unpack (T.intercalate ", " (map providerName providers))
+    providers <- providersFromEnv logAt placesKey yelpKey order
+    logAt Info $ "Restaurant sources: " ++ T.unpack (T.intercalate ", " (map providerName providers))
     dbPath <- fromMaybe "test.db" <$> getEnv "TENDER_DB"
     -- Cloud Run tells the server its port through PORT
     port <- do
@@ -213,20 +220,21 @@ server = do
     static <- getEnv "TENDER_STATIC"
     initDb dbPath
     pool <- openPool dbPath
-    pruneHourly pool
+    pruneHourly logAt pool
     limits <- newLimits
     scotty port $ do
-        middleware logStdout
-        app (Env pool providers placesKey static limits)
+        -- Cloud Run logs every request itself, so only log them here locally
+        unless (format == Just "json") $ middleware logStdout
+        app (Env pool providers placesKey static limits logAt)
 
 {- | Delete sessions older than a day, every hour, so the database (in
 memory on Cloud Run) doesn't grow for as long as the server runs
 -}
-pruneHourly :: DbPool -> IO ()
-pruneHourly pool = void . forkIO . forever $ do
+pruneHourly :: Logger -> DbPool -> IO ()
+pruneHourly logAt pool = void . forkIO . forever $ do
     threadDelay (60 * 60 * 1000000)
     result <- try (withConn pool (`pruneOlderThan` (24 * 60 * 60)))
-    either (\e -> logMsg ("Pruning failed: " ++ show (e :: SomeException))) pure result
+    either (\e -> logAt Error ("Pruning failed: " ++ show (e :: SomeException))) pure result
 
 {- | A number from the environment, or the default when it isn't set.
 Anything else stops the server, saying which setting is wrong.
@@ -237,9 +245,6 @@ numberSetting name def = do
     case value of
         Nothing -> pure def
         Just v -> maybe (die (name ++ " should be a whole number, not " ++ show v)) pure (readMaybe v)
-
-logMsg :: MonadIO m => String -> m ()
-logMsg = liftIO . hPutStrLn stderr
 
 -- | Respond with an error status and a message the frontend can show
 errorResponse :: Status -> Text -> ActionM ()
@@ -360,7 +365,7 @@ app env = do
                 refused <- liftIO $ allowed (searchesPerVisitor limits) (searchesToday limits) visitor cost
                 found <- case refused of
                     Just why -> errorResponse status429 why >> finish
-                    Nothing -> liftIO $ searchWithFallback logMsg (envProviders env) (Search l chips radius inner)
+                    Nothing -> liftIO $ searchWithFallback (envLog env Warning) (envProviders env) (Search l chips radius inner)
                 case found of
                     Nothing -> errorResponse status502 "Couldn't get restaurants from any source"
                     Just rs -> do
@@ -395,7 +400,7 @@ app env = do
                 found <- liftIO $ photoUri key photo photoWidth
                 case found of
                     Left e -> do
-                        logMsg $ "Photo " ++ T.unpack photo ++ " failed: " ++ show e
+                        liftIO $ envLog env Warning $ "Photo " ++ T.unpack photo ++ " failed: " ++ show e
                         errorResponse status502 "Couldn't get the photo from Google"
                     Right uri -> do
                         -- Lets the browser reuse it for the rest of the session
