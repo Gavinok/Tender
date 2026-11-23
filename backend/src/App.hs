@@ -11,6 +11,8 @@ import GHC.Generics (Generic)
 import System.Environment.Blank (getEnv)
 import Web.Scotty (
     ActionM,
+    finish,
+    header,
     file,
     notFound,
     request,
@@ -32,12 +34,12 @@ import Data.Aeson (FromJSON (parseJSON), Value, object, withObject, (.:), (.:?),
 import Data.Text (Text)
 import qualified Data.Text.Encoding as TE
 import qualified Data.Text.Lazy as TL
-import Network.HTTP.Types (Status, status400, status404, status502)
+import Network.HTTP.Types (Status, status400, status404, status429, status502)
 import qualified Data.ByteString as BS
 import Network.Wai.Middleware.AddHeaders (addHeaders)
 import Network.Wai.Middleware.RequestLogger (logStdout)
 import Control.Applicative ((<|>))
-import Network.Wai (rawPathInfo)
+import Network.Wai (rawPathInfo, remoteHost)
 import System.Directory (doesFileExist)
 import System.FilePath (takeExtension, (</>))
 import System.IO (hPutStrLn, stderr)
@@ -45,6 +47,7 @@ import System.IO (hPutStrLn, stderr)
 import Db
 import OpenStreetMap (openStreetMap)
 import Places
+import Limits (Counter, Limit (..), newCounter, trySpend)
 import Provider (Provider (..), searchWithFallback)
 import Data.List (partition)
 import Restaurant (Loc, Restaurant)
@@ -62,7 +65,58 @@ data Env = Env
       envPlacesKey :: Maybe PlacesKey
     , -- | The built frontend to serve, when set (in production)
       envStatic :: Maybe FilePath
+    , envLimits :: Limits
     }
+
+{- | Caps on what costs money. The site-wide daily caps are the hard stop on
+cost, since one person can spread requests across addresses; the hourly
+per-visitor caps stop one person using up everyone's share.
+-}
+data Limits = Limits
+    { searchesToday :: Counter
+    , photosToday :: Counter
+    , searchesPerVisitor :: Counter
+    , photosPerVisitor :: Counter
+    }
+
+-- | Read from TENDER_MAX_SEARCHES_PER_DAY and TENDER_MAX_PHOTOS_PER_DAY, or defaults
+newLimits :: IO Limits
+newLimits = do
+    searches <- maybe 300 read <$> getEnv "TENDER_MAX_SEARCHES_PER_DAY"
+    photos <- maybe 3000 read <$> getEnv "TENDER_MAX_PHOTOS_PER_DAY"
+    let day = 24 * 60 * 60
+        hour = 60 * 60
+    Limits
+        <$> newCounter (Limit day searches)
+        <*> newCounter (Limit day photos)
+        <*> newCounter (Limit hour 30)
+        <*> newCounter (Limit hour 400)
+
+{- | Spend from a visitor's and the site's allowance. Says why not when
+either has run out.
+-}
+allowed :: Counter -> Counter -> Text -> Int -> IO (Maybe Text)
+allowed perVisitor site visitor cost = do
+    mine <- trySpend perVisitor visitor cost
+    if not mine
+        then pure (Just "You've hit Tender's limit for now. Try again in an hour.")
+        else do
+            ours <- trySpend site "site" cost
+            pure $
+                if ours
+                    then Nothing
+                    else Just "Tender has hit its daily limit. Try again tomorrow."
+
+{- | Who is asking, for per-visitor limits. Cloud Run's front end appends the
+address it got the request from to X-Forwarded-For, so the last entry is
+the real one; earlier entries can be anything the visitor sent.
+-}
+visitorOf :: ActionM Text
+visitorOf = do
+    forwarded <- header "X-Forwarded-For"
+    case reverse (map T.strip (T.splitOn "," (maybe "" TL.toStrict forwarded))) of
+        (lastHop : _) | not (T.null lastHop) -> pure lastHop
+        _ -> T.pack . show . remoteHost <$> request
 
 -- | Body of a /restaurants request: who is asking, and where they are
 data RestaurantsRequest = RestaurantsRequest
@@ -127,7 +181,8 @@ server = do
     port <- maybe 5001 read <$> ((<|>) <$> getEnv "TENDER_PORT" <*> getEnv "PORT")
     static <- getEnv "TENDER_STATIC"
     initDb dbPath
-    app port (Env dbPath providers placesKey static)
+    limits <- newLimits
+    app port (Env dbPath providers placesKey static limits)
 
 logMsg :: MonadIO m => String -> m ()
 logMsg = liftIO . hPutStrLn stderr
@@ -230,7 +285,14 @@ app port env = scotty port $ do
                     (l,,radius,) <$> getVibe c s <*> decidedBy c uid
                 -- Searching further only needs the ring outside what the person saw
                 let inner = maybe 0 (min radius) wider
-                found <- liftIO $ searchWithFallback logMsg (envProviders env) (Search l chips radius inner)
+                visitor <- visitorOf
+                -- Searching further makes six Google calls
+                let cost = if inner > 0 then 6 else 1
+                    limits = envLimits env
+                refused <- liftIO $ allowed (searchesPerVisitor limits) (searchesToday limits) visitor cost
+                found <- case refused of
+                    Just why -> errorResponse status429 why >> finish
+                    Nothing -> liftIO $ searchWithFallback logMsg (envProviders env) (Search l chips radius inner)
                 case found of
                     Nothing -> errorResponse status502 "Couldn't get restaurants from any source"
                     Just rs -> do
@@ -253,6 +315,10 @@ app port env = scotty port $ do
           Just key
             | not (isPhotoName photo) -> errorResponse status400 "Not a photo name"
             | otherwise -> do
+                visitor <- visitorOf
+                let limits = envLimits env
+                refused <- liftIO $ allowed (photosPerVisitor limits) (photosToday limits) visitor 1
+                maybe (pure ()) (\why -> errorResponse status429 why >> finish) refused
                 found <- liftIO $ photoUri key photo photoWidth
                 case found of
                     Left e -> do

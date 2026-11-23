@@ -8,6 +8,9 @@ import qualified Data.ByteString.Lazy.Char8 as L8
 import Data.Text (Text)
 import Database.SQLite.Simple (Connection, Only (..), execute_, query_, withConnection)
 import Network.HTTP.Simple (parseRequest_, setRequestHeaders)
+import qualified Data.Map.Strict as Map
+import Data.Time (UTCTime (..), addUTCTime, fromGregorian)
+import Limits (Limit (..), spend)
 import Test.Hspec
 
 import Db hiding (restaurantId)
@@ -143,6 +146,24 @@ main = hspec $ do
             let at i m = plain Google i (Loc (48.43 + m / 111320) (-123.35))
             map restaurantId (inRing centre 5000 10000 [at "inside" 1000, at "ring" 7000, at "ring" 7000, at "beyond" 20000])
                 `shouldBe` ["ring"]
+
+    describe "spend" $ do
+        let t0 = UTCTime (fromGregorian 2026 11 22) 0
+            at secs = addUTCTime secs t0
+            limit = Limit 3600 5
+            run = foldl (\(_, u) (t, key, cost) -> spend limit t key cost u) (True, Map.empty)
+        it "allows up to the limit, then refuses" $ do
+            fst (run [(at 0, "a", 1), (at 1, "a", 4)]) `shouldBe` True
+            fst (run [(at 0, "a", 1), (at 1, "a", 4), (at 2, "a", 1)]) `shouldBe` False
+        it "counts each key separately" $
+            fst (run [(at 0, "a", 5), (at 1, "b", 5)]) `shouldBe` True
+        it "refuses a cost bigger than what's left, keeping the rest" $ do
+            fst (run [(at 0, "a", 2), (at 1, "a", 6)]) `shouldBe` False
+            fst (run [(at 0, "a", 2), (at 1, "a", 6), (at 2, "a", 3)]) `shouldBe` True
+        it "starts again once the window is over" $
+            fst (run [(at 0, "a", 5), (at 3601, "a", 5)]) `shouldBe` True
+        it "forgets keys whose window is over" $
+            Map.keys (snd (run [(at 0, "a", 1), (at 3601, "b", 1)])) `shouldBe` ["b"]
 
     describe "withKey" $ do
         it "hides the key when the request is shown, as in a logged error" $ do
