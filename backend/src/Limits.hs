@@ -26,7 +26,7 @@ data Limit = Limit
     { limitWindow :: NominalDiffTime
     , limitMax :: Int
     }
-    deriving (Show)
+    deriving stock (Show)
 
 -- | Per key, when its window started and how much has been used since
 type Usage = Map.Map Text (UTCTime, Int)

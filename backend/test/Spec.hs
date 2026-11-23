@@ -1,9 +1,8 @@
 module Main (main) where
 
 import Data.Aeson (Value (Array, Null), eitherDecode, toJSON)
-import Data.Aeson.Types (Parser)
 import qualified Data.Aeson.KeyMap as KM
-import Data.Aeson.Types (Value (Object), parseEither)
+import Data.Aeson.Types (Parser, Value (Object), parseEither)
 import qualified Data.ByteString.Lazy.Char8 as L8
 import Data.Text (Text)
 import Database.SQLite.Simple (Connection, Only (..), execute_, query_, withConnection)

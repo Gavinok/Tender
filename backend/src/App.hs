@@ -153,7 +153,7 @@ data RestaurantsRequest = RestaurantsRequest
     , -- | Set by "search further": the radius the person was shown, to double
       widenFrom :: !(Maybe Double)
     }
-    deriving (Generic, Show)
+    deriving stock (Generic, Show)
 
 instance FromJSON RestaurantsRequest where
     parseJSON = withObject "RestaurantsRequest" $ \o ->
@@ -174,7 +174,7 @@ data DecisionRequest = DecisionRequest
     , restaurant :: !Text
     , liked :: !Bool
     }
-    deriving (Generic, Show)
+    deriving stock (Generic, Show)
 
 instance FromJSON DecisionRequest
 

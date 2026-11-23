@@ -193,7 +193,7 @@ data Decision = Decision
     , restaurantId :: !Text
     , liked :: !Bool
     }
-    deriving (Show, Generic)
+    deriving stock (Show, Generic)
     deriving anyclass (ToRow)
 
 -- | Record a decision, replacing any earlier one for the same restaurant

@@ -15,7 +15,7 @@ data FetchError
       BadStatus Int L8.ByteString
     | -- | The body was not what we expected
       ParseError String
-    deriving (Show)
+    deriving stock (Show)
 
 {- | Send the request and decode a 200 response, giving up after the given
 number of seconds. Network failures and timeouts are returned rather than

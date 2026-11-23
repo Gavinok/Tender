@@ -13,6 +13,7 @@ module Places (
     isPhotoName,
 ) where
 
+import Control.Applicative ((<|>))
 import Data.Aeson (Value, object, withObject, (.!=), (.:), (.:?), (.=))
 import qualified Data.Aeson.Types as AT
 import qualified Data.ByteString as BS
@@ -207,10 +208,10 @@ parsePlaces = withObject "SearchNearbyResponse" $ \o ->
                 disclosure <- g .:? "disclosureText" >>= traverse (.: "text")
                 pure (flip Summary disclosure <$> overview)
         editorial <- p .:? "editorialSummary" >>= traverse (.: "text")
-        pure (maybe (flip Summary Nothing <$> editorial) Just ai)
+        pure (ai <|> (flip Summary Nothing <$> editorial))
     parsePhoto = withObject "Photo" $ \ph -> do
         authors <- ph .:? "authorAttributions" .!= []
-        Photo <$> (GooglePhoto <$> ph .: "name") <*> traverse parseAuthor (listToMaybe authors)
+        Photo . GooglePhoto <$> ph .: "name" <*> traverse parseAuthor (listToMaybe authors)
     parseAuthor = withObject "AuthorAttribution" $ \a ->
         Author <$> a .: "displayName" <*> (fmap absolute <$> a .:? "uri")
     -- Author links come back without a scheme, e.g. //maps.google.com/...
