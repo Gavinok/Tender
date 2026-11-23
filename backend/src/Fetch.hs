@@ -1,5 +1,3 @@
-{-# LANGUAGE ScopedTypeVariables #-}
-
 -- | Calling the restaurant sources' JSON APIs
 module Fetch (FetchError (..), fetchJSON) where
 

@@ -1,5 +1,3 @@
-{-# LANGUAGE LambdaCase #-}
-
 -- | Vibe chips a group picks in the lobby, and what each means for the search
 module Vibe (Chip (..), Search (..), defaultRadius, maxRadius, allChips, chipId, chipFromId, queryTerms, priceLevels, wantsOpenNow) where
 

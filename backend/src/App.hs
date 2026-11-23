@@ -1,7 +1,3 @@
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TupleSections #-}
-{-# LANGUAGE DeriveGeneric #-}
-
 module App (server, application, Env (..), Limits, newLimitsWith) where
 
 import Control.Concurrent (forkIO, threadDelay)

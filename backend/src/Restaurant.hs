@@ -1,7 +1,4 @@
-{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE DeriveAnyClass #-}
-{-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE DerivingStrategies #-}
 
 -- | Restaurants as sent to the frontend. They come fresh from a source
 -- | (Google Places, Yelp or OpenStreetMap) for each search and are not

@@ -1,6 +1,3 @@
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-
 -- | Restaurants and photos from the Google Places API (New)
 module Places (
     PlacesKey (..),

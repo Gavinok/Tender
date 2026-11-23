@@ -2,11 +2,11 @@
 # Used by `make deploy` for Google Cloud Run.
 
 # --- Backend ---
-FROM haskell:9.4.8 AS backend
+FROM haskell:9.12.4-bookworm AS backend
 WORKDIR /build
 # Copied with the sources and built in one step: cabal can't build the
 # dependencies alone, since the local package's modules must exist first.
-# The image's compiler is plain `ghc`, not the ghc-9.4.8 that cabal.project
+# The image's compiler is plain `ghc`, not the ghc-9.12.4 that cabal.project
 # names; the pinned versions in cabal.project.freeze keep it reproducible.
 COPY backend/ ./
 RUN cabal update && cabal build exe:tender --with-compiler=ghc \
@@ -30,8 +30,6 @@ FROM debian:bookworm-slim
 RUN apt-get update \
  && apt-get install -y --no-install-recommends ca-certificates libgmp10 netbase \
  && rm -rf /var/lib/apt/lists/*
-# Built on Debian 10, whose libffi has a different soname than bookworm's
-COPY --from=backend /usr/lib/x86_64-linux-gnu/libffi.so.6* /usr/lib/x86_64-linux-gnu/
 COPY --from=backend /build/tender-server /app/tender-server
 COPY --from=frontend /build/dist /app/frontend
 # Sessions only need to last as long as this instance, so the database lives

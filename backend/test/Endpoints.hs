@@ -1,5 +1,3 @@
-{-# LANGUAGE OverloadedStrings #-}
-
 -- | The handlers, run as a WAI application against a fake restaurant source
 module Endpoints (spec) where
 
@@ -11,7 +9,7 @@ import Data.Text (Text)
 import qualified Data.Text.Encoding as TE
 import Network.HTTP.Types (methodGet, methodPost, status413)
 import Network.Wai (Application, RequestBodyLength (..), defaultRequest, requestBodyLength, requestMethod)
-import Network.Wai.Test (SRequest (..), SResponse (simpleBody, simpleStatus), runSession, setPath, srequest)
+import Network.Wai.Test (SRequest (..), runSession, setPath, srequest)
 import System.Directory (createDirectory, getTemporaryDirectory)
 import System.FilePath ((</>))
 import System.IO (hClose, openTempFile)
