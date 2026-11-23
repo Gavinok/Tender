@@ -18,3 +18,4 @@ backend/*.db
 backend/ltximg/
 frontend/.agent-shell/
 frontend/.spec-results
+backend/.golden/*/actual

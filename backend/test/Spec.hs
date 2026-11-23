@@ -3,6 +3,7 @@
 module Main (main) where
 
 import Data.Aeson (Value (Array, Null), eitherDecode, toJSON)
+import Data.Aeson.Encode.Pretty (encodePretty)
 import qualified Data.Aeson.KeyMap as KM
 import Data.Aeson.Types (Parser, Value (Object), parseEither)
 import qualified Data.ByteString.Lazy.Char8 as L8
@@ -15,6 +16,7 @@ import qualified Data.Map.Strict as Map
 import Data.Time (UTCTime (..), addUTCTime, fromGregorian)
 import Limits (Limit (..), rememberAt, seenAt, spend)
 import Test.Hspec
+import Test.Hspec.Golden (defaultGolden)
 
 import Db hiding (restaurantId)
 import Fetch (FetchError (..))
@@ -26,6 +28,7 @@ import User
 import Vibe
 import Yelp (parseYelp)
 import qualified Endpoints
+import qualified Properties
 
 withTestDb :: (Connection -> IO a) -> IO a
 withTestDb act = withConnection ":memory:" $ \conn -> initSchema conn >> act conn
@@ -85,6 +88,7 @@ provider n result = Provider n (const (pure result))
 main :: IO ()
 main = hspec $ do
     describe "endpoints" Endpoints.spec
+    describe "properties" Properties.spec
     describe "parsePlaces" $ do
         it "reads the fields shown on the card" $
             parse searchResponse
@@ -230,6 +234,26 @@ main = hspec $ do
             map priceFromSymbol ["$", "$$$$", "cheap"] `shouldBe` [Just Inexpensive, Just VeryExpensive, Nothing]
 
     describe "Restaurant JSON" $ do
+        -- The frontend's decoders depend on this exact shape. If a change is
+        -- meant, delete the file under .golden and run the tests again.
+        it "keeps the shape the frontend reads" $
+            defaultGolden "restaurant" $
+                L8.unpack . encodePretty $
+                    [ Restaurant
+                        Google
+                        "ChIJ1"
+                        "Pho Real"
+                        (Just "https://maps.google.com/?cid=1")
+                        (Just 4.5)
+                        (Just Moderate)
+                        (Just "Vietnamese Restaurant")
+                        [ Photo (GooglePhoto "places/ChIJ1/photos/p1") (Just (Author "Sam" (Just "https://maps.google.com/contrib/1")))
+                        , Photo (PhotoUrl "https://example.com/pho.jpg") Nothing
+                        ]
+                        (Just (Summary "Big bowls of pho." (Just "Summarized with Gemini")))
+                        (Loc 48.43 (-123.35))
+                    , Restaurant OpenStreetMap "osm:node/1" "Fish Store" Nothing Nothing Nothing Nothing [] Nothing (Loc 48.44 (-123.36))
+                    ]
         it "sends null for missing details" $
             case toJSON (Restaurant Google "ChIJ2" "New Spot" Nothing Nothing Nothing Nothing [] Nothing (Loc 1 2)) of
                 Object o -> (KM.lookup "photos" o, KM.lookup "rating" o) `shouldBe` (Just (Array mempty), Just Null)
