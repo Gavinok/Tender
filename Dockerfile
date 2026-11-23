@@ -3,6 +3,10 @@
 
 # --- Backend ---
 FROM haskell:9.12.4-bookworm AS backend
+# zlib is frozen to link the system library, found through pkg-config
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends pkg-config zlib1g-dev \
+ && rm -rf /var/lib/apt/lists/*
 WORKDIR /build
 # Copied with the sources and built in one step: cabal can't build the
 # dependencies alone, since the local package's modules must exist first.

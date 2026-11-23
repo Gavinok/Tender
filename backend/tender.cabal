@@ -37,6 +37,8 @@ executable tender
     import:           shared
     hs-source-dirs:   app
     main-is:          Main.hs
+    -- Warp, request timeouts and the cleanup thread need the threaded runtime
+    ghc-options:      -threaded -rtsopts "-with-rtsopts=-N"
     build-depends:    tender
 
 test-suite spec
