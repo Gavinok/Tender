@@ -1,5 +1,3 @@
-{-# LANGUAGE ScopedTypeVariables #-}
-
 -- | Calling the restaurant sources' JSON APIs
 module Fetch (FetchError (..), fetchJSON) where
 
@@ -7,7 +5,8 @@ import Control.Exception (try)
 import Data.Aeson (Value, eitherDecode)
 import qualified Data.Aeson.Types as AT
 import qualified Data.ByteString.Lazy.Char8 as L8
-import Network.HTTP.Simple (HttpException, Request, getResponseBody, getResponseStatusCode, httpLBS)
+import Network.HTTP.Client (responseTimeoutMicro)
+import Network.HTTP.Simple (HttpException, Request, getResponseBody, getResponseStatusCode, httpLBS, setRequestResponseTimeout)
 
 data FetchError
     = -- | The request never got a response
@@ -16,12 +15,16 @@ data FetchError
       BadStatus Int L8.ByteString
     | -- | The body was not what we expected
       ParseError String
-    deriving (Show)
+    deriving stock (Show)
 
--- | Send the request and decode a 200 response. Network failures are returned rather than thrown.
-fetchJSON :: (Value -> AT.Parser a) -> Request -> IO (Either FetchError a)
-fetchJSON parser req = do
-    result <- try (httpLBS req)
+{- | Send the request and decode a 200 response, giving up after the given
+number of seconds. Network failures and timeouts are returned rather than
+thrown, so a slow source fails over to the next one instead of holding up
+the search for http-client's default 30 seconds.
+-}
+fetchJSON :: Int -> (Value -> AT.Parser a) -> Request -> IO (Either FetchError a)
+fetchJSON seconds parser req = do
+    result <- try (httpLBS (setRequestResponseTimeout (responseTimeoutMicro (seconds * 1000000)) req))
     pure $ case result of
         Left (e :: HttpException) -> Left (Unreachable e)
         Right resp -> case getResponseStatusCode resp of

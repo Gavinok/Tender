@@ -1,7 +1,4 @@
 {-# LANGUAGE DeriveAnyClass #-}
-{-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE DerivingStrategies #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 module User (User (..), UserId (..), SessionId (..), newUserId, newSessionId, sessionFromText, userFromText) where
 

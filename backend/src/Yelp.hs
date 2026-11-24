@@ -11,7 +11,7 @@ import qualified Data.Text as T
 import Fetch (FetchError, fetchJSON)
 import Network.HTTP.Simple (parseRequest_, setRequestHeaders, setRequestQueryString)
 import Provider (Provider (..))
-import Restaurant (Loc (..), Photo (..), PhotoSource (..), Restaurant (..), Source (..))
+import Restaurant (Loc (..), Photo (..), PhotoSource (..), Restaurant (..), Source (..), priceFromSymbol)
 import Vibe (Search (..))
 
 newtype YelpKey = YelpKey BS.ByteString
@@ -22,7 +22,7 @@ yelp key = Provider "Yelp" $ \s -> searchYelp key (searchLoc s) (searchRadius s)
 -- | Up to 20 restaurants within the radius in metres, Yelp's best matches first
 searchYelp :: YelpKey -> Loc -> Double -> IO (Either FetchError [Restaurant])
 searchYelp (YelpKey key) (Loc lat lon) radius =
-    fetchJSON parseYelp $
+    fetchJSON 10 parseYelp $
         setRequestHeaders [("Authorization", "Bearer " <> key)] $
             setRequestQueryString
                 [ ("latitude", Just (S8.pack (show lat)))
@@ -47,7 +47,7 @@ parseYelp = withObject "BusinessSearchResponse" $ \o ->
             <*> b .: "name"
             <*> b .:? "url"
             <*> b .:? "rating"
-            <*> b .:? "price"
+            <*> ((>>= priceFromSymbol) <$> b .:? "price")
             <*> traverse (withObject "Category" (.: "title")) (listToMaybe categories)
             <*> (maybe [] (pure . urlPhoto) . nonEmpty <$> b .:? "image_url")
             <*> pure Nothing

@@ -1,10 +1,10 @@
 {-# LANGUAGE DeriveAnyClass #-}
-{-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE DerivingStrategies #-}
 
-module Db (initDb, initSchema, withDb, addUserToDb, joinSession, maxPerSession, pruneOlderThan, sessionLocation, sessionRadius, widenSearch, decidedBy, getVibe, setVibe, recordDecision, isMatch, matchesFor, othersLiked, Decision (..), getUser) where
+module Db (initDb, initSchema, DbPool, openPool, withConn, addUserToDb, joinSession, maxPerSession, pruneOlderThan, sessionLocation, sessionRadius, widenSearch, decidedBy, getVibe, setVibe, recordDecision, isMatch, matchesFor, othersLiked, Decision (..), getUser) where
 
+import Control.Exception (bracket)
 import Control.Monad (forM_)
+import Data.Pool (Pool, defaultPoolConfig, newPool, setNumStripes, withResource)
 import Database.SQLite.Simple (
     Connection,
     Only (..),
@@ -14,7 +14,8 @@ import Database.SQLite.Simple (
     execute_,
     query,
     query_,
-    withConnection,
+    close,
+    open,
     withTransaction,
  )
 import Data.List (nub)
@@ -23,22 +24,32 @@ import qualified Data.Text as T
 import Vibe (Chip, chipFromId, chipId, defaultRadius, maxRadius)
 import Data.String (fromString)
 import GHC.Generics (Generic)
-import Data.Text (Text)
-import Restaurant (Loc (..))
+import Restaurant (Loc (..), RestaurantId)
 import qualified User as U
 
-{- | Open a connection for the duration of the action, closing it even if
-the action throws.
--}
-withDb :: FilePath -> (Connection -> IO a) -> IO a
-withDb path act = withConnection path $ \conn -> do
+openDb :: FilePath -> IO Connection
+openDb path = do
+    conn <- open path
     -- Wait for concurrent writers instead of failing with SQLITE_BUSY
     execute_ conn "PRAGMA busy_timeout = 5000"
-    act conn
+    pure conn
+
+-- | Open connections, kept for reuse between requests
+type DbPool = Pool Connection
+
+{- | A few connections, closed after a minute unused. The app runs as one
+instance, so one pool is all of them.
+-}
+openPool :: FilePath -> IO DbPool
+openPool path = newPool (setNumStripes (Just 1) (defaultPoolConfig (openDb path) close 60 4))
+
+-- | Run the action with a connection from the pool, returning it after
+withConn :: DbPool -> (Connection -> IO a) -> IO a
+withConn = withResource
 
 -- | Create the schema. Run once at startup.
 initDb :: FilePath -> IO ()
-initDb path = withDb path $ \conn -> do
+initDb path = bracket (openDb path) close $ \conn -> do
     execute_ conn "PRAGMA journal_mode = WAL"
     initSchema conn
 
@@ -161,7 +172,7 @@ widenSearch conn s from = do
     sessionRadius conn s
 
 -- | Restaurants the user has already liked or not, to leave out of new searches
-decidedBy :: Connection -> U.UserId -> IO [Text]
+decidedBy :: Connection -> U.UserId -> IO [RestaurantId]
 decidedBy conn u = map fromOnly <$> query conn "SELECT restaurantId FROM decisions WHERE userId = ? ORDER BY restaurantId" (Only u)
 
 {- | The session's vibe chips, and whether they are locked. They lock once
@@ -192,10 +203,10 @@ setVibe conn s chips = withTransaction conn $ do
 -- | Whether a user liked a restaurant
 data Decision = Decision
     { userId :: !U.UserId
-    , restaurantId :: !Text
+    , restaurantId :: !RestaurantId
     , liked :: !Bool
     }
-    deriving (Show, Generic)
+    deriving stock (Show, Generic)
     deriving anyclass (ToRow)
 
 -- | Record a decision, replacing any earlier one for the same restaurant
@@ -216,7 +227,7 @@ getUser conn u =
 {- | Restaurants someone else in the session has liked that this user hasn't
 decided on yet, so they can be shown first
 -}
-othersLiked :: Connection -> U.User -> IO [Text]
+othersLiked :: Connection -> U.User -> IO [RestaurantId]
 othersLiked conn u =
     map fromOnly
         <$> query
@@ -234,7 +245,7 @@ othersLiked conn u =
 too. Sent with every decision, so people hear about matches others made
 on their next swipe.
 -}
-matchesFor :: Connection -> U.User -> IO [Text]
+matchesFor :: Connection -> U.User -> IO [RestaurantId]
 matchesFor conn u =
     map fromOnly
         <$> query
@@ -250,7 +261,7 @@ matchesFor conn u =
             (U.session u, U.userId u, U.userId u)
 
 -- | Whether more than one person in the session has liked the restaurant
-isMatch :: Connection -> U.SessionId -> Text -> IO Bool
+isMatch :: Connection -> U.SessionId -> RestaurantId -> IO Bool
 isMatch conn s restaurant = do
     likes <-
         query

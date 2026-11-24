@@ -1,5 +1,3 @@
-{-# LANGUAGE LambdaCase #-}
-
 -- | Vibe chips a group picks in the lobby, and what each means for the search
 module Vibe (Chip (..), Search (..), defaultRadius, maxRadius, allChips, chipId, chipFromId, queryTerms, priceLevels, wantsOpenNow) where
 
@@ -20,7 +18,7 @@ data Chip
     | Brunch
     | LateNight
     | OpenNow
-    deriving (Bounded, Enum, Eq, Show)
+    deriving stock (Bounded, Enum, Eq, Show)
 
 -- | Where to look, and the session's vibe
 data Search = Search
@@ -32,7 +30,7 @@ data Search = Search
       -- between this and the radius is new. 0 for a first search.
       searchInner :: Double
     }
-    deriving (Show)
+    deriving stock (Show)
 
 -- | Where a session's search starts, in metres
 defaultRadius :: Double
