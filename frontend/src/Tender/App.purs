@@ -24,7 +24,7 @@ import Tender.Api (ApiError(..), createSession, decide, getRestaurants, getVibe,
 import Tender.Vibe (Vibe)
 import Tender.Swipe (flyOut)
 import Tender.Swipe as Swipe
-import Tender.Browser (Shared(..), existingSession, geolocation, reload, rememberSession, rememberUser, rememberedUser, shareLink, shareOrCopy, vibrate)
+import Tender.Browser (Shared(..), existingSession, geolocation, reload, rememberSession, rememberUser, rememberedUser, shareLink, shareOrCopy, startNewSession, vibrate)
 import Tender.Types (ErrorMessage, Loc, Restaurant, RestaurantId, SessionId, Url, UserId)
 
 -- | What we know once the user has joined a session
@@ -113,6 +113,8 @@ data Message
   | FailedToLoad ErrorMessage
   -- | Start again from the session in the url
   | Retry
+  -- | Leave this session for a new one
+  | NewSession
   | ToggleMatches
   | ShareInvite
   | LinkCopied
@@ -154,6 +156,7 @@ update :: Update Model Message
 update model = case model, _ of
   _, FailedToLoad e -> ServerError e /\ []
   _, Retry -> model /\ [ liftEffect reload $> Nothing ]
+  _, NewSession -> model /\ [ liftEffect startNewSession $> Nothing ]
 
   _, DetermineSession -> model /\
     [ Just <$> do

@@ -29,19 +29,19 @@ vibeLine vibe =
 
 -- | `view` updates the app markup whenever the model is updated
 view :: Model -> Html Message
-view (ServerError e) = page Nothing [ problem e Retry ]
+view (ServerError e) = page { matches: Nothing, newSession: Just NewSession } [ problem e Retry ]
 
-view Loading = page Nothing [ setting ]
+view Loading = page { matches: Nothing, newSession: Nothing } [ setting ]
 
-view (QR l) = page Nothing [ lobby l { share: ShareInvite, start: StartSwiping, toggle: ToggleChip } ]
+view (QR l) = page { matches: Nothing, newSession: Just NewSession } [ lobby l { share: ShareInvite, start: StartSwiping, toggle: ToggleChip } ]
 
 view (Active swiper screen) =
-  page (Just { count: length swiper.matches, open: ToggleMatches }) $
+  page { matches: Just { count: length swiper.matches, open: ToggleMatches }, newSession: Just NewSession } $
     [ case screen of
         Fetching -> cardSkeleton
         NoneLeft ->
           outOfRestaurants swiper.matches
-            { startOver: Retry
+            { startOver: NewSession
             , further:
                 if swiper.radius < swiper.maxRadius then
                   Just { label: "Search further (up to " <> km (min swiper.maxRadius (swiper.radius * 2.0)) <> ")", search: SearchFurther }

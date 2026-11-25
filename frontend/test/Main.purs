@@ -134,6 +134,11 @@ main = runSpecAndExitProcess [ consoleReporter ] do
       step (Active swiper { upcoming = [ restaurant "b" ] } (Matched (restaurant "a"))) Continue
         `shouldEqual` Tuple (Active swiper (Swiping (restaurant "b"))) 0
 
+    it "leaves for a new session from any screen" do
+      step (Active swiper (Swiping (restaurant "a"))) NewSession `shouldEqual` Tuple (Active swiper (Swiping (restaurant "a"))) 1
+      step (QR lobbyAt) NewSession `shouldEqual` Tuple (QR lobbyAt) 1
+      step (ServerError "x") NewSession `shouldEqual` Tuple (ServerError "x") 1
+
     it "shows the link was copied, then hides it again" do
       step (QR lobbyAt) LinkCopied `shouldEqual` Tuple (QR lobbyAt { copied = true }) 1
       step (QR lobbyAt { copied = true }) HideCopied `shouldEqual` Tuple (QR lobbyAt) 0
@@ -214,6 +219,8 @@ main = runSpecAndExitProcess [ consoleReporter ] do
     it "shows the restaurant while swiping" do
       renders (Active swiper (Swiping (restaurant "Pho Real"))) "Pho Real"
       renders (Active swiper (Swiping (restaurant "Pho Real"))) "aria-label=\"0 matches\""
+      renders (Active swiper (Swiping (restaurant "Pho Real"))) "aria-label=\"Start a new session\""
+      renders (QR lobbyAt) "aria-label=\"Start a new session\""
     it "marks restaurants someone else liked" do
       renders (Active swiper { othersLiked = [ RestaurantId "a" ] } (Swiping (restaurant "a"))) "Someone&#39;s keen"
     it "shows the photo through the backend with its credit and a Google Maps link" do
@@ -243,3 +250,4 @@ main = runSpecAndExitProcess [ consoleReporter ] do
       renders (Active swiper { radius = 40000.0 } NoneLeft) "Search further (up to 50 km)"
     it "says when there is nothing left" do
       renders (Active swiper NoneLeft) "everything nearby"
+      renders (Active swiper NoneLeft) "Start a new session<"
