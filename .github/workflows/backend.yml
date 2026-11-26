@@ -5,10 +5,14 @@ on:
     branches: [master]
     paths:
       - "backend/**"
+      # The backend's tests decode the frontend's pinned requests
+      - "frontend/.golden/**"
       - ".github/workflows/backend.yml"
   pull_request:
     paths:
       - "backend/**"
+      # The backend's tests decode the frontend's pinned requests
+      - "frontend/.golden/**"
       - ".github/workflows/backend.yml"
 
 # Only the latest push to a branch needs checking

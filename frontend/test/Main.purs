@@ -15,6 +15,7 @@ import Tender.Browser (LocationProblem(..), sessionFromPath)
 import Tender.Types (Found, Person, Place, Restaurant, RestaurantId(..), SessionId(..), UserId(..))
 import Tender.Types (Status(..)) as Status
 import Tender.View (view)
+import Test.Contract as Contract
 import Test.Spec (describe, it)
 import Test.Spec.Assertions (shouldEqual, shouldSatisfy)
 import Test.Spec.Reporter.Console (consoleReporter)
@@ -85,6 +86,8 @@ step model msg = case update model msg of
 
 main :: Effect Unit
 main = runSpecAndExitProcess [ consoleReporter ] do
+  Contract.spec
+
   describe "update" do
     it "fetches the restaurants once started" do
       step (QR lobbyAt) (Started (SessionId "s") (UserId "u") (Right here))

@@ -3,7 +3,6 @@
 module Main (main) where
 
 import Data.Aeson (Value (Array, Null), eitherDecode, object, toJSON)
-import Data.Aeson.Encode.Pretty (encodePretty)
 import Data.Aeson.KeyMap qualified as KM
 import Data.Aeson.Types (Parser, Value (Object), parseEither)
 import Data.ByteString.Lazy.Char8 qualified as L8
@@ -16,15 +15,14 @@ import Database.SQLite.Simple (Connection, Only (..), execute_, query_, withConn
 import Limits (Limit (..), rememberAt, seenAt, spend)
 import Network.HTTP.Simple (parseRequest_, setRequestHeaders)
 import Test.Hspec
-import Test.Hspec.Golden (defaultGolden)
 
+import Contract qualified
 import Data.Set qualified as Set
 import Db hiding (restaurantId)
 import Endpoints qualified
 import Fetch (FetchError (..))
 import OpenStreetMap (nearest, parseOverpass)
 import Places
-import Presence (Activity (..), Person (..))
 import Properties qualified
 import Provider (Provider (..), searchWithFallback)
 import Restaurant
@@ -101,6 +99,7 @@ provider n result = Provider n (const (pure result))
 main :: IO ()
 main = hspec $ do
     describe "endpoints" Endpoints.spec
+    describe "contract with the frontend" Contract.spec
     describe "properties" Properties.spec
     describe "parsePlaces" $ do
         it "reads the fields shown on the card" $
@@ -248,27 +247,8 @@ main = hspec $ do
         it "reads Yelp's symbols" $
             map priceFromSymbol ["$", "$$$$", "cheap"] `shouldBe` [Just Inexpensive, Just VeryExpensive, Nothing]
 
+    -- Its full shape is pinned with the other responses, in Contract
     describe "Restaurant JSON" $ do
-        -- The frontend's decoders depend on this exact shape. If a change is
-        -- meant, delete the file under .golden and run the tests again.
-        it "keeps the shape the frontend reads"
-            $ defaultGolden "restaurant"
-            $ L8.unpack . encodePretty
-            $ [ Restaurant
-                    Google
-                    "ChIJ1"
-                    "Pho Real"
-                    (Just "https://maps.google.com/?cid=1")
-                    (Just 4.5)
-                    (Just Moderate)
-                    (Just "Vietnamese Restaurant")
-                    [ Photo (GooglePhoto "places/ChIJ1/photos/p1") (Just (Author "Sam" (Just "https://maps.google.com/contrib/1")))
-                    , Photo (PhotoUrl "https://example.com/pho.jpg") Nothing
-                    ]
-                    (Just (Summary "Big bowls of pho." (Just "Summarized with Gemini")))
-                    (Loc 48.43 (-123.35))
-              , Restaurant OpenStreetMap "osm:node/1" "Fish Store" Nothing Nothing Nothing Nothing [] Nothing (Loc 48.44 (-123.36))
-              ]
         it "sends null for missing details" $
             case toJSON (Restaurant Google "ChIJ2" "New Spot" Nothing Nothing Nothing Nothing [] Nothing (Loc 1 2)) of
                 Object o -> (KM.lookup "photos" o, KM.lookup "rating" o) `shouldBe` (Just (Array mempty), Just Null)
@@ -401,29 +381,12 @@ main = hspec $ do
             setPlace conn s (Just fernwood)
             getPlace conn s `shouldReturn` Nothing
 
-    describe "Place JSON"
-        $ it "keeps the shape the frontend reads"
-        $ defaultGolden "place"
-        $ L8.unpack . encodePretty
-        $ ( Place "Fernwood" (Loc 48.43 (-123.34))
-          , Found (Place "Fernwood" (Loc 48.43 (-123.34))) "Fernwood, Victoria, BC, Canada"
-          )
-
     describe "sessionMembers" $ do
         it "lists everyone in joining order with what they decided on" $ withTestDb $ \conn -> do
             (s, [a, b, c]) <- sessionWith conn 3
             (_, [other]) <- sessionWith conn 1
             like conn a "x" >> dislike conn a "y" >> like conn c "x" >> like conn other "z"
             sessionMembers conn s `shouldReturn` [(a, Set.fromList ["x", "y"]), (b, Set.empty), (c, Set.fromList ["x"])]
-
-    describe "Presence JSON"
-        $ it "keeps the shape the frontend reads"
-        $ defaultGolden "presence"
-        $ L8.unpack . encodePretty
-        $ [ Person True Swiping 3 (Just 17)
-          , Person False Done 20 (Just 0)
-          , Person False Away 0 Nothing
-          ]
 
     describe "othersLiked" $ do
         it "lists what others in the session liked that this user hasn't decided on" $ withTestDb $ \conn -> do

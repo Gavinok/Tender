@@ -1,0 +1,25 @@
+{
+    "matches": [
+        "ChIJ1"
+    ],
+    "people": [
+        {
+            "left": 12,
+            "status": "swiping",
+            "swiped": 3,
+            "you": true
+        },
+        {
+            "left": 0,
+            "status": "done",
+            "swiped": 3,
+            "you": false
+        },
+        {
+            "left": null,
+            "status": "away",
+            "swiped": 3,
+            "you": false
+        }
+    ]
+}
