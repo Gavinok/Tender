@@ -13,6 +13,10 @@ serve:
 test:
 	npx spago test
 
+# purs-tidy from package.json, the version CI checks with
+format:
+	npx purs-tidy format-in-place "src/**/*.purs" "test/**/*.purs"
+
 clean:
 	rm -rf .cache .spago node_modules output dist .parcel-cache
 
@@ -31,7 +35,7 @@ unshare:
 	tailscale serve --https=$(SHARE_PORT) off \
 	  || sudo tailscale serve --https=$(SHARE_PORT) off
 
-.PHONY: all build watch serve test clean share unshare dist
+.PHONY: all build watch serve test format clean share unshare dist
 
 # Production build into dist/, as the Dockerfile does
 dist:
