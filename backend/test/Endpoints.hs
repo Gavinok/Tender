@@ -19,6 +19,7 @@ import Test.Hspec.Wai
 import App (Env (..), application, newLimitsWith)
 import Db (initDb, openPool)
 import Places (PlacesKey (..))
+import Presence (newPresence)
 import Provider (Provider (..))
 import Restaurant
 
@@ -43,7 +44,8 @@ appWith searchCap photoCap static = do
     db <- freshDb
     limits <- newLimitsWith searchCap photoCap
     pool <- openPool db
-    application (Env pool [fake] (Just (PlacesKey "not a real key")) static limits (\_ _ -> pure ()))
+    presence <- newPresence
+    application (Env pool [fake] (Just (PlacesKey "not a real key")) static limits (\_ _ -> pure ()) presence)
 
 app :: IO Application
 app = appWith 1000 1000 Nothing
@@ -117,6 +119,31 @@ spec = do
                 decide a "p1" True `shouldRespondWith` "{\"matches\":[],\"othersLiked\":[]}"
                 decide b "p1" True `shouldRespondWith` "{\"matches\":[\"p1\"],\"othersLiked\":[]}"
                 decide a "p2" False `shouldRespondWith` "{\"matches\":[\"p1\"],\"othersLiked\":[]}"
+
+        describe "POST /api/presence" $ do
+            let heartbeat u = postJSON "/api/presence" (encode (object ["user" .= u]))
+            it "shows who is swiping and who hasn't searched yet, in joining order" $ do
+                (s, a) <- joined
+                b <- unquote . simpleBody <$> get ("/api/addtosession/" <> encodeText s)
+                _ <- search a
+                heartbeat a
+                    `shouldRespondWith` "{\"matches\":[],\"people\":[{\"left\":2,\"status\":\"swiping\",\"swiped\":0,\"you\":true},{\"left\":null,\"status\":\"away\",\"swiped\":0,\"you\":false}]}"
+                heartbeat b
+                    `shouldRespondWith` "{\"matches\":[],\"people\":[{\"left\":2,\"status\":\"swiping\",\"swiped\":0,\"you\":false},{\"left\":null,\"status\":\"swiping\",\"swiped\":0,\"you\":true}]}"
+            it "counts decisions and says when someone is done" $ do
+                (_, a) <- joined
+                _ <- search a
+                let decide r = postJSON "/api/decision" (encode (object ["user" .= a, "restaurant" .= (r :: Text), "liked" .= False]))
+                _ <- decide "p1"
+                heartbeat a `shouldRespondWith` "{\"matches\":[],\"people\":[{\"left\":1,\"status\":\"swiping\",\"swiped\":1,\"you\":true}]}"
+                _ <- decide "p2"
+                heartbeat a `shouldRespondWith` "{\"matches\":[],\"people\":[{\"left\":0,\"status\":\"done\",\"swiped\":2,\"you\":true}]}"
+            it "doesn't know users who never joined" $
+                heartbeat ("00000000-0000-0000-0000-000000000000" :: Text) `shouldRespondWith` 404
+            it "limits heartbeats per user" $ do
+                (_, a) <- joined
+                replicateM_ 30 (heartbeat a `shouldRespondWith` 200)
+                heartbeat a `shouldRespondWith` 429
 
         describe "GET /api/matches" $ do
             it "lists the user's matches, including ones others completed" $ do

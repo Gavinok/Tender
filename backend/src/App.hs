@@ -60,6 +60,7 @@ import Limits (Counter, Limit (..), Recent, newCounter, newRecent, remember, see
 import Log (LogFormat (..), Logger, Severity (..), newLogger)
 import OpenStreetMap (openStreetMap)
 import Places
+import Presence (Presence, dealtNow, lookupAll, newPresence, people, pruneStale, seenNow)
 import Provider (Provider (..), searchWithFallback)
 import Restaurant (Loc, Restaurant, RestaurantId (..))
 import Restaurant qualified as R
@@ -78,6 +79,8 @@ data Env = Env
     -- ^ The built frontend to serve, when set (in production)
     , envLimits :: Limits
     , envLog :: Logger
+    , envPresence :: Presence
+    -- ^ Who in each session was heard from lately, and what they were shown
     }
 
 {- | Caps on what costs money. The site-wide daily caps are the hard stop on
@@ -93,6 +96,8 @@ data Limits = Limits
     -- ^ Joins, vibe changes and likes, which all add to the database
     , recentPlaces :: Recent
     -- ^ Places our searches returned lately; photos are only served for these
+    , heartbeatsPerUser :: Counter
+    -- ^ Presence heartbeats, by user id: people on the same wifi share an address
     }
 
 -- | Read from TENDER_MAX_SEARCHES_PER_DAY and TENDER_MAX_PHOTOS_PER_DAY, or defaults
@@ -115,6 +120,8 @@ newLimitsWith searches photos = do
         <*> newCounter (Limit hour 600)
         -- Long enough for a session, and place ids may be kept
         <*> newRecent (6 * hour)
+        -- One every 10 seconds is expected; this allows bursts
+        <*> newCounter (Limit 60 30)
 
 {- | Spend from a visitor's and the site's allowance. Says why not when
 either has run out.
@@ -173,6 +180,12 @@ instance FromJSON VibeRequest where
 vibeJSON :: ([Chip], Bool) -> Value
 vibeJSON (chips, locked) = object ["chips" .= map chipId chips, "locked" .= locked]
 
+-- | Body of a /presence request
+newtype PresenceRequest = PresenceRequest U.UserId
+
+instance FromJSON PresenceRequest where
+    parseJSON = withObject "PresenceRequest" $ \o -> PresenceRequest <$> o .: "user"
+
 -- | Body of a /decision request
 data DecisionRequest = DecisionRequest
     { user :: !U.UserId
@@ -223,19 +236,21 @@ server = do
     static <- getEnv "TENDER_STATIC"
     initDb dbPath
     pool <- openPool dbPath
-    pruneHourly logAt pool
+    presence <- newPresence
+    pruneHourly logAt pool presence
     limits <- newLimits
     scotty port $ do
         -- Cloud Run logs every request itself, so only log them here locally
         unless (format == Just "json") $ middleware logStdout
-        app (Env pool providers placesKey static limits logAt)
+        app (Env pool providers placesKey static limits logAt presence)
 
 {- | Delete sessions older than a day, every hour, so the database (in
 memory on Cloud Run) doesn't grow for as long as the server runs
 -}
-pruneHourly :: Logger -> DbPool -> IO ()
-pruneHourly logAt pool = void . forkIO . forever $ do
+pruneHourly :: Logger -> DbPool -> Presence -> IO ()
+pruneHourly logAt pool presence = void . forkIO . forever $ do
     threadDelay (60 * 60 * 1000000)
+    pruneStale (60 * 60) presence
     result <- try (withConn pool (`pruneOlderThan` (24 * 60 * 60)))
     either (\e -> logAt Error ("Pruning failed: " ++ show (e :: SomeException))) pure result
 
@@ -329,6 +344,23 @@ app env = do
                 joined <- liftIO $ db $ \c -> joinSession c s returning
                 maybe (errorResponse status409 "This session is full") json joined
 
+    {- Heartbeat from someone in a session, every 10 seconds. Answers with
+    everyone in it, whether they're swiping, done or away, and the user's
+    matches, which the out-of-cards screen celebrates.
+    -}
+    post "/api/presence" $ do
+        PresenceRequest uid <- jsonData
+        known <- liftIO $ db (`getUser` uid)
+        case known of
+            Nothing -> errorResponse status404 "Unknown user"
+            Just u -> do
+                ok <- liftIO $ trySpend (heartbeatsPerUser (envLimits env)) (U.userIdText uid) 1
+                unless ok $ errorResponse status429 "Too many heartbeats" >> finish
+                liftIO $ seenNow (envPresence env) uid
+                (members, matches) <- liftIO $ db $ \c -> (,) <$> sessionMembers c (U.session u) <*> matchesFor c u
+                (now, seenBy) <- liftIO $ lookupAll (envPresence env)
+                json (object ["people" .= people now uid members seenBy, "matches" .= matches])
+
     -- The user's matches so far, polled while they have nothing left to swipe
     get "/api/matches/:user" $ do
         found <- (>>= U.userFromText) <$> pathParamMaybe "user"
@@ -382,10 +414,12 @@ app env = do
                     Just rs -> do
                         liftIO $ remember (recentPlaces (envLimits env)) (map R.restaurantId rs)
                         others <- liftIO $ db $ \c -> othersLiked c u
+                        -- Leaving out ones this person already decided on, e.g. before a reload
+                        let shown = likedFirst (Set.fromList others) (filter ((`Set.notMember` Set.fromList decided) . R.restaurantId) rs)
+                        liftIO $ dealtNow (envPresence env) uid (map R.restaurantId shown)
                         json $
                             object
-                                [ -- Leaving out ones this person already decided on, e.g. before a reload
-                                  "restaurants" .= likedFirst (Set.fromList others) (filter ((`Set.notMember` Set.fromList decided) . R.restaurantId) rs)
+                                [ "restaurants" .= shown
                                 , "othersLiked" .= others
                                 , "vibe" .= map chipId chips
                                 , "radius" .= radius
@@ -427,6 +461,7 @@ app env = do
             Just u -> do
                 spendWrite env
                 (matches, others) <- liftIO $ db $ \c -> do
+                    seenNow (envPresence env) (U.userId u)
                     recordDecision c (Decision (U.userId u) r l)
                     (,) <$> matchesFor c u <*> othersLiked c u
                 json (object ["matches" .= matches, "othersLiked" .= others])

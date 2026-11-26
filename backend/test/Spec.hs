@@ -18,11 +18,13 @@ import Network.HTTP.Simple (parseRequest_, setRequestHeaders)
 import Test.Hspec
 import Test.Hspec.Golden (defaultGolden)
 
+import Data.Set qualified as Set
 import Db hiding (restaurantId)
 import Endpoints qualified
 import Fetch (FetchError (..))
 import OpenStreetMap (nearest, parseOverpass)
 import Places
+import Presence (Activity (..), Person (..))
 import Properties qualified
 import Provider (Provider (..), searchWithFallback)
 import Restaurant
@@ -358,6 +360,22 @@ main = hspec $ do
             matchesFor conn (User first s) `shouldReturn` []
             like conn second "a"
             matchesFor conn (User first s) `shouldReturn` ["a"]
+
+    describe "sessionMembers" $ do
+        it "lists everyone in joining order with what they decided on" $ withTestDb $ \conn -> do
+            (s, [a, b, c]) <- sessionWith conn 3
+            (_, [other]) <- sessionWith conn 1
+            like conn a "x" >> dislike conn a "y" >> like conn c "x" >> like conn other "z"
+            sessionMembers conn s `shouldReturn` [(a, Set.fromList ["x", "y"]), (b, Set.empty), (c, Set.fromList ["x"])]
+
+    describe "Presence JSON"
+        $ it "keeps the shape the frontend reads"
+        $ defaultGolden "presence"
+        $ L8.unpack . encodePretty
+        $ [ Person True Swiping 3 (Just 17)
+          , Person False Done 20 (Just 0)
+          , Person False Away 0 Nothing
+          ]
 
     describe "othersLiked" $ do
         it "lists what others in the session liked that this user hasn't decided on" $ withTestDb $ \conn -> do

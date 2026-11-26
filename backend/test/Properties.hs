@@ -10,9 +10,13 @@ import Test.Hspec
 import Test.Hspec.QuickCheck (prop)
 import Test.QuickCheck
 
+import Data.Set qualified as Set
+import Data.UUID qualified as UUID
 import Limits (Limit (..), Usage, spend)
 import Places (inRing, isPhotoName)
+import Presence (Activity (..), Seen (..), activity, awayAfter, cardsLeft, dealt, seen)
 import Restaurant
+import User (UserId (..))
 
 spec :: Spec
 spec = do
@@ -26,6 +30,31 @@ spec = do
                          in (t', usage', ok && all ((<= limitMax limit) . snd) usage')
                     (_, _, fine) = foldl' step (start, Map.empty :: Usage, True) events
                  in fine
+
+    describe "presence" $ do
+        prop "is away when not heard from within awayAfter, and only then" $
+            forAll ((,,) <$> chooseInt (0, 120) <*> ids <*> maybeDeck) $ \(ago, decided, d) ->
+                let s = Seen (addUTCTime (negate (fromIntegral ago)) start) d
+                 in (activity start decided (Just s) == Away) === (fromIntegral ago > awayAfter)
+        prop "is done exactly when every card shown has been decided on" $
+            forAll ((,) <$> ids <*> ids) $ \(decided, shown) ->
+                let s = Seen start (Just shown)
+                 in (activity start decided (Just s) == Done) === all (`elem` decided) shown
+        prop "counts the cards shown and not decided on" $
+            forAll ((,) <$> ids <*> ids) $ \(decided, shown) ->
+                cardsLeft decided (Seen start (Just shown)) === Just (Set.size (Set.difference shown decided))
+        prop "keeps every card dealt, and a heartbeat keeps the deck" $
+            forAll (listOf (listOf (elements (map RestaurantId ["a", "b", "c", "d"])))) $ \deals ->
+                let me = UserId UUID.nil
+                    afterDeals = foldl (flip (dealt start me)) Map.empty deals
+                    dealtAll = Set.fromList (concat deals)
+                    deckOf m = Map.lookup me m >>= deck
+                 in conjoin
+                        [ null deals || deckOf afterDeals == Just dealtAll
+                        , deckOf (seen start me afterDeals) == deckOf afterDeals
+                        ]
+        it "is away until heard from" $
+            activity start Set.empty Nothing `shouldBe` Away
 
     describe "inRing" $
         prop "keeps each place between the two radii exactly once" $
@@ -53,6 +82,8 @@ spec = do
     start = UTCTime (fromGregorian 2026 1 1) 0
     centre = Loc 48.43 (-123.35)
     -- Seconds since the last spend, which key and how much
+    ids = Set.fromList <$> listOf (elements (map RestaurantId ["a", "b", "c", "d", "e"]))
+    maybeDeck = oneof [pure Nothing, Just <$> ids]
     spending :: Gen (Int, Text, Int)
     spending = (,,) <$> chooseInt (0, 600) <*> elements ["a", "b", "c"] <*> chooseInt (0, 5)
     ring = do
