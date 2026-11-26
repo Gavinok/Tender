@@ -10,6 +10,7 @@ module Tender.App
 
 import Prelude
 
+import Data.Bifunctor (lmap)
 import Data.Array (cons, elem, filter, head, length, snoc, uncons)
 import Data.Either (Either(..), either)
 import Data.Generic.Rep (class Generic)
@@ -30,7 +31,9 @@ import Tender.Types (ErrorMessage, Loc, Restaurant, RestaurantId, SessionId, Url
 -- | What we know once the user has joined a session
 type Swiper =
   { user :: UserId
-  , loc :: Loc
+  -- | Nothing when the browser couldn't find the user, who then gets the
+  -- | session's location
+  , loc :: Maybe Loc
   -- | How far the session searches, in metres, and how far it can go
   , radius :: Number
   , maxRadius :: Number
@@ -89,7 +92,8 @@ data Message
   = DetermineSession
   | JoinSession SessionId Url
   | StartSwiping
-  | Started UserId Loc
+  -- | Joined, with the user's location or why it couldn't be found
+  | Started UserId (Either String Loc)
   | Like
   | Dislike
   -- | A key pressed anywhere on the page
@@ -120,9 +124,12 @@ data Message
 
 -- | Show a failed request to the user
 failed :: ApiError -> Message
-failed = case _ of
-  NotFound e -> FailedToLoad e
-  Failed e -> FailedToLoad e
+failed = FailedToLoad <<< errorText
+
+errorText :: ApiError -> ErrorMessage
+errorText = case _ of
+  NotFound e -> e
+  Failed e -> e
 
 orFail :: forall a. (a -> Message) -> Either ApiError a -> Message
 orFail = either failed
@@ -186,19 +193,24 @@ update model = case model, _ of
     QR lobby { copied = true } /\ [ delay (Milliseconds 2000.0) $> Just HideCopied ]
   QR lobby, HideCopied -> QR lobby { copied = false } /\ []
 
+  -- Without a location the user can still join, and gets the session's
   QR { session }, StartSwiping -> model /\
-    [ attempt geolocation >>= case _ of
-        Left e -> pure $ Just $ FailedToLoad $ "Could not get your location: " <> message e
-        Right loc -> do
-          returning <- liftEffect $ rememberedUser session
-          joined <- joinSession session returning
-          case joined of
-            Right u -> liftEffect (rememberUser session u) $> Just (Started u loc)
-            Left e -> pure $ Just $ failed e
+    [ do
+        located <- lmap message <$> attempt geolocation
+        returning <- liftEffect $ rememberedUser session
+        joined <- joinSession session returning
+        case joined of
+          Right u -> liftEffect (rememberUser session u) $> Just (Started u located)
+          Left e -> pure $ Just $ failed e
     ]
-  _, Started user loc ->
-    Active { user, loc, radius: 0.0, maxRadius: 0.0, upcoming: [], photo: 0, summaryOpen: false, othersLiked: [], liked: [], matches: [], showMatches: false, vibe: [] } Fetching
-      /\ [ Just <<< orFail Loaded <$> getRestaurants user loc Nothing ]
+  _, Started user located ->
+    let
+      loc = either (const Nothing) Just located
+      -- Only reached when nobody else in the session has a location either
+      noLocation why e = FailedToLoad $ "Could not get your location (" <> why <> "). " <> errorText e
+    in
+      Active { user, loc, radius: 0.0, maxRadius: 0.0, upcoming: [], photo: 0, summaryOpen: false, othersLiked: [], liked: [], matches: [], showMatches: false, vibe: [] } Fetching
+        /\ [ Just <<< either (either noLocation (const failed) located) Loaded <$> getRestaurants user loc Nothing ]
   Active swiper Fetching, Loaded found ->
     advance swiper
       { upcoming = likedFirst found.othersLiked found.restaurants

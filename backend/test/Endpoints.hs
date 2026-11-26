@@ -83,6 +83,14 @@ spec = do
                 postJSON "/api/restaurants" "{\"user\":\"x\",\"loc\":{\"latitude\":500,\"longitude\":0}}"
                     `shouldRespondWith` 422
                 search u `shouldRespondWith` 200
+            it "uses the session's location for someone who has none" $ do
+                (s, _) <- joined
+                other <- unquote . simpleBody <$> get ("/api/addtosession/" <> encodeText s)
+                let withoutLoc u = postJSON "/api/restaurants" (encode (object ["user" .= u]))
+                withoutLoc other `shouldRespondWith` "{\"error\":\"Nobody else in this session has shared their location yet.\"}" {matchStatus = 409}
+                u <- unquote . simpleBody <$> get ("/api/addtosession/" <> encodeText s)
+                search u `shouldRespondWith` 200
+                withoutLoc other `shouldRespondWith` 200
             it "stops a visitor after 30 searches an hour" $ do
                 (_, u) <- joined
                 replicateM_ 30 (search u `shouldRespondWith` 200)

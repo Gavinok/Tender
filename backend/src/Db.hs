@@ -144,15 +144,18 @@ pruneOlderThan conn secs = withTransaction conn $ do
 
 {- | Where the session searches for restaurants: the first location anyone
 in it sent. Everyone else gets that one too, so they all see the same
-restaurants and can match on them.
+restaurants and can match on them. Someone whose location couldn't be
+found sends none and gets the session's, which is Nothing until someone
+has sent one.
 -}
-sessionLocation :: Connection -> U.SessionId -> Loc -> IO Loc
-sessionLocation conn s (Loc lat lon) = do
-    execute conn "INSERT OR IGNORE INTO sessions (session, latitude, longitude) VALUES (?, ?, ?)" (s, lat, lon)
+sessionLocation :: Connection -> U.SessionId -> Maybe Loc -> IO (Maybe Loc)
+sessionLocation conn s sent = do
+    forM_ sent $ \(Loc lat lon) ->
+        execute conn "INSERT OR IGNORE INTO sessions (session, latitude, longitude) VALUES (?, ?, ?)" (s, lat, lon)
     found <- query conn "SELECT latitude, longitude FROM sessions WHERE session = ?" (Only s)
     pure $ case found of
-        [(lat', lon')] -> Loc lat' lon'
-        _ -> Loc lat lon
+        [(lat, lon)] -> Just (Loc lat lon)
+        _ -> Nothing
 
 -- | How far the session searches, in metres
 sessionRadius :: Connection -> U.SessionId -> IO Double

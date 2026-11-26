@@ -82,12 +82,13 @@ decide :: UserId -> RestaurantId -> Boolean -> Aff (Either ApiError { matches ::
 decide user restaurant liked = post "decision" { user, restaurant, liked }
 
 -- | Restaurants for the user's session. The session searches from the first
--- | location anyone in it sent, so everyone gets the same restaurants.
+-- | location anyone in it sent, so everyone gets the same restaurants. A user
+-- | without a location sends none and gets the session's.
 -- | With `widenFrom`, the session searches further first, doubling the radius
 -- | in metres the person was shown.
 getRestaurants
   :: UserId
-  -> Loc
+  -> Maybe Loc
   -> Maybe Number
   -> Aff (Either ApiError { restaurants :: Array Restaurant, othersLiked :: Array RestaurantId, vibe :: Array String, radius :: Number, maxRadius :: Number })
 getRestaurants user loc widenFrom = post "restaurants" { user, loc, widenFrom }
