@@ -13,7 +13,8 @@ module Contract (spec) where
 
 import Data.Aeson (FromJSON, ToJSON, eitherDecodeFileStrict)
 import Data.Aeson.Encode.Pretty (encodePretty)
-import Data.ByteString.Lazy.Char8 qualified as L8
+import Data.Text.Lazy qualified as TL
+import Data.Text.Lazy.Encoding qualified as TLE
 import Data.UUID qualified as UUID
 import Test.Hspec
 import Test.Hspec.Golden (Golden, defaultGolden)
@@ -21,12 +22,12 @@ import Test.Hspec.Golden (Golden, defaultGolden)
 import Presence (Activity (..), Person (..))
 import Restaurant
 import User (SessionId (..), UserId (..))
-import Vibe (Chip (..), Found (..), Place (..), allChips, chipId)
+import Vibe (Chip (..), Found (..), Place (..), allChips)
 import Wire
 
--- | A response's JSON, pinned
+-- | A response's JSON, pinned. Decoded as UTF-8, since labels have emoji.
 goldenJSON :: (ToJSON a) => String -> a -> Golden String
-goldenJSON name = defaultGolden name . L8.unpack . encodePretty
+goldenJSON name = defaultGolden name . TL.unpack . TLE.decodeUtf8 . encodePretty
 
 -- | A request the frontend pinned, read as the handler reads it
 decodesTo :: (FromJSON a, Eq a, Show a) => String -> a -> Expectation
@@ -43,7 +44,6 @@ spec = do
         it "the lobby" $ goldenJSON "lobby-response" [Lobby [] False Nothing, Lobby allChips True (Just fernwood)]
         it "place lookups" $ goldenJSON "places-response" [Found fernwood "Fernwood, Victoria, BC, Canada"]
         it "errors" $ goldenJSON "error-response" (ErrorResponse "Unknown user")
-        it "the chip ids" $ goldenJSON "chips" (map chipId allChips)
 
     describe "requests the frontend sends" $ do
         it "restaurants, with a location and searching further" $

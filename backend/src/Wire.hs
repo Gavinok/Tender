@@ -23,7 +23,7 @@ import GHC.Generics (Generic)
 import Presence (Person)
 import Restaurant (Loc, Restaurant, RestaurantId)
 import User qualified as U
-import Vibe (Chip, Place, chipId)
+import Vibe (Chip, Place, allChips, chipId)
 
 -- | POST /api/restaurants
 data RestaurantsRequest = RestaurantsRequest
@@ -84,7 +84,7 @@ instance ToJSON RestaurantsResponse where
         object
             [ "restaurants" .= rrRestaurants r
             , "othersLiked" .= rrOthersLiked r
-            , "vibe" .= map chipId (rrVibe r)
+            , "vibe" .= rrVibe r
             , "radius" .= rrRadius r
             , "maxRadius" .= rrMaxRadius r
             ]
@@ -118,7 +118,14 @@ data Lobby = Lobby
     }
 
 instance ToJSON Lobby where
-    toJSON l = object ["chips" .= map chipId (lobbyChips l), "locked" .= lobbyLocked l, "place" .= lobbyPlace l]
+    toJSON l =
+        object
+            [ "chips" .= map chipId (lobbyChips l)
+            , -- Every chip, so the frontend shows what the backend knows
+              "choices" .= allChips
+            , "locked" .= lobbyLocked l
+            , "place" .= lobbyPlace l
+            ]
 
 -- | Any error, with a message the frontend can show
 newtype ErrorResponse = ErrorResponse Text
