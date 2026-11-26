@@ -138,27 +138,21 @@ spec = do
                 heartbeat a `shouldRespondWith` "{\"matches\":[],\"people\":[{\"left\":1,\"status\":\"swiping\",\"swiped\":1,\"you\":true}]}"
                 _ <- decide "p2"
                 heartbeat a `shouldRespondWith` "{\"matches\":[],\"people\":[{\"left\":0,\"status\":\"done\",\"swiped\":2,\"you\":true}]}"
-            it "doesn't know users who never joined" $
-                heartbeat ("00000000-0000-0000-0000-000000000000" :: Text) `shouldRespondWith` 404
-            it "limits heartbeats per user" $ do
-                (_, a) <- joined
-                replicateM_ 30 (heartbeat a `shouldRespondWith` 200)
-                heartbeat a `shouldRespondWith` 429
-
-        describe "GET /api/matches" $ do
-            it "lists the user's matches, including ones others completed" $ do
+            it "brings matches others completed" $ do
                 s <- newSession
                 let path = "/api/addtosession/" <> encodeText s
                 a <- unquote . simpleBody <$> get path
                 b <- unquote . simpleBody <$> get path
                 let decide u r = postJSON "/api/decision" (encode (object ["user" .= u, "restaurant" .= (r :: Text), "liked" .= True]))
                 _ <- decide a "p1"
-                get ("/api/matches/" <> encodeText a) `shouldRespondWith` "{\"matches\":[]}"
                 _ <- decide b "p1"
-                get ("/api/matches/" <> encodeText a) `shouldRespondWith` "{\"matches\":[\"p1\"]}"
-            it "doesn't know users who never joined" $ do
-                get "/api/matches/00000000-0000-0000-0000-000000000000" `shouldRespondWith` 404
-                get "/api/matches/not-a-uuid" `shouldRespondWith` 404
+                heartbeat a `shouldRespondWith` "{\"matches\":[\"p1\"],\"people\":[{\"left\":null,\"status\":\"swiping\",\"swiped\":1,\"you\":true},{\"left\":null,\"status\":\"swiping\",\"swiped\":1,\"you\":false}]}"
+            it "doesn't know users who never joined" $
+                heartbeat ("00000000-0000-0000-0000-000000000000" :: Text) `shouldRespondWith` 404
+            it "limits heartbeats per user" $ do
+                (_, a) <- joined
+                replicateM_ 30 (heartbeat a `shouldRespondWith` 200)
+                heartbeat a `shouldRespondWith` 429
 
         describe "GET /api/photo"
             $ it "only serves photos of places a search returned"
