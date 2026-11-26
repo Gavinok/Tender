@@ -2,12 +2,12 @@
 module Yelp (YelpKey (..), yelp, searchYelp, parseYelp) where
 
 import Data.Aeson (Value, withObject, (.!=), (.:), (.:?))
-import qualified Data.Aeson.Types as AT
-import qualified Data.ByteString as BS
-import qualified Data.ByteString.Char8 as S8
+import Data.Aeson.Types qualified as AT
+import Data.ByteString qualified as BS
+import Data.ByteString.Char8 qualified as S8
 import Data.Maybe (listToMaybe)
 import Data.Text (Text)
-import qualified Data.Text as T
+import Data.Text qualified as T
 import Fetch (FetchError, fetchJSON)
 import Network.HTTP.Simple (parseRequest_, setRequestHeaders, setRequestQueryString)
 import Provider (Provider (..))
@@ -22,18 +22,18 @@ yelp key = Provider "Yelp" $ \s -> searchYelp key (searchLoc s) (searchRadius s)
 -- | Up to 20 restaurants within the radius in metres, Yelp's best matches first
 searchYelp :: YelpKey -> Loc -> Double -> IO (Either FetchError [Restaurant])
 searchYelp (YelpKey key) (Loc lat lon) radius =
-    fetchJSON 10 parseYelp $
-        setRequestHeaders [("Authorization", "Bearer " <> key)] $
-            setRequestQueryString
-                [ ("latitude", Just (S8.pack (show lat)))
-                , ("longitude", Just (S8.pack (show lon)))
-                , ("categories", Just "restaurants")
-                , -- Yelp's limit is 40km
-                  ("radius", Just (S8.pack (show (round (min 40000 radius) :: Int))))
-                , ("limit", Just "20")
-                , ("sort_by", Just "best_match")
-                ]
-                (parseRequest_ "GET https://api.yelp.com/v3/businesses/search")
+    fetchJSON 10 parseYelp
+        $ setRequestHeaders [("Authorization", "Bearer " <> key)]
+        $ setRequestQueryString
+            [ ("latitude", Just (S8.pack (show lat)))
+            , ("longitude", Just (S8.pack (show lon)))
+            , ("categories", Just "restaurants")
+            , -- Yelp's limit is 40km
+              ("radius", Just (S8.pack (show (round (min 40000 radius) :: Int))))
+            , ("limit", Just "20")
+            , ("sort_by", Just "best_match")
+            ]
+            (parseRequest_ "GET https://api.yelp.com/v3/businesses/search")
 
 parseYelp :: Value -> AT.Parser [Restaurant]
 parseYelp = withObject "BusinessSearchResponse" $ \o ->

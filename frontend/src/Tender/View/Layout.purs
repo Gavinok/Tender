@@ -2,7 +2,7 @@ module Tender.View.Layout (page, centred) where
 
 import Prelude
 
-import Data.Maybe (Maybe(..))
+import Data.Maybe (Maybe, maybe)
 import Flame (Html)
 import Flame.Html.Attribute as HA
 import Flame.Html.Element as HE
@@ -25,16 +25,28 @@ matchBadge n open =
     ]
     [ icon Heart "w-4 h-4 fill-current", HE.text (show n) ]
 
--- | Full height page with the wordmark at the top, and the match count
--- | once the user is swiping
-page :: forall a. Maybe { count :: Int, open :: a } -> Array (Html a) -> Html a
-page matches content =
+-- | Starts a new session, leaving this one
+newSessionButton :: forall a. a -> Html a
+newSessionButton start =
+  HE.button
+    [ HA.class' "flex items-center gap-1 rounded-lg border-2 border-ink bg-white px-3 py-1 font-bold text-ink shadow-pop transition active:translate-y-0.5 active:shadow-none focus:outline-none focus-visible:ring-4 focus-visible:ring-star"
+    , HA.onClick start
+    , HA.title "Start a new session"
+    , HA.createAttribute "aria-label" "Start a new session"
+    ]
+    [ icon Plus "w-4 h-4", HE.text "New" ]
+
+-- | Full height page with the wordmark at the top, a button for a new
+-- | session, and the match count once the user is swiping
+page :: forall a. { matches :: Maybe { count :: Int, open :: a }, newSession :: Maybe a } -> Array (Html a) -> Html a
+page { matches, newSession } content =
   HE.main [ HA.id "main", HA.class' "mx-auto flex min-h-[100dvh] max-w-md flex-col px-4" ]
     [ HE.header [ HA.class' "flex items-center justify-between py-4" ]
         [ wordmark
-        , case matches of
-            Just { count, open } -> matchBadge count open
-            Nothing -> HE.text ""
+        , HE.div [ HA.class' "flex items-center gap-2" ]
+            ( maybe [] (pure <<< newSessionButton) newSession
+                <> maybe [] (\{ count, open } -> [ matchBadge count open ]) matches
+            )
         ]
     , HE.div [ HA.class' "flex flex-1 flex-col pb-6" ] content
     ]

@@ -78,7 +78,7 @@ outOfRestaurants matches { startOver, further } =
           ]
     , HE.div [ HA.class' "flex flex-col items-center gap-3" ]
         ( maybe [] (\f -> [ button Primary (Just MapPin) f.label f.search ]) further
-            <> [ button Secondary (Just Refresh) "Start over" startOver ]
+            <> [ button Secondary (Just Plus) "Start a new session" startOver ]
         )
     ]
 

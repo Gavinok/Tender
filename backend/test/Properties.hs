@@ -2,9 +2,9 @@
 module Properties (spec) where
 
 import Data.List (nub)
-import qualified Data.Map.Strict as Map
+import Data.Map.Strict qualified as Map
 import Data.Text (Text)
-import qualified Data.Text as T
+import Data.Text qualified as T
 import Data.Time (UTCTime (..), addUTCTime, fromGregorian)
 import Test.Hspec
 import Test.Hspec.QuickCheck (prop)

@@ -33,6 +33,20 @@ jobs:
       - run: cabal build all
       - run: cabal test
 
+  fourmolu:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # The same version as mise.toml, with backend/fourmolu.yaml
+      - uses: haskell-actions/run-fourmolu@v13
+        with:
+          version: "0.21.0.0"
+          working-directory: backend
+          pattern: |
+            src/**/*.hs
+            app/**/*.hs
+            test/**/*.hs
+
   hlint:
     runs-on: ubuntu-latest
     steps:

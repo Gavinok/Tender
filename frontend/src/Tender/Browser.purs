@@ -11,6 +11,7 @@ module Tender.Browser
   , sessionFromPath
   , shareLink
   , shareOrCopy
+  , startNewSession
   ) where
 
 import Prelude
@@ -23,7 +24,7 @@ import Effect.Aff (Aff)
 import Effect.Aff.Compat (EffectFnAff, fromEffectFnAff)
 import Tender.Types (Loc, SessionId(..), Url, UserId(..))
 import Web.HTML (window)
-import Web.HTML.Location (origin, pathname)
+import Web.HTML.Location (assign, origin, pathname)
 import Web.HTML.Window (location)
 
 foreign import _geolocation :: EffectFnAff Loc
@@ -53,6 +54,11 @@ existingSession = sessionFromPath <$> (pathname =<< location =<< window)
 -- | The last segment of a url path, e.g. `/<session>`
 sessionFromPath :: String -> Maybe SessionId
 sessionFromPath path = SessionId <$> last (filter (_ /= "") (split (Pattern "/") path))
+
+-- | Open the site's root, which starts a new session. A full page load, so
+-- | Back returns to the session the user was in.
+startNewSession :: Effect Unit
+startNewSession = assign "/" =<< location =<< window
 
 foreign import reload :: Effect Unit
 

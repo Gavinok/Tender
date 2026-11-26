@@ -1,10 +1,10 @@
 -- | Vibe chips a group picks in the lobby, and what each means for the search
 module Vibe (Chip (..), Search (..), defaultRadius, maxRadius, allChips, chipId, chipFromId, queryTerms, priceLevels, wantsOpenNow) where
 
-import Data.Maybe (mapMaybe)
 import Data.List (nub)
+import Data.Maybe (mapMaybe)
 import Data.Text (Text)
-import qualified Data.Text as T
+import Data.Text qualified as T
 import Restaurant (Loc)
 
 data Chip
@@ -24,11 +24,12 @@ data Chip
 data Search = Search
     { searchLoc :: Loc
     , searchChips :: [Chip]
-    , -- | Metres around the location
-      searchRadius :: Double
-    , -- | Metres already searched when searching further, so only the ring
-      -- between this and the radius is new. 0 for a first search.
-      searchInner :: Double
+    , searchRadius :: Double
+    -- ^ Metres around the location
+    , searchInner :: Double
+    {- ^ Metres already searched when searching further, so only the ring
+    between this and the radius is new. 0 for a first search.
+    -}
     }
     deriving stock (Show)
 
