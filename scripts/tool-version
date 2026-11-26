@@ -1,0 +1,15 @@
+#!/bin/sh
+# The version mise.toml pins for a tool, so CI and the Docker build use the
+# same one as development, e.g. `scripts/tool-version ghc`. Only reads the
+# [tools] section: [tool_alias] also has a ghc line.
+set -eu
+tool="$1"
+version=$(awk -F'"' -v tool="$tool" '
+  /^\[/ { in_tools = ($0 == "[tools]"); next }
+  in_tools && ($0 ~ "^\"?" tool "\"? *=") { print $(NF - 1); exit }
+' "$(dirname "$0")/../mise.toml")
+if [ -z "$version" ]; then
+  echo "mise.toml pins no version for $tool" >&2
+  exit 1
+fi
+echo "$version"

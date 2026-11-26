@@ -62,7 +62,9 @@ deploy-secret:
 # so everyone in a session has to reach the same one. Scales to zero when idle.
 deploy:
 	@test -n "$(PROJECT)" || (echo "No Google Cloud project: run gcloud config set project <id>" && exit 1)
-	docker build -t $(IMAGE):$(TAG) .
+	docker build -t $(IMAGE):$(TAG) \
+	  --build-arg GHC_VERSION=$$(scripts/tool-version ghc) \
+	  --build-arg NODE_VERSION=$$(scripts/tool-version node) .
 	docker push $(IMAGE):$(TAG)
 	gcloud run deploy $(SERVICE) --project $(PROJECT) --region $(REGION) --image $(IMAGE):$(TAG) \
 	  --allow-unauthenticated --min-instances 0 --max-instances 1 --memory 512Mi --cpu 1 --port 8080 \

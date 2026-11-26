@@ -1,8 +1,11 @@
 # Builds the backend and the frontend, then runs the backend serving both.
-# Used by `make deploy` for Google Cloud Run.
+# Used by `make deploy` for Google Cloud Run, which passes the versions
+# mise.toml pins (scripts/tool-version).
+ARG GHC_VERSION
+ARG NODE_VERSION
 
 # --- Backend ---
-FROM haskell:9.12.4-bookworm AS backend
+FROM haskell:${GHC_VERSION}-bookworm AS backend
 # zlib is frozen to link the system library, found through pkg-config
 RUN apt-get update \
  && apt-get install -y --no-install-recommends pkg-config zlib1g-dev \
@@ -10,14 +13,13 @@ RUN apt-get update \
 WORKDIR /build
 # Copied with the sources and built in one step: cabal can't build the
 # dependencies alone, since the local package's modules must exist first.
-# The image's compiler is plain `ghc`, not the ghc-9.12.4 that cabal.project
-# names; the pinned versions in cabal.project.freeze keep it reproducible.
+# The pinned versions in cabal.project.freeze keep it reproducible.
 COPY backend/ ./
-RUN cabal update && cabal build exe:tender --with-compiler=ghc \
- && cp "$(cabal list-bin exe:tender --with-compiler=ghc)" /build/tender-server
+RUN cabal update && cabal build exe:tender \
+ && cp "$(cabal list-bin exe:tender)" /build/tender-server
 
 # --- Frontend ---
-FROM node:22-bookworm-slim AS frontend
+FROM node:${NODE_VERSION}-bookworm-slim AS frontend
 # spago fetches the package set's registry index with git
 RUN apt-get update \
  && apt-get install -y --no-install-recommends git ca-certificates \
