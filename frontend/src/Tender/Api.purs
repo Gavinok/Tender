@@ -63,7 +63,8 @@ type RestaurantsResponse =
 
 type DecisionResponse = { matches :: Array RestaurantId, othersLiked :: Array RestaurantId }
 
-type PresenceResponse = { people :: Array Person, matches :: Array RestaurantId }
+-- | `next`: seconds until the next heartbeat
+type PresenceResponse = { people :: Array Person, matches :: Array RestaurantId, next :: Int }
 
 type ErrorResponse = { error :: String }
 

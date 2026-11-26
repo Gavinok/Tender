@@ -15,7 +15,6 @@ import Prelude
 import Data.Array (cons, elem, filter, head, length, snoc, uncons)
 import Data.Bifunctor (lmap)
 import Data.String (trim)
-import Data.String as String
 import Data.Either (Either(..), either)
 import Data.Generic.Rep (class Generic)
 import Data.Show.Generic (genericShow)
@@ -25,7 +24,8 @@ import Effect.Class (liftEffect)
 import Data.Tuple (Tuple)
 import Data.Tuple.Nested ((/\))
 import Flame (Update)
-import Tender.Api (ApiError(..), createSession, decide, findPlaces, getRestaurants, getVibe, heartbeat, joinSession, setPlace, setVibe)
+import Tender.Api (ApiError(..), PresenceResponse, createSession, decide, findPlaces, getRestaurants, getVibe, heartbeat, joinSession, setPlace, setVibe)
+import Data.Int (toNumber)
 import Tender.Vibe (Chip, Vibe)
 import Tender.Swipe (flyOut)
 import Tender.Swipe as Swipe
@@ -54,6 +54,8 @@ type Swiper =
   , matches :: Array Restaurant
   -- | Everyone in the session, as of the last heartbeat
   , people :: Array Person
+  -- | Seconds until the next heartbeat, as the backend last said
+  , heartbeatIn :: Int
   -- | Whether the list of matches is open
   , showMatches :: Boolean
   -- | The session's vibe chips
@@ -152,7 +154,7 @@ data Message
   | Heartbeat
   -- | Who is in the session and the user's matches, or Nothing if the
   -- | heartbeat failed
-  | HeardBack (Maybe { people :: Array Person, matches :: Array RestaurantId })
+  | HeardBack (Maybe PresenceResponse)
   | FailedToLoad ErrorMessage
   -- | Start again from the session in the url
   | Retry
@@ -215,10 +217,8 @@ advance swiper = case uncons swiper.upcoming of
 
 -- | How long until the next heartbeat. More often while out of cards, where
 -- | someone is waiting to hear about matches.
-heartbeatEvery :: Screen -> Milliseconds
-heartbeatEvery = case _ of
-  NoneLeft -> Milliseconds 5000.0
-  _ -> Milliseconds 10000.0
+seconds :: Int -> Milliseconds
+seconds n = Milliseconds (1000.0 * toNumber n)
 
 -- | Restaurants the user liked that are in the matches and weren't before,
 -- | newest first, with them added to the user's matches
@@ -300,7 +300,7 @@ update model = case model, _ of
       -- Only reached when nobody else in the session has a location either
       noLocation problem e = LocationFailed session user problem (errorText e)
     in
-      Active { user, loc, radius: 0.0, maxRadius: 0.0, upcoming: [], photo: 0, summaryOpen: false, othersLiked: [], liked: [], matches: [], people: [], showMatches: false, vibe: [] } Fetching
+      Active { user, loc, radius: 0.0, maxRadius: 0.0, upcoming: [], photo: 0, summaryOpen: false, othersLiked: [], liked: [], matches: [], people: [], heartbeatIn: 10, showMatches: false, vibe: [] } Fetching
         /\
           [ Just <<< either (either noLocation (const failed) located) Loaded <$> getRestaurants user loc Nothing
           -- Soon after the search, so the server knows what the user was shown
@@ -317,11 +317,10 @@ update model = case model, _ of
   _, ClosePicker -> withPicker model (const Nothing) /\ []
   _, PlaceQuery q -> withPicker model (map _ { query = q }) /\ []
   _, FindPlaces -> case pickerOf model of
+    -- The backend says if it's too short or long, as it checks anyway
     Just p | not p.searching ->
-      if String.length (trim p.query) < 2 then withPicker model (map _ { problem = Just "Type at least 2 letters." }) /\ []
-      else
-        withPicker model (map _ { searching = true, problem = Nothing })
-          /\ [ Just <<< PlacesFound <<< lmap errorText <$> findPlaces (trim p.query) ]
+      withPicker model (map _ { searching = true, problem = Nothing })
+        /\ [ Just <<< PlacesFound <<< lmap errorText <$> findPlaces (trim p.query) ]
     _ -> model /\ []
   _, PlacesFound found ->
     withPicker model (map \p -> either (\e -> p { searching = false, problem = Just e }) (\fs -> p { searching = false, results = Just fs }) found) /\ []
@@ -385,21 +384,22 @@ update model = case model, _ of
   -- One loop for the whole session, started with it. Skipped while the page
   -- is hidden, so a phone in a pocket shows as away; a failed heartbeat just
   -- waits for the next.
-  Active swiper screen, Heartbeat -> model /\
+  Active swiper _, Heartbeat -> model /\
     [ do
         hidden <- liftEffect tabHidden
-        if hidden then delay (heartbeatEvery screen) $> Just Heartbeat
+        if hidden then delay (seconds swiper.heartbeatIn) $> Just Heartbeat
         else Just <<< HeardBack <<< either (const Nothing) Just <$> heartbeat swiper.user
     ]
   -- Out of cards, new matches are celebrated here; while swiping, each
   -- decision brings them instead
   Active swiper screen, HeardBack heard ->
     let
-      withPeople = maybe swiper (\h -> swiper { people = h.people }) heard
+      -- The backend says when to come back; after a failure, the last it said
+      withPeople = maybe swiper (\h -> swiper { people = h.people, heartbeatIn = h.next }) heard
       { new, swiper: next } = case screen, heard of
         NoneLeft, Just h -> newMatches h.matches withPeople
         _, _ -> { new: [], swiper: withPeople }
-      again = delay (heartbeatEvery screen) $> Just Heartbeat
+      again = delay (seconds next.heartbeatIn) $> Just Heartbeat
     in
       case head new of
         Just m -> Active next (Matched m) /\ [ liftEffect vibrate $> Nothing, again ]

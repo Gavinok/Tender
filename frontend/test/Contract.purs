@@ -48,8 +48,9 @@ spec = describe "contract with the backend" do
     decodes "decision-response" \(r :: DecisionResponse) ->
       r.matches `shouldEqual` [ RestaurantId "ChIJ1" ]
     -- The backend samples every status, so a new one fails to decode here
-    decodes "presence-response" \(r :: PresenceResponse) ->
+    decodes "presence-response" \(r :: PresenceResponse) -> do
       map _.status r.people `shouldEqual` [ Status.Swiping, Status.Done, Status.Away ]
+      r.next `shouldEqual` 10
     decodes "lobby-response" \(lobbies :: Array Vibe) -> do
       map (map _.name <<< _.place) lobbies `shouldEqual` [ Nothing, Just "Fernwood" ]
       -- The chips come from the backend, labels and all

@@ -17,15 +17,15 @@ import Test.Hspec
 import Test.Hspec.Wai
 import Test.Hspec.Wai.Matcher (bodyEquals)
 
-import App (Env (..), application, newLimitsWith)
+import App (Env (..), application, newLimitsWith, noLocationYet, sessionFull, siteLimitReached, visitorLimitReached)
 import Db (initDb, openPool)
 import Fetch (FetchError)
 import Places (PlacesKey (..))
-import Presence (newPresence)
+import Presence (Activity (..), Person (..), newPresence)
 import Provider (Provider (..))
 import Restaurant
 import Vibe (Found (..), Place (..))
-import Wire (Lobby (..))
+import Wire (DecisionResponse (..), ErrorResponse (..), Lobby (..), PresenceResponse (..))
 
 -- | Always finds the same two places, without calling anyone
 fake :: Provider
@@ -49,6 +49,14 @@ appWith searchCap photoCap static = appLooking searchCap photoCap static (Just l
 -- | A 200 with the JSON of the value, encoded as the handler encodes it
 respondsWith :: (ToJSON a) => WaiSession st SResponse -> a -> WaiExpectation st
 respondsWith action expected = action `shouldRespondWith` 200{matchBody = bodyEquals (encode expected)}
+
+-- | An error status with the message the frontend shows
+failsWith :: WaiSession st SResponse -> (Integer, Text) -> WaiExpectation st
+failsWith action (code, message) =
+    action `shouldRespondWith` (fromInteger code){matchBody = bodyEquals (encode (ErrorResponse message))}
+
+p1 :: RestaurantId
+p1 = RestaurantId "p1"
 
 -- | Finds Kelowna for anything, without calling anyone
 lookUp :: Text -> IO (Either FetchError [Found])
@@ -107,21 +115,21 @@ spec = do
                 (s, _) <- joined
                 other <- unquote . simpleBody <$> get ("/api/addtosession/" <> encodeText s)
                 let withoutLoc u = postJSON "/api/restaurants" (encode (object ["user" .= u]))
-                withoutLoc other `shouldRespondWith` "{\"error\":\"Nobody else in this session has shared their location yet.\"}"{matchStatus = 409}
+                withoutLoc other `failsWith` (409, noLocationYet)
                 u <- unquote . simpleBody <$> get ("/api/addtosession/" <> encodeText s)
                 search u `shouldRespondWith` 200
                 withoutLoc other `shouldRespondWith` 200
             it "stops a visitor after 30 searches an hour" $ do
                 (_, u) <- joined
                 replicateM_ 30 (search u `shouldRespondWith` 200)
-                search u `shouldRespondWith` "{\"error\":\"You've hit Tender's limit for now. Try again in an hour.\"}"{matchStatus = 429}
+                search u `failsWith` (429, visitorLimitReached)
 
         describe "GET /api/addtosession" $ do
             it "turns away the 31st person" $ do
                 s <- newSession
                 let path = "/api/addtosession/" <> encodeText s
                 replicateM_ 30 (get path `shouldRespondWith` 200)
-                get path `shouldRespondWith` "{\"error\":\"This session is full\"}"{matchStatus = 409}
+                get path `failsWith` (409, sessionFull)
 
         describe "POST /api/decision" $ do
             it "refuses an overly long restaurant id" $ do
@@ -134,9 +142,9 @@ spec = do
                 a <- unquote . simpleBody <$> get path
                 b <- unquote . simpleBody <$> get path
                 let decide u r l = postJSON "/api/decision" (encode (object ["user" .= u, "restaurant" .= (r :: Text), "liked" .= l]))
-                decide a "p1" True `shouldRespondWith` "{\"matches\":[],\"othersLiked\":[]}"
-                decide b "p1" True `shouldRespondWith` "{\"matches\":[\"p1\"],\"othersLiked\":[]}"
-                decide a "p2" False `shouldRespondWith` "{\"matches\":[\"p1\"],\"othersLiked\":[]}"
+                decide a "p1" True `respondsWith` DecisionResponse [] []
+                decide b "p1" True `respondsWith` DecisionResponse [p1] []
+                decide a "p2" False `respondsWith` DecisionResponse [p1] []
 
         describe "where the group is eating" $ do
             let choose s place = postJSON ("/api/place/" <> encodeText s) (encode (object ["place" .= place]))
@@ -161,7 +169,7 @@ spec = do
 
         describe "GET /api/places" $ do
             it "lists matches for what was typed" $
-                get "/api/places?q=kelowna" `shouldRespondWith` "[{\"address\":\"Kelowna, BC, Canada\",\"latitude\":49.88,\"longitude\":-119.49,\"name\":\"Kelowna\"}]"
+                get "/api/places?q=kelowna" `respondsWith` [Found kelowna "Kelowna, BC, Canada"]
             it "wants between 2 and 100 characters" $ do
                 get "/api/places?q=k" `shouldRespondWith` 400
                 get ("/api/places?q=" <> S8.replicate 101 'k') `shouldRespondWith` 400
@@ -172,18 +180,17 @@ spec = do
                 (s, a) <- joined
                 b <- unquote . simpleBody <$> get ("/api/addtosession/" <> encodeText s)
                 _ <- search a
-                heartbeat a
-                    `shouldRespondWith` "{\"matches\":[],\"people\":[{\"left\":2,\"status\":\"swiping\",\"swiped\":0,\"you\":true},{\"left\":null,\"status\":\"away\",\"swiped\":0,\"you\":false}]}"
-                heartbeat b
-                    `shouldRespondWith` "{\"matches\":[],\"people\":[{\"left\":2,\"status\":\"swiping\",\"swiped\":0,\"you\":false},{\"left\":null,\"status\":\"swiping\",\"swiped\":0,\"you\":true}]}"
+                heartbeat a `respondsWith` PresenceResponse [Person True Swiping 0 (Just 2), Person False Away 0 Nothing] [] 10
+                heartbeat b `respondsWith` PresenceResponse [Person False Swiping 0 (Just 2), Person True Swiping 0 Nothing] [] 10
             it "counts decisions and says when someone is done" $ do
                 (_, a) <- joined
                 _ <- search a
                 let decide r = postJSON "/api/decision" (encode (object ["user" .= a, "restaurant" .= (r :: Text), "liked" .= False]))
                 _ <- decide "p1"
-                heartbeat a `shouldRespondWith` "{\"matches\":[],\"people\":[{\"left\":1,\"status\":\"swiping\",\"swiped\":1,\"you\":true}]}"
+                heartbeat a `respondsWith` PresenceResponse [Person True Swiping 1 (Just 1)] [] 10
                 _ <- decide "p2"
-                heartbeat a `shouldRespondWith` "{\"matches\":[],\"people\":[{\"left\":0,\"status\":\"done\",\"swiped\":2,\"you\":true}]}"
+                -- Done, so sooner: waiting to hear about matches
+                heartbeat a `respondsWith` PresenceResponse [Person True Done 2 (Just 0)] [] 5
             it "brings matches others completed" $ do
                 s <- newSession
                 let path = "/api/addtosession/" <> encodeText s
@@ -192,7 +199,7 @@ spec = do
                 let decide u r = postJSON "/api/decision" (encode (object ["user" .= u, "restaurant" .= (r :: Text), "liked" .= True]))
                 _ <- decide a "p1"
                 _ <- decide b "p1"
-                heartbeat a `shouldRespondWith` "{\"matches\":[\"p1\"],\"people\":[{\"left\":null,\"status\":\"swiping\",\"swiped\":1,\"you\":true},{\"left\":null,\"status\":\"swiping\",\"swiped\":1,\"you\":false}]}"
+                heartbeat a `respondsWith` PresenceResponse [Person True Swiping 1 Nothing, Person False Swiping 1 Nothing] [p1] 10
             it "doesn't know users who never joined" $
                 heartbeat ("00000000-0000-0000-0000-000000000000" :: Text) `shouldRespondWith` 404
             it "limits heartbeats per user" $ do
@@ -218,7 +225,7 @@ spec = do
         it "stops the site at its daily search cap" $ do
             (_, u) <- joined
             search u `shouldRespondWith` 200
-            search u `shouldRespondWith` "{\"error\":\"Tender has hit its daily limit. Try again tomorrow.\"}"{matchStatus = 429}
+            search u `failsWith` (429, siteLimitReached)
         it "lets photos of places a search returned through to the limits" $ do
             (_, u) <- joined
             _ <- search u
