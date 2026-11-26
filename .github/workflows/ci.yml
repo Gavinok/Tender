@@ -1,0 +1,193 @@
+name: CI
+
+# Every push: checks the side that changed. master then deploys production
+# (previews are opt-in, see preview.yml).
+on:
+  push:
+
+# A newer push to a branch replaces an older run, except on master, where a
+# deploy shouldn't be stopped halfway
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
+
+permissions:
+  contents: read
+
+jobs:
+  # Which side changed, so the other side's checks can be skipped
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+      app: ${{ steps.filter.outputs.app }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          # On a new branch, compare with master; otherwise with the last push
+          base: ${{ github.event.created && 'master' || github.event.before }}
+          filters: |
+            backend:
+              - "backend/**"
+              # The backend's tests decode the frontend's pinned requests
+              - "frontend/.golden/**"
+              - "scripts/tool-version"
+              - "mise.toml"
+              - ".github/workflows/ci.yml"
+            frontend:
+              - "frontend/**"
+              # The frontend's tests decode the backend's golden JSON
+              - "backend/.golden/**"
+              - "scripts/tool-version"
+              - "mise.toml"
+              - ".github/workflows/ci.yml"
+            # What goes into the image, so README changes don't deploy
+            app:
+              - "backend/**"
+              - "frontend/**"
+              - "Dockerfile"
+              - ".dockerignore"
+              - "Makefile"
+              - "scripts/**"
+              - "deploy/**"
+              - "mise.toml"
+              - ".github/workflows/ci.yml"
+
+  backend:
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      # The versions mise.toml pins, as in development and the Docker build
+      - id: versions
+        run: |
+          echo "ghc=$(../scripts/tool-version ghc)" >> "$GITHUB_OUTPUT"
+          echo "cabal=$(../scripts/tool-version cabal)" >> "$GITHUB_OUTPUT"
+      # The runner image doesn't ship this GHC, and installing it takes
+      # ~3 minutes, so keep the installed compiler between runs
+      - uses: actions/cache@v4
+        with:
+          path: /usr/local/.ghcup/ghc/${{ steps.versions.outputs.ghc }}
+          key: ghc-${{ runner.os }}-${{ steps.versions.outputs.ghc }}
+      - uses: haskell-actions/setup@v2
+        id: setup
+        with:
+          ghc-version: ${{ steps.versions.outputs.ghc }}
+          cabal-version: ${{ steps.versions.outputs.cabal }}
+      - run: cabal update
+      # The compiler setup found, by path, so no other ghc on the path is used
+      - run: cabal build all --dry-run -w "${{ steps.setup.outputs.ghc-exe }}"
+      - uses: actions/cache@v4
+        with:
+          path: ${{ steps.setup.outputs.cabal-store }}
+          key: cabal-${{ hashFiles('backend/dist-newstyle/cache/plan.json') }}
+          restore-keys: cabal-
+      - run: cabal build all -w "${{ steps.setup.outputs.ghc-exe }}"
+      - run: cabal test -w "${{ steps.setup.outputs.ghc-exe }}"
+
+  fourmolu:
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - id: versions
+        run: echo "fourmolu=$(scripts/tool-version github:fourmolu/fourmolu)" >> "$GITHUB_OUTPUT"
+      # The version mise.toml pins, with backend/fourmolu.yaml
+      - uses: haskell-actions/run-fourmolu@v13
+        with:
+          version: ${{ steps.versions.outputs.fourmolu }}
+          working-directory: backend
+          pattern: |
+            src/**/*.hs
+            app/**/*.hs
+            test/**/*.hs
+
+  hlint:
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: haskell-actions/hlint-setup@v2
+        with:
+          version: "3.10"
+      - uses: haskell-actions/hlint-run@v2
+        with:
+          path: '["backend/src/", "backend/app/", "backend/test/"]'
+          fail-on: suggestion
+
+  frontend:
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - id: versions
+        run: echo "node=$(../scripts/tool-version node)" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ steps.versions.outputs.node }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - uses: actions/cache@v4
+        with:
+          path: |
+            frontend/.spago
+            frontend/output
+          key: spago-${{ hashFiles('frontend/spago.lock') }}
+      - run: npx purs-tidy check "src/**/*.purs" "test/**/*.purs"
+      - run: npx spago test
+      - run: npx spago bundle
+
+  # The one check branch protection requires: passes when everything that
+  # needed to run passed, whichever side changed
+  ci:
+    needs: [changes, backend, fourmolu, hlint, frontend]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Every check that ran passed
+        run: |
+          for result in ${{ join(needs.*.result, ' ') }}; do
+            case "$result" in success | skipped) ;; *) echo "A check $result"; exit 1 ;; esac
+          done
+
+  deploy:
+    needs: [changes, ci]
+    if: github.ref == 'refs/heads/master' && needs.changes.outputs.app == 'true'
+    runs-on: ubuntu-latest
+    # Never cancelled halfway
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      # To sign in to Google Cloud as github-deployer
+      id-token: write
+    env:
+      PROJECT: ${{ vars.GCP_PROJECT }}
+      # Docker layers cached between runs, so unchanged steps aren't rebuilt
+      BUILD_FLAGS: --cache-from type=gha --cache-to type=gha,mode=max
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOYER }}
+      - uses: google-github-actions/setup-gcloud@v2
+      - run: gcloud auth configure-docker us-west1-docker.pkg.dev --quiet
+      - uses: docker/setup-buildx-action@v3
+      - name: Deploy production
+        run: make deploy TAG="${GITHUB_SHA::7}" REVISION="${GITHUB_SHA::7}-${GITHUB_RUN_NUMBER}"

@@ -1,0 +1,37 @@
+#!/bin/sh
+# Say where a branch's preview is live, on the branch's open PR and on the
+# issues that PR closes. Each gets one comment per branch, edited on later
+# pushes rather than added again. Run from CI with GH_TOKEN set, e.g.
+# `scripts/comment-preview where-eating https://... 1a2b3c4`.
+set -eu
+branch="$1"
+url="$2"
+sha="$3"
+marker="<!-- tender-preview:$branch -->"
+body="$marker
+Preview of \`$branch\` is live at $url (commit $sha).
+
+It runs beside production with no live traffic, its own data, and low Google caps (30 searches and 300 photos a day). It's updated on every push to the branch and removed when the branch is deleted."
+
+pr=$(gh pr list --head "$branch" --state open --json number --jq '.[0].number // empty')
+if [ -z "$pr" ]; then
+  echo "No open PR for $branch, so nowhere to comment"
+  exit 0
+fi
+# GitHub links "Fixes #N" only for PRs into the default branch, so stacked
+# PRs are read from their description too
+issues=$( (gh pr view "$pr" --json closingIssuesReferences --jq '.closingIssuesReferences[].number'
+  gh pr view "$pr" --json body --jq .body \
+    | grep -oiE '(close[sd]?|fix(e[sd])?|resolve[sd]?) #[0-9]+' | grep -oE '[0-9]+') | sort -un)
+
+for n in $pr $issues; do
+  existing=$(gh api "repos/{owner}/{repo}/issues/$n/comments" --paginate \
+    --jq ".[] | select(.body | startswith(\"$marker\")) | .id" | head -n 1)
+  if [ -n "$existing" ]; then
+    gh api -X PATCH "repos/{owner}/{repo}/issues/comments/$existing" -f body="$body" >/dev/null
+    echo "Updated the preview comment on #$n"
+  else
+    gh api "repos/{owner}/{repo}/issues/$n/comments" -f body="$body" >/dev/null
+    echo "Commented the preview on #$n"
+  fi
+done

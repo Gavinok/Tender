@@ -1,0 +1,17 @@
+[
+  {
+    "name": "keep-recent-production",
+    "action": { "type": "Keep" },
+    "mostRecentVersions": { "packageNamePrefixes": ["tender"], "keepCount": 5 }
+  },
+  {
+    "name": "delete-old-production",
+    "action": { "type": "Delete" },
+    "condition": { "packageNamePrefixes": ["tender"], "olderThan": "30d" }
+  },
+  {
+    "name": "delete-old-previews",
+    "action": { "type": "Delete" },
+    "condition": { "packageNamePrefixes": ["preview"], "olderThan": "14d" }
+  }
+]

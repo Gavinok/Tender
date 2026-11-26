@@ -1,0 +1,29 @@
+name: Remove preview
+
+# When a branch is deleted, its preview loses its URL. The revision stays,
+# idle and free, until Cloud Run's own cleanup; its image expires after 14
+# days (deploy/cleanup-policy.json).
+on:
+  delete:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  remove:
+    if: github.event.ref_type == 'branch'
+    runs-on: ubuntu-latest
+    env:
+      PROJECT: ${{ vars.GCP_PROJECT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOYER }}
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Remove the branch's preview URL
+        env:
+          BRANCH: ${{ github.event.ref }}
+        run: make remove-preview PREVIEW="$(scripts/preview-tag "$BRANCH")" || echo "No preview for $BRANCH"
