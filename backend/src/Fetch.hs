@@ -3,8 +3,8 @@ module Fetch (FetchError (..), fetchJSON) where
 
 import Control.Exception (try)
 import Data.Aeson (Value, eitherDecode)
-import qualified Data.Aeson.Types as AT
-import qualified Data.ByteString.Lazy.Char8 as L8
+import Data.Aeson.Types qualified as AT
+import Data.ByteString.Lazy.Char8 qualified as L8
 import Network.HTTP.Client (responseTimeoutMicro)
 import Network.HTTP.Simple (HttpException, Request, getResponseBody, getResponseStatusCode, httpLBS, setRequestResponseTimeout)
 

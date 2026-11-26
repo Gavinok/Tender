@@ -1,0 +1,4 @@
+# Formatting only: ignore in git blame with
+#   git config blame.ignoreRevsFile .git-blame-ignore-revs
+# Format the backend with fourmolu
+e56d7bc95249de93a48c153b724f66e6d8f0c6bf

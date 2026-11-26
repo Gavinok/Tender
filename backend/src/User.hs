@@ -5,7 +5,7 @@ module User (User (..), UserId (..), SessionId (..), newUserId, newSessionId, se
 import Data.Aeson (FromJSON, ToJSON)
 import Data.Text (Text)
 import Data.UUID (UUID)
-import qualified Data.UUID as UUID
+import Data.UUID qualified as UUID
 import Data.UUID.V4 (nextRandom)
 import Database.SQLite.Simple (FromRow)
 import Database.SQLite.Simple.FromField (FieldParser, FromField (fromField), ResultError (ConversionFailed), returnError)
