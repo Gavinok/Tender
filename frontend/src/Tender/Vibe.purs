@@ -4,12 +4,14 @@ module Tender.Vibe (Chip, Vibe, chips, chipLabel) where
 import Prelude
 
 import Data.Array (find)
-import Data.Maybe (maybe)
+import Data.Maybe (Maybe, maybe)
+import Tender.Types (Place)
 
 type Chip = { id :: String, label :: String }
 
--- | The session's chips, and whether someone has started swiping, which locks them
-type Vibe = { chips :: Array String, locked :: Boolean }
+-- | The session's chips and where they're eating, and whether someone has
+-- | started swiping, which locks them
+type Vibe = { chips :: Array String, locked :: Boolean, place :: Maybe Place }
 
 chips :: Array Chip
 chips =

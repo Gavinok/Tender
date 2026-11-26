@@ -83,13 +83,16 @@ outOfRestaurants matches { startOver, further } =
     ]
 
 -- | No location to search from yet, with why and a way to ask again
-needLocation :: forall a. String -> a -> Html a
-needLocation message retry =
+needLocation :: forall a. String -> { retry :: a, choose :: a } -> Html a
+needLocation message { retry, choose } =
   HE.div [ HA.class' "flex flex-1 flex-col items-center justify-center gap-5 text-center" ]
     [ badge MapPin "bg-star/30 text-ink"
     , HE.h1 [ HA.class' "text-3xl font-display" ] [ HE.text "We need your location" ]
     , HE.p [ HA.class' "max-w-xs text-lg text-ink/70" ] [ HE.text message ]
-    , button Primary (Just Refresh) "Try again" retry
+    , HE.div [ HA.class' "flex flex-col items-center gap-3" ]
+        [ button Primary (Just Refresh) "Try again" retry
+        , button Secondary (Just MapPin) "Tell us where you're eating" choose
+        ]
     ]
 
 -- | Something went wrong, with the message and a way to try again

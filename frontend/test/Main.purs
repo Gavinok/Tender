@@ -10,9 +10,9 @@ import Data.Tuple (Tuple(..))
 import Effect.Class (liftEffect)
 import Flame.Renderer.String (render)
 import Effect (Effect)
-import Tender.App (Lobby, Message(..), Model(..), Screen(..), Swiper, locationText, update)
+import Tender.App (Lobby, Message(..), Model(..), Picker, Screen(..), Swiper, locationText, update)
 import Tender.Browser (LocationProblem(..), sessionFromPath)
-import Tender.Types (Person, Restaurant, RestaurantId(..), SessionId(..), UserId(..))
+import Tender.Types (Found, Person, Place, Restaurant, RestaurantId(..), SessionId(..), UserId(..))
 import Tender.Types (Status(..)) as Status
 import Tender.View (view)
 import Test.Spec (describe, it)
@@ -47,7 +47,16 @@ here :: { latitude :: Number, longitude :: Number }
 here = { latitude: 1.0, longitude: 2.0 }
 
 lobbyAt :: Lobby
-lobbyAt = { session: SessionId "s", link: "http://example.com/s", copied: false, vibe: { chips: [], locked: false } }
+lobbyAt = { session: SessionId "s", link: "http://example.com/s", copied: false, vibe: { chips: [], locked: false, place: Nothing }, picker: Nothing }
+
+blankPicker :: Picker
+blankPicker = { query: "", results: Nothing, searching: false, problem: Nothing }
+
+kelowna :: Found
+kelowna = { name: "Kelowna", address: "Kelowna, BC, Canada", latitude: 49.88, longitude: -119.49 }
+
+kelownaPlace :: Place
+kelownaPlace = { name: "Kelowna", latitude: 49.88, longitude: -119.49 }
 
 -- | The user and a friend who has finished
 me :: Person
@@ -78,7 +87,7 @@ main :: Effect Unit
 main = runSpecAndExitProcess [ consoleReporter ] do
   describe "update" do
     it "fetches the restaurants once started" do
-      step (QR lobbyAt) (Started (UserId "u") (Right here))
+      step (QR lobbyAt) (Started (SessionId "s") (UserId "u") (Right here))
         `shouldEqual` Tuple (Active swiper { radius = 0.0, maxRadius = 0.0 } Fetching) 2
 
     it "shows the first restaurant and keeps the rest" do
@@ -144,13 +153,13 @@ main = runSpecAndExitProcess [ consoleReporter ] do
         `shouldEqual` Tuple (Active swiper (Swiping (restaurant "b"))) 0
 
     it "searches from the session's location when the user's couldn't be found" do
-      step Loading (Started (UserId "u") (Left NotAllowed))
+      step Loading (Started (SessionId "s") (UserId "u") (Left NotAllowed))
         `shouldEqual` Tuple (Active swiper { loc = Nothing, radius = 0.0, maxRadius = 0.0 } Fetching) 2
 
     it "asks for the location again, as the same user, when there's none to search from" do
-      step (Active swiper Fetching) (LocationFailed (UserId "u") Blocked "Nobody else has one.")
-        `shouldEqual` Tuple (NeedLocation { user: UserId "u", message: locationText Blocked <> " Nobody else has one." }) 0
-      step (NeedLocation { user: UserId "u", message: "x" }) RetryLocation `shouldEqual` Tuple Loading 1
+      step (Active swiper Fetching) (LocationFailed (SessionId "s") (UserId "u") Blocked "Nobody else has one.")
+        `shouldEqual` Tuple (NeedLocation { session: SessionId "s", user: UserId "u", message: locationText Blocked <> " Nobody else has one.", picker: Nothing }) 0
+      step (NeedLocation { session: SessionId "s", user: UserId "u", message: "x", picker: Nothing }) RetryLocation `shouldEqual` Tuple Loading 1
       step (QR lobbyAt) RetryLocation `shouldEqual` Tuple (QR lobbyAt) 0
 
     it "says what to do for each way finding the location can fail" do
@@ -158,6 +167,32 @@ main = runSpecAndExitProcess [ consoleReporter ] do
       locationText DeviceOff `shouldSatisfy` contains (Pattern "device's settings")
       locationText NotAllowed `shouldSatisfy` contains (Pattern "allow it when your browser asks")
       locationText TimedOut `shouldSatisfy` contains (Pattern "too long")
+
+    it "opens the picker in the lobby until it's locked" do
+      step (QR lobbyAt) OpenPicker `shouldEqual` Tuple (QR lobbyAt { picker = Just blankPicker }) 0
+      step (QR lobbyAt { vibe { locked = true } }) OpenPicker `shouldEqual` Tuple (QR lobbyAt { vibe { locked = true } }) 0
+      step (QR lobbyAt { picker = Just blankPicker }) ClosePicker `shouldEqual` Tuple (QR lobbyAt) 0
+
+    it "looks up what was typed once it's long enough" do
+      step (QR lobbyAt { picker = Just blankPicker }) (PlaceQuery "K")
+        `shouldEqual` Tuple (QR lobbyAt { picker = Just blankPicker { query = "K" } }) 0
+      step (QR lobbyAt { picker = Just blankPicker { query = "K" } }) FindPlaces
+        `shouldEqual` Tuple (QR lobbyAt { picker = Just blankPicker { query = "K", problem = Just "Type at least 2 letters." } }) 0
+      step (QR lobbyAt { picker = Just blankPicker { query = "Kelowna" } }) FindPlaces
+        `shouldEqual` Tuple (QR lobbyAt { picker = Just blankPicker { query = "Kelowna", searching = true } }) 1
+      step (QR lobbyAt { picker = Just blankPicker { searching = true } }) (PlacesFound (Right [ kelowna ]))
+        `shouldEqual` Tuple (QR lobbyAt { picker = Just blankPicker { results = Just [ kelowna ] } }) 0
+
+    it "shares the chosen place with the session, and can go back to locations" do
+      step (QR lobbyAt { picker = Just blankPicker }) (ChoosePlace kelowna)
+        `shouldEqual` Tuple (QR lobbyAt { vibe { place = Just kelownaPlace } }) 1
+      step (QR lobbyAt { vibe { place = Just kelownaPlace } }) ClearPlace `shouldEqual` Tuple (QR lobbyAt) 1
+
+    it "starts from a chosen place when there's no location" do
+      step (NeedLocation { session: SessionId "s", user: UserId "u", message: "x", picker: Nothing }) OpenPicker
+        `shouldEqual` Tuple (NeedLocation { session: SessionId "s", user: UserId "u", message: "x", picker: Just blankPicker }) 0
+      step (NeedLocation { session: SessionId "s", user: UserId "u", message: "x", picker: Just blankPicker }) (ChoosePlace kelowna)
+        `shouldEqual` Tuple Loading 1
 
     it "leaves for a new session from any screen" do
       step (Active swiper (Swiping (restaurant "a"))) NewSession `shouldEqual` Tuple (Active swiper (Swiping (restaurant "a"))) 1
@@ -183,16 +218,16 @@ main = runSpecAndExitProcess [ consoleReporter ] do
         `shouldEqual` Tuple (Active swiper (Swiping (restaurant "b"))) 0
 
     it "toggles a vibe chip and saves it" do
-      step (QR lobbyAt) (ToggleChip "patio") `shouldEqual` Tuple (QR lobbyAt { vibe = { chips: [ "patio" ], locked: false } }) 1
-      step (QR lobbyAt { vibe = { chips: [ "patio" ], locked: false } }) (ToggleChip "patio") `shouldEqual` Tuple (QR lobbyAt) 1
+      step (QR lobbyAt) (ToggleChip "patio") `shouldEqual` Tuple (QR lobbyAt { vibe = { chips: [ "patio" ], locked: false, place: Nothing } }) 1
+      step (QR lobbyAt { vibe = { chips: [ "patio" ], locked: false, place: Nothing } }) (ToggleChip "patio") `shouldEqual` Tuple (QR lobbyAt) 1
 
     it "doesn't change chips once swiping has started" do
-      let locked = lobbyAt { vibe = { chips: [ "patio" ], locked: true } }
+      let locked = lobbyAt { vibe = { chips: [ "patio" ], locked: true, place: Nothing } }
       step (QR locked) (ToggleChip "drinks") `shouldEqual` Tuple (QR locked) 0
 
     it "shows the vibe others picked and checks again later" do
-      step (QR lobbyAt) (VibePolled { chips: [ "drinks" ], locked: false })
-        `shouldEqual` Tuple (QR lobbyAt { vibe = { chips: [ "drinks" ], locked: false } }) 1
+      step (QR lobbyAt) (VibePolled { chips: [ "drinks" ], locked: false, place: Nothing })
+        `shouldEqual` Tuple (QR lobbyAt { vibe = { chips: [ "drinks" ], locked: false, place: Nothing } }) 1
 
     it "stops checking the vibe once swiping" do
       step (Active swiper Fetching) PollVibe `shouldEqual` Tuple (Active swiper Fetching) 0
@@ -254,8 +289,8 @@ main = runSpecAndExitProcess [ consoleReporter ] do
         html <- liftEffect $ render (view model)
         html `shouldSatisfy` contains (Pattern text)
     it "shows vibe chips in the lobby, marking the chosen ones" do
-      renders (QR lobbyAt { vibe = { chips: [ "patio" ], locked: false } }) "aria-pressed=\"true\">☀️ Patio<"
-      renders (QR lobbyAt { vibe = { chips: [ "patio" ], locked: true } }) "Locked in"
+      renders (QR lobbyAt { vibe = { chips: [ "patio" ], locked: false, place: Nothing } }) "aria-pressed=\"true\">☀️ Patio<"
+      renders (QR lobbyAt { vibe = { chips: [ "patio" ], locked: true, place: Nothing } }) "Locked in"
     it "shows a local QR code and the share link in the lobby" do
       renders (QR lobbyAt) "src=\"data:image/svg+xml"
       renders (QR lobbyAt) "http://example.com/s"
@@ -293,9 +328,17 @@ main = runSpecAndExitProcess [ consoleReporter ] do
       renders (Active swiper { radius = 40000.0 } NoneLeft) "Search further (up to 50 km)"
     it "says when there is nothing left" do
       renders (Active swiper NoneLeft) "everything nearby"
-      renders (NeedLocation { user: UserId "u", message: "Location is blocked for this site." }) "We need your location"
-      renders (NeedLocation { user: UserId "u", message: "Location is blocked for this site." }) "Location is blocked for this site."
-      renders (NeedLocation { user: UserId "u", message: "x" }) ">Try again<"
+      renders (NeedLocation { session: SessionId "s", user: UserId "u", message: "Location is blocked for this site.", picker: Nothing }) "We need your location"
+      renders (NeedLocation { session: SessionId "s", user: UserId "u", message: "Location is blocked for this site.", picker: Nothing }) "Location is blocked for this site."
+      renders (NeedLocation { session: SessionId "s", user: UserId "u", message: "x", picker: Nothing }) ">Try again<"
+      renders (NeedLocation { session: SessionId "s", user: UserId "u", message: "x", picker: Nothing }) "Tell us where you&#39;re eating"
+      renders (QR lobbyAt) "your location"
+      renders (QR lobbyAt) ">Somewhere else?<"
+      renders (QR lobbyAt { vibe { place = Just kelownaPlace } }) ">Kelowna<"
+      renders (QR lobbyAt { vibe { place = Just kelownaPlace } }) ">Use our locations<"
+      renders (QR lobbyAt { picker = Just blankPicker { results = Just [ kelowna ] } }) "Where are you eating?"
+      renders (QR lobbyAt { picker = Just blankPicker { results = Just [ kelowna ] } }) "Kelowna, BC, Canada"
+      renders (QR lobbyAt { picker = Just blankPicker { results = Just [] } }) "Nothing matched"
       renders (Active swiper { people = [ me, friend, { you: false, status: Status.Away, swiped: 0, left: Nothing } ] } NoneLeft) "2 here · 1 done"
       renders (Active swiper { people = [ me, friend ] } NoneLeft) ">You<"
       renders (Active swiper { people = [ me, friend ] } NoneLeft) ">Friend 1<"

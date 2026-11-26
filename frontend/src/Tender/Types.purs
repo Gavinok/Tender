@@ -2,6 +2,8 @@ module Tender.Types
   ( ErrorMessage
   , Author
   , Loc
+  , Place
+  , Found
   , Person
   , Status(..)
   , Photo
@@ -78,6 +80,12 @@ photoUrl p = case p.url, p.name of
 
 -- | Location of the current user
 type Loc = { latitude :: Number, longitude :: Number }
+
+-- | Where the group said they're eating
+type Place = { name :: String, latitude :: Number, longitude :: Number }
+
+-- | A place a lookup found, with its address to tell it apart from others
+type Found = { name :: String, address :: String, latitude :: Number, longitude :: Number }
 
 -- | What someone in the session is up to, as of their last heartbeat
 data Status = Swiping | Done | Away

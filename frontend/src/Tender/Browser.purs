@@ -14,6 +14,7 @@ module Tender.Browser
   , shareOrCopy
   , startNewSession
   , tabHidden
+  , encodeQuery
   ) where
 
 import Prelude
@@ -100,6 +101,9 @@ startNewSession = assign "/" =<< location =<< window
 -- | Not web-html's visibilityState, which reads readyState in 4.1.1 and so
 -- | is never hidden. Fixed in 4.1.2, once the package set has it.
 foreign import tabHidden :: Effect Boolean
+
+-- | Text made safe to put in a url's query string
+foreign import encodeQuery :: String -> String
 
 foreign import reload :: Effect Unit
 

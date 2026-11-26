@@ -76,3 +76,5 @@ export const _rememberUser = (session) => (user) => () => {
 };
 
 export const tabHidden = () => document.visibilityState === "hidden";
+
+export const encodeQuery = (text) => encodeURIComponent(text);
