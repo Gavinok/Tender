@@ -153,7 +153,8 @@ visitorOf = do
 -- | Body of a /restaurants request: who is asking, and where they are
 data RestaurantsRequest = RestaurantsRequest
     { searcher :: !U.UserId
-    , loc :: !Loc
+    , loc :: !(Maybe Loc)
+    -- ^ Nothing when the browser couldn't find the person; the session's is used
     , widenFrom :: !(Maybe Double)
     -- ^ Set by "search further": the radius the person was shown, to double
     }
@@ -161,7 +162,7 @@ data RestaurantsRequest = RestaurantsRequest
 
 instance FromJSON RestaurantsRequest where
     parseJSON = withObject "RestaurantsRequest" $ \o ->
-        RestaurantsRequest <$> o .: "user" <*> o .: "loc" <*> o .:? "widenFrom"
+        RestaurantsRequest <$> o .: "user" <*> o .:? "loc" <*> o .:? "widenFrom"
 
 -- | Body of a POST /vibe request
 newtype VibeRequest = VibeRequest [Text]
@@ -360,11 +361,12 @@ app env = do
             Just u -> do
                 -- One transaction, so these all come from the same moment. It writes
                 -- (the location, a wider radius), so it takes the write lock up front.
-                (l, (chips, _), radius, decided) <- liftIO $ db $ \c -> withImmediateTransaction c $ do
+                (located, (chips, _), radius, decided) <- liftIO $ db $ \c -> withImmediateTransaction c $ do
                     let s = U.session u
                     l <- sessionLocation c s here
                     radius <- maybe (sessionRadius c s) (widenSearch c s) wider
                     (l,,radius,) <$> getVibe c s <*> decidedBy c uid
+                l <- maybe (errorResponse status409 "Nobody else in this session has shared their location yet." >> finish) pure located
                 -- Searching further only needs the ring outside what the person saw
                 let inner = maybe 0 (min radius) wider
                 visitor <- visitorOf

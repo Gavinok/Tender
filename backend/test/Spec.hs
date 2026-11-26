@@ -329,8 +329,8 @@ main = hspec $ do
             (old, [o]) <- sessionWith conn 1
             (fresh, [f]) <- sessionWith conn 1
             like conn o "a" >> like conn f "a"
-            _ <- sessionLocation conn old (Loc 0 0)
-            _ <- sessionLocation conn fresh (Loc 0 0)
+            _ <- sessionLocation conn old (Just (Loc 0 0))
+            _ <- sessionLocation conn fresh (Just (Loc 0 0))
             _ <- setVibe conn old []
             execute_ conn "UPDATE users SET joined = joined - 100000 WHERE rowid = 1"
             execute_ conn "UPDATE session_vibes SET updated = updated - 100000"
@@ -389,24 +389,24 @@ main = hspec $ do
         it "locks once someone starts swiping" $ withTestDb $ \conn -> do
             (s, _) <- sessionWith conn 0
             _ <- setVibe conn s [Patio]
-            _ <- sessionLocation conn s (Loc 48.43 (-123.35))
+            _ <- sessionLocation conn s (Just (Loc 48.43 (-123.35)))
             setVibe conn s [Fancy] `shouldReturn` ([Patio], True)
 
     describe "searching further" $ do
         it "starts at the default radius" $ withTestDb $ \conn -> do
             (s, _) <- sessionWith conn 0
-            _ <- sessionLocation conn s (Loc 48.43 (-123.35))
+            _ <- sessionLocation conn s (Just (Loc 48.43 (-123.35)))
             sessionRadius conn s `shouldReturn` defaultRadius
         it "doubles the radius up to the maximum" $ withTestDb $ \conn -> do
             (s, _) <- sessionWith conn 0
-            _ <- sessionLocation conn s (Loc 48.43 (-123.35))
+            _ <- sessionLocation conn s (Just (Loc 48.43 (-123.35)))
             widenSearch conn s 5000 `shouldReturn` 10000
             widenSearch conn s 10000 `shouldReturn` 20000
             widenSearch conn s 40000 `shouldReturn` maxRadius
             widenSearch conn s maxRadius `shouldReturn` maxRadius
         it "only widens one step when two people ask at once" $ withTestDb $ \conn -> do
             (s, _) <- sessionWith conn 0
-            _ <- sessionLocation conn s (Loc 48.43 (-123.35))
+            _ <- sessionLocation conn s (Just (Loc 48.43 (-123.35)))
             _ <- widenSearch conn s 5000
             widenSearch conn s 5000 `shouldReturn` 10000
         it "knows what each person has already decided on" $ withTestDb $ \conn -> do
@@ -417,13 +417,18 @@ main = hspec $ do
     describe "sessionLocation" $ do
         it "uses the first location sent for everyone in the session" $ withTestDb $ \conn -> do
             (s, _) <- sessionWith conn 0
-            sessionLocation conn s (Loc 48.43 (-123.35)) `shouldReturn` Loc 48.43 (-123.35)
-            sessionLocation conn s (Loc 49.28 (-123.12)) `shouldReturn` Loc 48.43 (-123.35)
+            sessionLocation conn s (Just (Loc 48.43 (-123.35))) `shouldReturn` Just (Loc 48.43 (-123.35))
+            sessionLocation conn s (Just (Loc 49.28 (-123.12))) `shouldReturn` Just (Loc 48.43 (-123.35))
         it "keeps each session's location separate" $ withTestDb $ \conn -> do
             (s, _) <- sessionWith conn 0
             (other, _) <- sessionWith conn 0
-            _ <- sessionLocation conn s (Loc 48.43 (-123.35))
-            sessionLocation conn other (Loc 51.04 (-114.1)) `shouldReturn` Loc 51.04 (-114.1)
+            _ <- sessionLocation conn s (Just (Loc 48.43 (-123.35)))
+            sessionLocation conn other (Just (Loc 51.04 (-114.1))) `shouldReturn` Just (Loc 51.04 (-114.1))
+        it "gives someone without a location the session's" $ withTestDb $ \conn -> do
+            (s, _) <- sessionWith conn 0
+            sessionLocation conn s Nothing `shouldReturn` Nothing
+            _ <- sessionLocation conn s (Just (Loc 48.43 (-123.35)))
+            sessionLocation conn s Nothing `shouldReturn` Just (Loc 48.43 (-123.35))
 
     describe "initSchema" $ do
         it "upgrades a database from before versioning, keeping likes and dropping stored restaurants" $

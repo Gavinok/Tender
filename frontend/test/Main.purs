@@ -3,6 +3,7 @@ module Test.Main where
 import Prelude
 
 import Data.Array (length)
+import Data.Either (Either(..))
 import Data.Maybe (Maybe(..))
 import Data.String (Pattern(..), contains)
 import Data.Tuple (Tuple(..))
@@ -39,7 +40,7 @@ bare :: String -> Restaurant
 bare id = (restaurant id) { url = Nothing, rating = Nothing, photos = [], summary = Nothing }
 
 swiper :: Swiper
-swiper = { user: UserId "u", loc: here, radius: 5000.0, maxRadius: 50000.0, upcoming: [], photo: 0, summaryOpen: false, othersLiked: [], liked: [], matches: [], polls: 0, showMatches: false, vibe: [] }
+swiper = { user: UserId "u", loc: Just here, radius: 5000.0, maxRadius: 50000.0, upcoming: [], photo: 0, summaryOpen: false, othersLiked: [], liked: [], matches: [], polls: 0, showMatches: false, vibe: [] }
 
 here :: { latitude :: Number, longitude :: Number }
 here = { latitude: 1.0, longitude: 2.0 }
@@ -69,7 +70,7 @@ main :: Effect Unit
 main = runSpecAndExitProcess [ consoleReporter ] do
   describe "update" do
     it "fetches the restaurants once started" do
-      step (QR lobbyAt) (Started (UserId "u") here)
+      step (QR lobbyAt) (Started (UserId "u") (Right here))
         `shouldEqual` Tuple (Active swiper { radius = 0.0, maxRadius = 0.0 } Fetching) 1
 
     it "shows the first restaurant and keeps the rest" do
@@ -133,6 +134,10 @@ main = runSpecAndExitProcess [ consoleReporter ] do
     it "moves on from a match" do
       step (Active swiper { upcoming = [ restaurant "b" ] } (Matched (restaurant "a"))) Continue
         `shouldEqual` Tuple (Active swiper (Swiping (restaurant "b"))) 0
+
+    it "searches from the session's location when the user's couldn't be found" do
+      step Loading (Started (UserId "u") (Left "denied"))
+        `shouldEqual` Tuple (Active swiper { loc = Nothing, radius = 0.0, maxRadius = 0.0 } Fetching) 1
 
     it "leaves for a new session from any screen" do
       step (Active swiper (Swiping (restaurant "a"))) NewSession `shouldEqual` Tuple (Active swiper (Swiping (restaurant "a"))) 1
@@ -269,4 +274,5 @@ main = runSpecAndExitProcess [ consoleReporter ] do
       renders (Active swiper { radius = 40000.0 } NoneLeft) "Search further (up to 50 km)"
     it "says when there is nothing left" do
       renders (Active swiper NoneLeft) "everything nearby"
+      renders (Active swiper { loc = Nothing } (Swiping (restaurant "a"))) "Showing places near where your group started"
       renders (Active swiper NoneLeft) "Start a new session<"
