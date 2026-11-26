@@ -1,5 +1,5 @@
 -- | Restaurant photos and the attribution each source requires
-module Tender.View.Photo (restaurantPhoto, photoCredit, mapsLink) where
+module Tender.View.Photo (restaurantPhoto, photoCredit, mapsLink, menuUrl, menuLink) where
 
 import Prelude
 
@@ -8,6 +8,7 @@ import Data.Maybe (Maybe(..))
 import Flame (Html)
 import Flame.Html.Attribute as HA
 import Flame.Html.Element as HE
+import Tender.Browser (encodeQuery)
 import Tender.Types (Restaurant, photoUrl)
 import Tender.View.Icon (Icon(..), icon)
 
@@ -51,6 +52,21 @@ mapsLink r classes = case r.url of
       , HA.class' ("flex items-center gap-1 whitespace-nowrap font-['Roboto',Arial,sans-serif] " <> classes)
       ]
       [ HE.text (sourceName r.source), icon ExternalLink "h-4 w-4" ]
+
+-- | A web search for the place's menu. No source gives a menu link, and a
+-- | search finds it wherever the place keeps it.
+menuUrl :: Restaurant -> String
+menuUrl r = "https://www.google.com/search?q=" <> encodeQuery (r.name <> " menu")
+
+menuLink :: forall a. Restaurant -> String -> Html a
+menuLink r classes =
+  HE.a
+    [ HA.href (menuUrl r)
+    , HA.target "_blank"
+    , HA.rel "noopener"
+    , HA.class' ("flex items-center gap-1 whitespace-nowrap " <> classes)
+    ]
+    [ HE.text "Menu", icon ExternalLink "h-4 w-4" ]
 
 sourceName :: String -> String
 sourceName = case _ of

@@ -11,7 +11,7 @@ import Flame.Html.Element as HE
 import Tender.Types (Restaurant)
 import Tender.View.Button (iconButton)
 import Tender.View.Icon (Icon(..), icon)
-import Tender.View.Photo (mapsLink, photoCredit, restaurantPhoto)
+import Tender.View.Photo (mapsLink, menuLink, photoCredit, restaurantPhoto)
 
 -- | Five stars, filled to the nearest half
 ratingStars :: forall a. Number -> Html a
@@ -98,7 +98,10 @@ restaurantCard { likedByOthers, photo, summaryOpen, toggleSummary } r =
         HE.span [ HA.class' "absolute left-4 top-6 flex items-center gap-1 rounded-lg border-2 border-ink bg-star px-3 py-1 text-sm font-bold text-ink shadow-pop" ]
           [ icon Heart "h-4 w-4 fill-current", HE.text "Someone's keen" ]
       else HE.text ""
-    , mapsLink r "absolute right-4 top-6 rounded-lg bg-white/90 px-3 py-1 text-sm text-[#1F1F1F] shadow"
+    , HE.div [ HA.class' "absolute right-4 top-6 flex flex-col items-end gap-2" ]
+        [ mapsLink r "rounded-lg bg-white/90 px-3 py-1 text-sm text-[#1F1F1F] shadow"
+        , menuLink r "rounded-lg bg-white/90 px-3 py-1 text-sm font-bold text-[#1F1F1F] shadow"
+        ]
     , HE.div [ HA.class' "absolute inset-x-0 bottom-0 flex flex-col gap-2 p-5 text-left" ]
         [ HE.h2 [ HA.class' "font-display text-3xl leading-tight text-white drop-shadow" ] [ HE.text r.name ]
         , HE.div [ HA.class' "flex items-center gap-2" ]
