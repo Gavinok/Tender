@@ -2,15 +2,15 @@
 module Provider (Provider (..), searchWithFallback) where
 
 import Data.Text (Text)
-import qualified Data.Text as T
+import Data.Text qualified as T
 import Fetch (FetchError)
 import Restaurant (Restaurant)
 import Vibe (Search (..))
 
 data Provider = Provider
     { providerName :: Text
-    , -- | Sources that can't use the vibe search by location alone
-      searchNear :: Search -> IO (Either FetchError [Restaurant])
+    , searchNear :: Search -> IO (Either FetchError [Restaurant])
+    -- ^ Sources that can't use the vibe search by location alone
     }
 
 {- | Results from the first provider that finds anything, logging each one

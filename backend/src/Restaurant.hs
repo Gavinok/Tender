@@ -76,9 +76,10 @@ data Source = Google | Yelp | OpenStreetMap
     deriving stock (Eq, Show)
 
 data PhotoSource
-    = -- | Google's resource name, places/<place>/photos/<photo>, fetched
-      -- through /photo so the key stays on the server. Expires, so it is
-      -- only good for the session that searched.
+    = {- | Google's resource name, places/<place>/photos/<photo>, fetched
+      through /photo so the key stays on the server. Expires, so it is
+      only good for the session that searched.
+      -}
       GooglePhoto Text
     | -- | A public image url
       PhotoUrl Text
@@ -93,8 +94,8 @@ data Photo = Photo
 -- | A few sentences about the place
 data Summary = Summary
     { summaryText :: Text
-    , -- | Google asks for this to be shown with its AI summaries, e.g. "Summarized with Gemini"
-      summaryDisclosure :: Maybe Text
+    , summaryDisclosure :: Maybe Text
+    -- ^ Google asks for this to be shown with its AI summaries, e.g. "Summarized with Gemini"
     }
     deriving stock (Eq, Show)
 
@@ -102,14 +103,14 @@ data Restaurant = Restaurant
     { source :: Source
     , restaurantId :: RestaurantId
     , name :: Text
-    , -- | The place's page on the source, e.g. Google Maps
-      url :: Maybe Text
+    , url :: Maybe Text
+    -- ^ The place's page on the source, e.g. Google Maps
     , rating :: Maybe Double
-    , -- | $ to $$$$
-      price :: Maybe Price
+    , price :: Maybe Price
+    -- ^ \$ to $$$$
     , category :: Maybe Text
-    , -- | The first is shown on the card first
-      photos :: [Photo]
+    , photos :: [Photo]
+    -- ^ The first is shown on the card first
     , summary :: Maybe Summary
     , location :: Loc
     }

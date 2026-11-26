@@ -4,31 +4,31 @@ module Main (main) where
 
 import Data.Aeson (Value (Array, Null), eitherDecode, toJSON)
 import Data.Aeson.Encode.Pretty (encodePretty)
-import qualified Data.Aeson.KeyMap as KM
+import Data.Aeson.KeyMap qualified as KM
 import Data.Aeson.Types (Parser, Value (Object), parseEither)
-import qualified Data.ByteString.Lazy.Char8 as L8
+import Data.ByteString.Lazy.Char8 qualified as L8
+import Data.Map.Strict qualified as Map
 import Data.String (IsString (..))
 import Data.Text (Text)
-import qualified Data.Text as T
-import Database.SQLite.Simple (Connection, Only (..), execute_, query_, withConnection)
-import Network.HTTP.Simple (parseRequest_, setRequestHeaders)
-import qualified Data.Map.Strict as Map
+import Data.Text qualified as T
 import Data.Time (UTCTime (..), addUTCTime, fromGregorian)
+import Database.SQLite.Simple (Connection, Only (..), execute_, query_, withConnection)
 import Limits (Limit (..), rememberAt, seenAt, spend)
+import Network.HTTP.Simple (parseRequest_, setRequestHeaders)
 import Test.Hspec
 import Test.Hspec.Golden (defaultGolden)
 
 import Db hiding (restaurantId)
+import Endpoints qualified
 import Fetch (FetchError (..))
 import OpenStreetMap (nearest, parseOverpass)
 import Places
+import Properties qualified
 import Provider (Provider (..), searchWithFallback)
 import Restaurant
 import User
 import Vibe
 import Yelp (parseYelp)
-import qualified Endpoints
-import qualified Properties
 
 withTestDb :: (Connection -> IO a) -> IO a
 withTestDb act = withConnection ":memory:" $ \conn -> initSchema conn >> act conn
@@ -118,13 +118,15 @@ main = hspec $ do
 
     describe "parseYelp" $ do
         it "reads a business, treating an empty image as no photo" $
-            parseWith parseYelp
+            parseWith
+                parseYelp
                 "{\"businesses\": [{\"id\": \"y1\", \"name\": \"Jam Cafe\", \"url\": \"https://www.yelp.com/biz/jam\", \"image_url\": \"\", \"rating\": 4.5, \"price\": \"$$\", \"categories\": [{\"alias\": \"breakfast\", \"title\": \"Breakfast & Brunch\"}], \"coordinates\": {\"latitude\": 48.42, \"longitude\": -123.36}}]}"
                 `shouldBe` Right [Restaurant Yelp "y1" "Jam Cafe" (Just "https://www.yelp.com/biz/jam") (Just 4.5) (Just Moderate) (Just "Breakfast & Brunch") [] Nothing (Loc 48.42 (-123.36))]
 
     describe "parseOverpass" $ do
         it "reads nodes and ways, skipping places without a name" $
-            parseWith parseOverpass
+            parseWith
+                parseOverpass
                 ( L8.unlines
                     [ "{\"elements\": ["
                     , " {\"type\": \"node\", \"id\": 1, \"lat\": 48.43, \"lon\": -123.35, \"tags\": {\"amenity\": \"restaurant\", \"name\": \"Pho Real\", \"cuisine\": \"vietnamese;noodle\"}},"
@@ -236,24 +238,24 @@ main = hspec $ do
     describe "Restaurant JSON" $ do
         -- The frontend's decoders depend on this exact shape. If a change is
         -- meant, delete the file under .golden and run the tests again.
-        it "keeps the shape the frontend reads" $
-            defaultGolden "restaurant" $
-                L8.unpack . encodePretty $
-                    [ Restaurant
-                        Google
-                        "ChIJ1"
-                        "Pho Real"
-                        (Just "https://maps.google.com/?cid=1")
-                        (Just 4.5)
-                        (Just Moderate)
-                        (Just "Vietnamese Restaurant")
-                        [ Photo (GooglePhoto "places/ChIJ1/photos/p1") (Just (Author "Sam" (Just "https://maps.google.com/contrib/1")))
-                        , Photo (PhotoUrl "https://example.com/pho.jpg") Nothing
-                        ]
-                        (Just (Summary "Big bowls of pho." (Just "Summarized with Gemini")))
-                        (Loc 48.43 (-123.35))
-                    , Restaurant OpenStreetMap "osm:node/1" "Fish Store" Nothing Nothing Nothing Nothing [] Nothing (Loc 48.44 (-123.36))
+        it "keeps the shape the frontend reads"
+            $ defaultGolden "restaurant"
+            $ L8.unpack . encodePretty
+            $ [ Restaurant
+                    Google
+                    "ChIJ1"
+                    "Pho Real"
+                    (Just "https://maps.google.com/?cid=1")
+                    (Just 4.5)
+                    (Just Moderate)
+                    (Just "Vietnamese Restaurant")
+                    [ Photo (GooglePhoto "places/ChIJ1/photos/p1") (Just (Author "Sam" (Just "https://maps.google.com/contrib/1")))
+                    , Photo (PhotoUrl "https://example.com/pho.jpg") Nothing
                     ]
+                    (Just (Summary "Big bowls of pho." (Just "Summarized with Gemini")))
+                    (Loc 48.43 (-123.35))
+              , Restaurant OpenStreetMap "osm:node/1" "Fish Store" Nothing Nothing Nothing Nothing [] Nothing (Loc 48.44 (-123.36))
+              ]
         it "sends null for missing details" $
             case toJSON (Restaurant Google "ChIJ2" "New Spot" Nothing Nothing Nothing Nothing [] Nothing (Loc 1 2)) of
                 Object o -> (KM.lookup "photos" o, KM.lookup "rating" o) `shouldBe` (Just (Array mempty), Just Null)

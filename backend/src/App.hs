@@ -5,77 +5,77 @@ import Control.Exception (SomeException, try)
 import Control.Monad (forever, unless, void)
 import Control.Monad.IO.Class (liftIO)
 import Data.Maybe (fromMaybe)
+import Data.Text qualified as T
 import Data.Word (Word64)
 import Database.SQLite.Simple (Connection, withImmediateTransaction)
-import qualified Data.Text as T
 import GHC.Generics (Generic)
 import System.Environment.Blank (getEnv)
 import Web.Scotty (
     ActionM,
-    finish,
-    header,
+    Handler (..),
+    ScottyM,
+    defaultHandler,
     file,
-    notFound,
-    request,
+    finish,
     get,
+    header,
     json,
     jsonData,
     middleware,
-    defaultHandler,
-    Handler (..),
+    notFound,
     pathParam,
     pathParamMaybe,
     post,
     queryParam,
     queryParamMaybe,
     redirect,
+    request,
     scotty,
     scottyApp,
-    ScottyM,
     setHeader,
     status,
  )
 
 import Data.Aeson (FromJSON (parseJSON), Value, object, withObject, (.:), (.:?), (.=))
+import Data.ByteString qualified as BS
 import Data.Text (Text)
-import qualified Data.Text.Encoding as TE
-import qualified Data.Text.Lazy as TL
+import Data.Text.Encoding qualified as TE
+import Data.Text.Lazy qualified as TL
 import Network.HTTP.Types (Status, status200, status400, status404, status409, status413, status429, status502)
-import qualified Data.ByteString as BS
-import Network.Wai.Middleware.AddHeaders (addHeaders)
-import Network.Wai.Middleware.RequestLogger (logStdout)
-import Network.Wai.Request (RequestSizeException)
-import Network.Wai.Middleware.RequestSizeLimit (defaultRequestSizeLimitSettings, requestSizeLimitMiddleware, setMaxLengthForRequest)
 import Network.Mime (defaultMimeLookup)
 import Network.Wai (Application, rawPathInfo, remoteHost)
+import Network.Wai.Middleware.AddHeaders (addHeaders)
+import Network.Wai.Middleware.RequestLogger (logStdout)
+import Network.Wai.Middleware.RequestSizeLimit (defaultRequestSizeLimitSettings, requestSizeLimitMiddleware, setMaxLengthForRequest)
+import Network.Wai.Request (RequestSizeException)
 import System.Directory (doesFileExist)
-import System.FilePath ((</>))
 import System.Exit (die)
+import System.FilePath ((</>))
 import Text.Read (readMaybe)
 
+import Data.List (partition)
+import Data.Set qualified as Set
 import Db
+import Limits (Counter, Limit (..), Recent, newCounter, newRecent, remember, seenRecently, trySpend)
 import Log (LogFormat (..), Logger, Severity (..), newLogger)
 import OpenStreetMap (openStreetMap)
 import Places
-import Limits (Counter, Limit (..), Recent, newCounter, newRecent, remember, seenRecently, trySpend)
 import Provider (Provider (..), searchWithFallback)
-import Data.List (partition)
-import qualified Data.Set as Set
 import Restaurant (Loc, Restaurant, RestaurantId (..))
-import qualified Restaurant as R
-import qualified User as U
+import Restaurant qualified as R
+import User qualified as U
 import Vibe (Chip, Search (..), chipFromId, chipId, maxRadius)
 import Yelp (YelpKey (..), yelp)
 
 -- | Configuration shared by every request
 data Env = Env
     { envDb :: DbPool
-    , -- | Tried in order until one finds restaurants
-      envProviders :: [Provider]
-    , -- | Needed to show Google's photos
-      envPlacesKey :: Maybe PlacesKey
-    , -- | The built frontend to serve, when set (in production)
-      envStatic :: Maybe FilePath
+    , envProviders :: [Provider]
+    -- ^ Tried in order until one finds restaurants
+    , envPlacesKey :: Maybe PlacesKey
+    -- ^ Needed to show Google's photos
+    , envStatic :: Maybe FilePath
+    -- ^ The built frontend to serve, when set (in production)
     , envLimits :: Limits
     , envLog :: Logger
     }
@@ -89,10 +89,10 @@ data Limits = Limits
     , photosToday :: Counter
     , searchesPerVisitor :: Counter
     , photosPerVisitor :: Counter
-    , -- | Joins, vibe changes and likes, which all add to the database
-      writesPerVisitor :: Counter
-    , -- | Places our searches returned lately; photos are only served for these
-      recentPlaces :: Recent
+    , writesPerVisitor :: Counter
+    -- ^ Joins, vibe changes and likes, which all add to the database
+    , recentPlaces :: Recent
+    -- ^ Places our searches returned lately; photos are only served for these
     }
 
 -- | Read from TENDER_MAX_SEARCHES_PER_DAY and TENDER_MAX_PHOTOS_PER_DAY, or defaults
@@ -154,8 +154,8 @@ visitorOf = do
 data RestaurantsRequest = RestaurantsRequest
     { searcher :: !U.UserId
     , loc :: !Loc
-    , -- | Set by "search further": the radius the person was shown, to double
-      widenFrom :: !(Maybe Double)
+    , widenFrom :: !(Maybe Double)
+    -- ^ Set by "search further": the radius the person was shown, to double
     }
     deriving stock (Generic, Show)
 
@@ -251,7 +251,6 @@ numberSetting name def = do
 -- | Respond with an error status and a message the frontend can show
 errorResponse :: Status -> Text -> ActionM ()
 errorResponse s msg = status s >> json (object ["error" .= msg])
-
 
 -- | Restaurants someone else in the session liked first, otherwise in the source's order
 likedFirst :: Set.Set RestaurantId -> [Restaurant] -> [Restaurant]
@@ -395,27 +394,27 @@ app env = do
     get "/api/photo" $ do
         photo <- queryParam "name"
         case envPlacesKey env of
-          Nothing -> errorResponse status404 "Google photos need GOOGLE_PLACES_KEY"
-          Just key
-            | not (isPhotoName photo) -> errorResponse status400 "Not a photo name"
-            | otherwise -> do
-                -- Names look like places/<place>/photos/<photo>
-                let place = RestaurantId $ T.takeWhile (/= '/') (T.drop (T.length "places/") photo)
-                known <- liftIO $ seenRecently (recentPlaces (envLimits env)) place
-                unless known $ errorResponse status404 "Not a place we showed" >> finish
-                visitor <- visitorOf
-                let limits = envLimits env
-                refused <- liftIO $ allowed (photosPerVisitor limits) (photosToday limits) visitor 1
-                maybe (pure ()) (\why -> errorResponse status429 why >> finish) refused
-                found <- liftIO $ photoUri key photo photoWidth
-                case found of
-                    Left e -> do
-                        liftIO $ envLog env Warning $ "Photo " ++ T.unpack photo ++ " failed: " ++ show e
-                        errorResponse status502 "Couldn't get the photo from Google"
-                    Right uri -> do
-                        -- Lets the browser reuse it for the rest of the session
-                        setHeader "Cache-Control" "private, max-age=3600"
-                        redirect (TL.fromStrict uri)
+            Nothing -> errorResponse status404 "Google photos need GOOGLE_PLACES_KEY"
+            Just key
+                | not (isPhotoName photo) -> errorResponse status400 "Not a photo name"
+                | otherwise -> do
+                    -- Names look like places/<place>/photos/<photo>
+                    let place = RestaurantId $ T.takeWhile (/= '/') (T.drop (T.length "places/") photo)
+                    known <- liftIO $ seenRecently (recentPlaces (envLimits env)) place
+                    unless known $ errorResponse status404 "Not a place we showed" >> finish
+                    visitor <- visitorOf
+                    let limits = envLimits env
+                    refused <- liftIO $ allowed (photosPerVisitor limits) (photosToday limits) visitor 1
+                    maybe (pure ()) (\why -> errorResponse status429 why >> finish) refused
+                    found <- liftIO $ photoUri key photo photoWidth
+                    case found of
+                        Left e -> do
+                            liftIO $ envLog env Warning $ "Photo " ++ T.unpack photo ++ " failed: " ++ show e
+                            errorResponse status502 "Couldn't get the photo from Google"
+                        Right uri -> do
+                            -- Lets the browser reuse it for the rest of the session
+                            setHeader "Cache-Control" "private, max-age=3600"
+                            redirect (TL.fromStrict uri)
 
     post "/api/decision" $ do
         DecisionRequest uid r l <- jsonData

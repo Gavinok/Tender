@@ -17,3 +17,5 @@ cabal = "3.16.1.0"
 hls = "2.14.0.0"
 node = "22"
 purescript = "0.15.15"
+# Formats the backend; CI checks with the same version
+"github:fourmolu/fourmolu" = "0.21.0.0"

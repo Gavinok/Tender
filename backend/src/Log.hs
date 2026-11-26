@@ -1,11 +1,10 @@
-{- | The server's own messages. On Cloud Run they're JSON lines, which
-Cloud Logging reads as entries with a severity that can be filtered on;
-locally they're plain lines.
--}
+-- | The server's own messages. On Cloud Run they're JSON lines, which
+-- Cloud Logging reads as entries with a severity that can be filtered on;
+-- locally they're plain lines.
 module Log (Severity (..), Logger, LogFormat (..), newLogger) where
 
 import Data.Aeson (encode, object, (.=))
-import qualified Data.ByteString.Lazy.Char8 as L8
+import Data.ByteString.Lazy.Char8 qualified as L8
 import Data.Text (Text)
 import System.IO (hFlush, hPutStrLn, stderr, stdout)
 

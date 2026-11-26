@@ -3,10 +3,10 @@ module Endpoints (spec) where
 
 import Control.Monad (forM_, replicateM_)
 import Data.Aeson (encode, object, (.=))
-import qualified Data.ByteString.Char8 as S8
-import qualified Data.ByteString.Lazy.Char8 as L8
+import Data.ByteString.Char8 qualified as S8
+import Data.ByteString.Lazy.Char8 qualified as L8
 import Data.Text (Text)
-import qualified Data.Text.Encoding as TE
+import Data.Text.Encoding qualified as TE
 import Network.HTTP.Types (methodGet, methodPost, status413)
 import Network.Wai (Application, RequestBodyLength (..), defaultRequest, requestBodyLength, requestMethod)
 import Network.Wai.Test (SRequest (..), runSession, setPath, srequest)
@@ -86,14 +86,14 @@ spec = do
             it "stops a visitor after 30 searches an hour" $ do
                 (_, u) <- joined
                 replicateM_ 30 (search u `shouldRespondWith` 200)
-                search u `shouldRespondWith` "{\"error\":\"You've hit Tender's limit for now. Try again in an hour.\"}" {matchStatus = 429}
+                search u `shouldRespondWith` "{\"error\":\"You've hit Tender's limit for now. Try again in an hour.\"}"{matchStatus = 429}
 
         describe "GET /api/addtosession" $ do
             it "turns away the 31st person" $ do
                 s <- newSession
                 let path = "/api/addtosession/" <> encodeText s
                 replicateM_ 30 (get path `shouldRespondWith` 200)
-                get path `shouldRespondWith` "{\"error\":\"This session is full\"}" {matchStatus = 409}
+                get path `shouldRespondWith` "{\"error\":\"This session is full\"}"{matchStatus = 409}
 
         describe "POST /api/decision" $ do
             it "refuses an overly long restaurant id" $ do
@@ -125,16 +125,16 @@ spec = do
                 get "/api/matches/00000000-0000-0000-0000-000000000000" `shouldRespondWith` 404
                 get "/api/matches/not-a-uuid" `shouldRespondWith` 404
 
-        describe "GET /api/photo" $
-            it "only serves photos of places a search returned" $
-                get "/api/photo?name=places/elsewhere/photos/x" `shouldRespondWith` 404
+        describe "GET /api/photo"
+            $ it "only serves photos of places a search returned"
+            $ get "/api/photo?name=places/elsewhere/photos/x" `shouldRespondWith` 404
 
     -- No photos left today, so a known place stops at the limit before calling Google
     with (appWith 1 0 Nothing) $ do
         it "stops the site at its daily search cap" $ do
             (_, u) <- joined
             search u `shouldRespondWith` 200
-            search u `shouldRespondWith` "{\"error\":\"Tender has hit its daily limit. Try again tomorrow.\"}" {matchStatus = 429}
+            search u `shouldRespondWith` "{\"error\":\"Tender has hit its daily limit. Try again tomorrow.\"}"{matchStatus = 429}
         it "lets photos of places a search returned through to the limits" $ do
             (_, u) <- joined
             _ <- search u
@@ -145,14 +145,14 @@ spec = do
         forM_ [("of a known length", KnownLength 20000), ("sent in chunks", ChunkedBody)] $ \(how, len) ->
             it ("refuses one over 16 KB " <> how) $ do
                 application' <- app
-                let req = (setPath defaultRequest "/api/decision") {requestMethod = methodPost, requestBodyLength = len}
+                let req = (setPath defaultRequest "/api/decision"){requestMethod = methodPost, requestBodyLength = len}
                 resp <- runSession (srequest (SRequest req (L8.replicate 20000 'a'))) application'
                 simpleStatus resp `shouldBe` status413
 
     with frontend $
         describe "the frontend" $ do
             it "serves its files" $
-                get "/app.js" `shouldRespondWith` "console.log(1)" {matchHeaders = ["Content-Type" <:> "text/javascript"]}
+                get "/app.js" `shouldRespondWith` "console.log(1)"{matchHeaders = ["Content-Type" <:> "text/javascript"]}
             it "serves the app for a session link" $
                 get "/0b3f" `shouldRespondWith` "<html></html>"
             it "never serves anything outside its directory" $
