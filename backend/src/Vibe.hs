@@ -1,11 +1,41 @@
 -- | Vibe chips a group picks in the lobby, and what each means for the search
-module Vibe (Chip (..), Search (..), defaultRadius, maxRadius, allChips, chipId, chipFromId, queryTerms, priceLevels, wantsOpenNow) where
+module Vibe (Chip (..), Search (..), Place (..), Found (..), defaultRadius, maxRadius, allChips, chipId, chipFromId, queryTerms, priceLevels, wantsOpenNow) where
 
+import Data.Aeson (FromJSON (parseJSON), ToJSON (toJSON), object, withObject, (.:), (.=))
 import Data.List (nub)
 import Data.Maybe (mapMaybe)
 import Data.Text (Text)
 import Data.Text qualified as T
-import Restaurant (Loc)
+import Restaurant (Loc (..))
+
+-- | Where the group is eating, when they've said rather than use their locations
+data Place = Place
+    { placeName :: Text
+    , placeLoc :: Loc
+    }
+    deriving stock (Eq, Show)
+
+instance ToJSON Place where
+    toJSON (Place n (Loc lat lon)) = object ["name" .= n, "latitude" .= lat, "longitude" .= lon]
+
+-- | The coordinates are checked like any location; the name is shown to the group
+instance FromJSON Place where
+    parseJSON v = do
+        n <- withObject "Place" (.: "name") v
+        if T.null (T.strip n) || T.length n > 200
+            then fail "a place needs a name of at most 200 characters"
+            else Place n <$> parseJSON v
+
+-- | A place a lookup found, with its address to tell it apart from others
+data Found = Found
+    { foundPlace :: Place
+    , foundAddress :: Text
+    }
+    deriving stock (Eq, Show)
+
+instance ToJSON Found where
+    toJSON (Found (Place n (Loc lat lon)) address) =
+        object ["name" .= n, "address" .= address, "latitude" .= lat, "longitude" .= lon]
 
 data Chip
     = Cheap

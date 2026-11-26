@@ -6,6 +6,8 @@ module Tender.Api
   , heartbeat
   , getVibe
   , setVibe
+  , setPlace
+  , findPlaces
   , joinSession
   ) where
 
@@ -17,8 +19,8 @@ import Data.Maybe (Maybe, maybe)
 import Effect.Aff (Aff, Error, attempt, message)
 import Effect.Class (liftEffect)
 import Fetch (Method(..), Response, fetch)
-import Tender.Browser (backendUrl)
-import Tender.Types (ErrorMessage, Loc, Person, Restaurant, RestaurantId, SessionId(..), UserId(..))
+import Tender.Browser (backendUrl, encodeQuery)
+import Tender.Types (ErrorMessage, Found, Loc, Person, Place, Restaurant, RestaurantId, SessionId(..), UserId(..))
 import Tender.Vibe (Vibe)
 import Yoga.JSON (class ReadForeign, class WriteForeign)
 import Yoga.JSON as JSON
@@ -75,6 +77,15 @@ getVibe (SessionId s) = get ("vibe/" <> s)
 -- | Set the session's chips. Ignored once someone has started swiping.
 setVibe :: SessionId -> Array String -> Aff (Either ApiError Vibe)
 setVibe (SessionId s) chosen = post ("vibe/" <> s) { chips: chosen }
+
+-- | Set where the session is eating, or with Nothing go back to everyone's
+-- | own locations. Ignored once someone has started swiping.
+setPlace :: SessionId -> Maybe Place -> Aff (Either ApiError Vibe)
+setPlace (SessionId s) place = post ("place/" <> s) { place }
+
+-- | Places matching what the user typed, e.g. a neighbourhood or address
+findPlaces :: String -> Aff (Either ApiError (Array Found))
+findPlaces q = get ("places?q=" <> encodeQuery q)
 
 -- | Join the session, keeping the given id if this browser was in it before
 joinSession :: SessionId -> Maybe UserId -> Aff (Either ApiError UserId)

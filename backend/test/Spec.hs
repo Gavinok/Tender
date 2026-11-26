@@ -2,7 +2,7 @@
 
 module Main (main) where
 
-import Data.Aeson (Value (Array, Null), eitherDecode, toJSON)
+import Data.Aeson (Value (Array, Null), eitherDecode, object, toJSON)
 import Data.Aeson.Encode.Pretty (encodePretty)
 import Data.Aeson.KeyMap qualified as KM
 import Data.Aeson.Types (Parser, Value (Object), parseEither)
@@ -79,6 +79,17 @@ parseWith parser body = eitherDecode body >>= parseEither parser
 
 parse :: L8.ByteString -> Either String [Restaurant]
 parse = parseWith parsePlaces
+
+-- | A Text Search response for a neighbourhood, in Google's shape
+foundResponse :: Value
+foundResponse =
+    either error id . eitherDecode . L8.unlines $
+        [ "{\"places\": ["
+        , "  {\"displayName\": {\"text\": \"Fernwood\"}, \"formattedAddress\": \"Fernwood, Victoria, BC, Canada\","
+        , "   \"location\": {\"latitude\": 48.43, \"longitude\": -123.34}},"
+        , "  {\"displayName\": {\"text\": \"Fernwood Inn\"}, \"location\": {\"latitude\": 48.432, \"longitude\": -123.341}}"
+        , "]}"
+        ]
 
 -- | A restaurant with only the given name and position
 plain :: Source -> Text -> Loc -> Restaurant
@@ -361,6 +372,43 @@ main = hspec $ do
             like conn second "a"
             matchesFor conn (User first s) `shouldReturn` ["a"]
 
+    describe "parseFound" $ do
+        it "reads each match's name, address and location" $
+            parseEither parseFound foundResponse
+                `shouldBe` Right
+                    [ Found (Place "Fernwood" (Loc 48.43 (-123.34))) "Fernwood, Victoria, BC, Canada"
+                    , Found (Place "Fernwood Inn" (Loc 48.432 (-123.341))) ""
+                    ]
+        it "treats no matches as none" $
+            parseEither parseFound (object []) `shouldBe` Right []
+
+    describe "where the group is eating" $ do
+        let fernwood = Place "Fernwood" (Loc 48.43 (-123.34))
+        it "is set, replaced and cleared" $ withTestDb $ \conn -> do
+            (s, _) <- sessionWith conn 0
+            getPlace conn s `shouldReturn` Nothing
+            setPlace conn s (Just fernwood)
+            getPlace conn s `shouldReturn` Just fernwood
+            setPlace conn s Nothing
+            getPlace conn s `shouldReturn` Nothing
+        it "is where the session searches from, over anyone's location" $ withTestDb $ \conn -> do
+            (s, _) <- sessionWith conn 0
+            setPlace conn s (Just fernwood)
+            sessionLocation conn s (Just (Loc 51.04 (-114.1))) `shouldReturn` Just (Loc 48.43 (-123.34))
+        it "can't change once someone has started" $ withTestDb $ \conn -> do
+            (s, _) <- sessionWith conn 0
+            _ <- sessionLocation conn s (Just (Loc 51.04 (-114.1)))
+            setPlace conn s (Just fernwood)
+            getPlace conn s `shouldReturn` Nothing
+
+    describe "Place JSON"
+        $ it "keeps the shape the frontend reads"
+        $ defaultGolden "place"
+        $ L8.unpack . encodePretty
+        $ ( Place "Fernwood" (Loc 48.43 (-123.34))
+          , Found (Place "Fernwood" (Loc 48.43 (-123.34))) "Fernwood, Victoria, BC, Canada"
+          )
+
     describe "sessionMembers" $ do
         it "lists everyone in joining order with what they decided on" $ withTestDb $ \conn -> do
             (s, [a, b, c]) <- sessionWith conn 3
@@ -459,6 +507,6 @@ main = hspec $ do
                 query_ conn "SELECT userId, restaurantId, liked FROM decisions ORDER BY userId"
                     `shouldReturn` [("u1", "a", True), ("u2", "b", True) :: (String, String, Bool)]
                 query_ conn "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name"
-                    `shouldReturn` [Only ("decisions" :: String), Only "session_vibes", Only "sessions", Only "users"]
+                    `shouldReturn` [Only ("decisions" :: String), Only "session_places", Only "session_vibes", Only "sessions", Only "users"]
         it "can run more than once" $ withTestDb $ \conn ->
             initSchema conn `shouldReturn` ()

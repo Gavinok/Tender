@@ -9,11 +9,12 @@ import Flame (Html)
 import Flame.Html.Attribute as HA
 import Flame.Html.Element as HE
 import Tender.App (Message(..), Model(..), Screen(..))
-import Tender.Types (photoUrl)
+import Tender.Types (Found, photoUrl)
 import Tender.Vibe (chipLabel)
 import Tender.View.Card (actionBar, restaurantCard)
 import Tender.View.Icon (Icon(..), icon)
 import Tender.View.Layout (page)
+import Tender.View.PlacePicker (placePicker)
 import Tender.View.Presence (presenceStrip)
 import Tender.View.Lobby (lobby)
 import Tender.View.Match (celebration, matchesSheet)
@@ -37,15 +38,23 @@ locationWarning =
     , HE.text "Couldn't get your location. Showing places near where your group started."
     ]
 
+pickerMessages :: { open :: Message, clear :: Message, query :: String -> Message, find :: Message, choose :: Found -> Message, close :: Message }
+pickerMessages = { open: OpenPicker, clear: ClearPlace, query: PlaceQuery, find: FindPlaces, choose: ChoosePlace, close: ClosePicker }
+
 -- | `view` updates the app markup whenever the model is updated
 view :: Model -> Html Message
 view (ServerError e) = page { matches: Nothing, newSession: Just NewSession } [ problem e Retry ]
 
-view (NeedLocation { message }) = page { matches: Nothing, newSession: Just NewSession } [ needLocation message RetryLocation ]
+view (NeedLocation { message, picker }) =
+  page { matches: Nothing, newSession: Just NewSession }
+    [ case picker of
+        Just p -> HE.div [ HA.class' "flex flex-1 flex-col justify-center" ] [ placePicker p pickerMessages ]
+        Nothing -> needLocation message { retry: RetryLocation, choose: OpenPicker }
+    ]
 
 view Loading = page { matches: Nothing, newSession: Nothing } [ setting ]
 
-view (QR l) = page { matches: Nothing, newSession: Just NewSession } [ lobby l { share: ShareInvite, start: StartSwiping, toggle: ToggleChip } ]
+view (QR l) = page { matches: Nothing, newSession: Just NewSession } [ lobby l { share: ShareInvite, start: StartSwiping, toggle: ToggleChip, picker: pickerMessages } ]
 
 view (Active swiper screen) =
   page { matches: Just { count: length swiper.matches, open: ToggleMatches }, newSession: Just NewSession } $
