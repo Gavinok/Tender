@@ -18,10 +18,13 @@ module Presence (
     cardsLeft,
     people,
     awayAfter,
+    nextHeartbeat,
+    nextHeartbeatFor,
 ) where
 
 import Data.Aeson (ToJSON (toJSON), object, (.=))
 import Data.IORef (IORef, atomicModifyIORef', newIORef, readIORef)
+import Data.List (find)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe)
 import Data.Set qualified as Set
@@ -65,9 +68,25 @@ data Person = Person
 instance ToJSON Person where
     toJSON p = object ["you" .= you p, "status" .= status p, "swiped" .= swiped p, "left" .= left p]
 
--- | Heartbeats come every 10 seconds, and stop while the page is hidden
+{- | Seconds until someone's next heartbeat, which the frontend is told
+with each answer. Sooner once they're out of cards, when they're waiting
+to hear about matches.
+-}
+nextHeartbeat :: Activity -> Int
+nextHeartbeat = \case
+    Done -> 5
+    Swiping -> 10
+    Away -> 10
+
+-- | The user's next heartbeat, from how they appear among everyone
+nextHeartbeatFor :: [Person] -> Int
+nextHeartbeatFor everyone = nextHeartbeat (maybe Swiping status (find you everyone))
+
+{- | Three missed heartbeats at the slowest rate. They stop while the page
+is hidden, so that's how a phone in a pocket shows as away.
+-}
 awayAfter :: NominalDiffTime
-awayAfter = 30
+awayAfter = 3 * fromIntegral (maximum (map nextHeartbeat [minBound .. maxBound]))
 
 -- | Heard from at the given time
 seen :: UTCTime -> UserId -> Map.Map UserId Seen -> Map.Map UserId Seen

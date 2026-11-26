@@ -11,11 +11,14 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends pkg-config zlib1g-dev \
  && rm -rf /var/lib/apt/lists/*
 WORKDIR /build
-# Copied with the sources and built in one step: cabal can't build the
-# dependencies alone, since the local package's modules must exist first.
 # The pinned versions in cabal.project.freeze keep it reproducible.
+# Dependencies are built from the package description alone, so this layer
+# is reused until they change. It has to be the library's: the executable's
+# dependencies include the library, whose modules aren't copied yet.
+COPY backend/tender.cabal backend/cabal.project backend/cabal.project.freeze ./
+RUN cabal update && cabal build lib:tender --only-dependencies
 COPY backend/ ./
-RUN cabal update && cabal build exe:tender \
+RUN cabal build exe:tender \
  && cp "$(cabal list-bin exe:tender)" /build/tender-server
 
 # --- Frontend ---

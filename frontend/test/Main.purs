@@ -15,6 +15,7 @@ import Tender.Browser (LocationProblem(..), sessionFromPath)
 import Tender.Types (Found, Person, Place, Restaurant, RestaurantId(..), SessionId(..), UserId(..))
 import Tender.Types (Status(..)) as Status
 import Tender.View (view)
+import Tender.Vibe (Chip)
 import Test.Contract as Contract
 import Test.Spec (describe, it)
 import Test.Spec.Assertions (shouldEqual, shouldSatisfy)
@@ -42,13 +43,19 @@ bare :: String -> Restaurant
 bare id = (restaurant id) { url = Nothing, rating = Nothing, photos = [], summary = Nothing }
 
 swiper :: Swiper
-swiper = { user: UserId "u", loc: Just here, radius: 5000.0, maxRadius: 50000.0, upcoming: [], photo: 0, summaryOpen: false, othersLiked: [], liked: [], matches: [], people: [], showMatches: false, vibe: [] }
+swiper = { user: UserId "u", loc: Just here, radius: 5000.0, maxRadius: 50000.0, upcoming: [], photo: 0, summaryOpen: false, othersLiked: [], liked: [], matches: [], people: [], heartbeatIn: 10, showMatches: false, vibe: [] }
 
 here :: { latitude :: Number, longitude :: Number }
 here = { latitude: 1.0, longitude: 2.0 }
 
 lobbyAt :: Lobby
-lobbyAt = { session: SessionId "s", link: "http://example.com/s", copied: false, vibe: { chips: [], locked: false, place: Nothing }, picker: Nothing }
+lobbyAt = { session: SessionId "s", link: "http://example.com/s", copied: false, vibe: { chips: [], choices: [ patio, veggie ], locked: false, place: Nothing }, picker: Nothing }
+
+patio :: Chip
+patio = { id: "patio", label: "☀️ Patio" }
+
+veggie :: Chip
+veggie = { id: "veggie", label: "🥦 Veggie" }
 
 blankPicker :: Picker
 blankPicker = { query: "", results: Nothing, searching: false, problem: Nothing }
@@ -179,8 +186,9 @@ main = runSpecAndExitProcess [ consoleReporter ] do
     it "looks up what was typed once it's long enough" do
       step (QR lobbyAt { picker = Just blankPicker }) (PlaceQuery "K")
         `shouldEqual` Tuple (QR lobbyAt { picker = Just blankPicker { query = "K" } }) 0
+      -- The backend says if it's too short, so even one letter is sent
       step (QR lobbyAt { picker = Just blankPicker { query = "K" } }) FindPlaces
-        `shouldEqual` Tuple (QR lobbyAt { picker = Just blankPicker { query = "K", problem = Just "Type at least 2 letters." } }) 0
+        `shouldEqual` Tuple (QR lobbyAt { picker = Just blankPicker { query = "K", searching = true } }) 1
       step (QR lobbyAt { picker = Just blankPicker { query = "Kelowna" } }) FindPlaces
         `shouldEqual` Tuple (QR lobbyAt { picker = Just blankPicker { query = "Kelowna", searching = true } }) 1
       step (QR lobbyAt { picker = Just blankPicker { searching = true } }) (PlacesFound (Right [ kelowna ]))
@@ -221,23 +229,23 @@ main = runSpecAndExitProcess [ consoleReporter ] do
         `shouldEqual` Tuple (Active swiper (Swiping (restaurant "b"))) 0
 
     it "toggles a vibe chip and saves it" do
-      step (QR lobbyAt) (ToggleChip "patio") `shouldEqual` Tuple (QR lobbyAt { vibe = { chips: [ "patio" ], locked: false, place: Nothing } }) 1
-      step (QR lobbyAt { vibe = { chips: [ "patio" ], locked: false, place: Nothing } }) (ToggleChip "patio") `shouldEqual` Tuple (QR lobbyAt) 1
+      step (QR lobbyAt) (ToggleChip "patio") `shouldEqual` Tuple (QR lobbyAt { vibe = { chips: [ "patio" ], choices: [ patio, veggie ], locked: false, place: Nothing } }) 1
+      step (QR lobbyAt { vibe = { chips: [ "patio" ], choices: [ patio, veggie ], locked: false, place: Nothing } }) (ToggleChip "patio") `shouldEqual` Tuple (QR lobbyAt) 1
 
     it "doesn't change chips once swiping has started" do
-      let locked = lobbyAt { vibe = { chips: [ "patio" ], locked: true, place: Nothing } }
+      let locked = lobbyAt { vibe = { chips: [ "patio" ], choices: [ patio, veggie ], locked: true, place: Nothing } }
       step (QR locked) (ToggleChip "drinks") `shouldEqual` Tuple (QR locked) 0
 
     it "shows the vibe others picked and checks again later" do
-      step (QR lobbyAt) (VibePolled { chips: [ "drinks" ], locked: false, place: Nothing })
-        `shouldEqual` Tuple (QR lobbyAt { vibe = { chips: [ "drinks" ], locked: false, place: Nothing } }) 1
+      step (QR lobbyAt) (VibePolled { chips: [ "drinks" ], choices: [ patio, veggie ], locked: false, place: Nothing })
+        `shouldEqual` Tuple (QR lobbyAt { vibe = { chips: [ "drinks" ], choices: [ patio, veggie ], locked: false, place: Nothing } }) 1
 
     it "stops checking the vibe once swiping" do
       step (Active swiper Fetching) PollVibe `shouldEqual` Tuple (Active swiper Fetching) 0
 
     it "keeps the session's vibe for the swiping screen" do
-      step (Active swiper Fetching) (Loaded { restaurants: [ restaurant "a" ], othersLiked: [], vibe: [ "patio" ], radius: 5000.0, maxRadius: 50000.0 })
-        `shouldEqual` Tuple (Active swiper { vibe = [ "patio" ] } (Swiping (restaurant "a"))) 0
+      step (Active swiper Fetching) (Loaded { restaurants: [ restaurant "a" ], othersLiked: [], vibe: [ patio ], radius: 5000.0, maxRadius: 50000.0 })
+        `shouldEqual` Tuple (Active swiper { vibe = [ patio ] } (Swiping (restaurant "a"))) 0
 
     it "searches further from the out of restaurants screen" do
       step (Active swiper NoneLeft) SearchFurther `shouldEqual` Tuple (Active swiper Fetching) 1
@@ -256,19 +264,27 @@ main = runSpecAndExitProcess [ consoleReporter ] do
     it "sends a heartbeat from any screen, and keeps the people it hears back" do
       step (Active swiper (Swiping (restaurant "a"))) Heartbeat `shouldEqual` Tuple (Active swiper (Swiping (restaurant "a"))) 1
       step (Active swiper NoneLeft) Heartbeat `shouldEqual` Tuple (Active swiper NoneLeft) 1
-      step (Active swiper (Swiping (restaurant "a"))) (HeardBack (Just { people: [ friend ], matches: [] }))
+      step (Active swiper (Swiping (restaurant "a"))) (HeardBack (Just { people: [ friend ], matches: [], next: 10 }))
         `shouldEqual` Tuple (Active swiper { people = [ friend ] } (Swiping (restaurant "a"))) 1
+
+    it "waits as long as the backend says before the next heartbeat" do
+      step (Active swiper NoneLeft) (HeardBack (Just { people: [], matches: [], next: 5 }))
+        `shouldEqual` Tuple (Active swiper { heartbeatIn = 5 } NoneLeft) 1
+
+    it "keeps the last interval when a heartbeat fails" do
+      step (Active swiper { heartbeatIn = 5 } NoneLeft) (HeardBack Nothing)
+        `shouldEqual` Tuple (Active swiper { heartbeatIn = 5 } NoneLeft) 1
 
     it "keeps going when a heartbeat fails" do
       step (Active swiper { people = [ friend ] } NoneLeft) (HeardBack Nothing)
         `shouldEqual` Tuple (Active swiper { people = [ friend ] } NoneLeft) 1
 
     it "celebrates a match heard about while out of cards" do
-      step (Active swiper { liked = [ restaurant "a" ] } NoneLeft) (HeardBack (Just { people: [], matches: [ RestaurantId "a" ] }))
+      step (Active swiper { liked = [ restaurant "a" ] } NoneLeft) (HeardBack (Just { people: [], matches: [ RestaurantId "a" ], next: 10 }))
         `shouldEqual` Tuple (Active swiper { liked = [ restaurant "a" ], matches = [ restaurant "a" ] } (Matched (restaurant "a"))) 2
 
     it "leaves matches heard about while swiping to the next decision" do
-      step (Active swiper { liked = [ restaurant "a" ] } (Swiping (restaurant "b"))) (HeardBack (Just { people: [], matches: [ RestaurantId "a" ] }))
+      step (Active swiper { liked = [ restaurant "a" ] } (Swiping (restaurant "b"))) (HeardBack (Just { people: [], matches: [ RestaurantId "a" ], next: 10 }))
         `shouldEqual` Tuple (Active swiper { liked = [ restaurant "a" ] } (Swiping (restaurant "b"))) 1
 
     it "shows when there are no restaurants left" do
@@ -292,8 +308,8 @@ main = runSpecAndExitProcess [ consoleReporter ] do
         html <- liftEffect $ render (view model)
         html `shouldSatisfy` contains (Pattern text)
     it "shows vibe chips in the lobby, marking the chosen ones" do
-      renders (QR lobbyAt { vibe = { chips: [ "patio" ], locked: false, place: Nothing } }) "aria-pressed=\"true\">☀️ Patio<"
-      renders (QR lobbyAt { vibe = { chips: [ "patio" ], locked: true, place: Nothing } }) "Locked in"
+      renders (QR lobbyAt { vibe = { chips: [ "patio" ], choices: [ patio, veggie ], locked: false, place: Nothing } }) "aria-pressed=\"true\">☀️ Patio<"
+      renders (QR lobbyAt { vibe = { chips: [ "patio" ], choices: [ patio, veggie ], locked: true, place: Nothing } }) "Locked in"
     it "shows a local QR code and the share link in the lobby" do
       renders (QR lobbyAt) "src=\"data:image/svg+xml"
       renders (QR lobbyAt) "http://example.com/s"

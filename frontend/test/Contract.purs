@@ -15,7 +15,7 @@ module Test.Contract (spec) where
 import Prelude
 
 import Control.Monad.Error.Class (throwError)
-import Data.Array (length)
+import Data.Array (take)
 import Data.Either (Either, either)
 import Data.Foldable (for_)
 import Data.Maybe (Maybe(..))
@@ -27,7 +27,7 @@ import Foreign (Foreign)
 import Tender.Api (DecisionRequest, DecisionResponse, ErrorResponse, PlaceRequest, PresenceRequest, PresenceResponse, RestaurantsRequest, RestaurantsResponse, VibeRequest)
 import Tender.Types (Found, RestaurantId(..), SessionId, UserId(..))
 import Tender.Types (Status(..)) as Status
-import Tender.Vibe (Vibe, chips)
+import Tender.Vibe (Vibe)
 import Test.Spec (Spec, describe, it)
 import Test.Spec.Assertions (fail, shouldEqual)
 import Yoga.JSON (class ReadForeign, class WriteForeign)
@@ -48,17 +48,18 @@ spec = describe "contract with the backend" do
     decodes "decision-response" \(r :: DecisionResponse) ->
       r.matches `shouldEqual` [ RestaurantId "ChIJ1" ]
     -- The backend samples every status, so a new one fails to decode here
-    decodes "presence-response" \(r :: PresenceResponse) ->
+    decodes "presence-response" \(r :: PresenceResponse) -> do
       map _.status r.people `shouldEqual` [ Status.Swiping, Status.Done, Status.Away ]
-    decodes "lobby-response" \(lobbies :: Array Vibe) ->
+      r.next `shouldEqual` 10
+    decodes "lobby-response" \(lobbies :: Array Vibe) -> do
       map (map _.name <<< _.place) lobbies `shouldEqual` [ Nothing, Just "Fernwood" ]
+      -- The chips come from the backend, labels and all
+      map (map _.id <<< take 2 <<< _.choices) lobbies `shouldEqual` [ [ "cheap", "fancy" ], [ "cheap", "fancy" ] ]
+      map (map _.label <<< take 1 <<< _.choices) lobbies `shouldEqual` [ [ "💸 Cheap eats" ], [ "💸 Cheap eats" ] ]
     decodes "places-response" \(found :: Array Found) ->
       map _.address found `shouldEqual` [ "Fernwood, Victoria, BC, Canada" ]
     decodes "error-response" \(e :: ErrorResponse) ->
       e.error `shouldEqual` "Unknown user"
-    decodes "chips" \(ids :: Array String) -> do
-      map _.id chips `shouldEqual` ids
-      length chips `shouldEqual` length ids
 
   describe "requests the frontend sends" do
     pins "restaurants-request" ({ user: someone, loc: Just { latitude: 48.43, longitude: -123.35 }, widenFrom: Just 5000.0 } :: RestaurantsRequest)

@@ -17,6 +17,7 @@ library
     hs-source-dirs:   src
     exposed-modules:  App, Db, Fetch, Limits, Log, Presence, OpenStreetMap, Places, Provider, Restaurant, User, Vibe, Wire, Yelp
     build-depends:    aeson         >=2.1   && <2.3
+                    , async         >=2.2   && <2.3
                     , bytestring    >=0.11  && <0.13
                     , http-conduit  >=2.3   && <2.4
                     , http-client   >=0.7.13 && <0.8

@@ -31,7 +31,7 @@ import Effect.Class (liftEffect)
 import Fetch (Method(..), Response, fetch)
 import Tender.Browser (backendUrl, encodeQuery)
 import Tender.Types (ErrorMessage, Found, Loc, Person, Place, Restaurant, RestaurantId, SessionId(..), UserId(..))
-import Tender.Vibe (Vibe)
+import Tender.Vibe (Chip, Vibe)
 import Yoga.JSON (class ReadForeign, class WriteForeign)
 import Yoga.JSON as JSON
 
@@ -56,14 +56,15 @@ type PlaceRequest = { place :: Maybe Place }
 type RestaurantsResponse =
   { restaurants :: Array Restaurant
   , othersLiked :: Array RestaurantId
-  , vibe :: Array String
+  , vibe :: Array Chip
   , radius :: Number
   , maxRadius :: Number
   }
 
 type DecisionResponse = { matches :: Array RestaurantId, othersLiked :: Array RestaurantId }
 
-type PresenceResponse = { people :: Array Person, matches :: Array RestaurantId }
+-- | `next`: seconds until the next heartbeat
+type PresenceResponse = { people :: Array Person, matches :: Array RestaurantId, next :: Int }
 
 type ErrorResponse = { error :: String }
 

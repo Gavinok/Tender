@@ -8,7 +8,7 @@ import Flame.Html.Attribute as HA
 import Flame.Html.Element as HE
 import Data.Array (elem)
 import Tender.App (Lobby)
-import Tender.Vibe (Vibe, chips)
+import Tender.Vibe (Vibe)
 import Tender.QR (qrDataUrl)
 import Tender.View.Button (Variant(..), button)
 import Tender.View.Icon (Icon(..))
@@ -47,7 +47,7 @@ vibeChips :: forall a. Vibe -> (String -> a) -> Html a
 vibeChips vibe toggle =
   HE.section [ HA.class' "flex w-full flex-col items-center gap-2" ]
     [ HE.h2 [ HA.class' "font-display text-2xl" ] [ HE.text "What's the vibe?" ]
-    , HE.div [ HA.class' "flex flex-wrap justify-center gap-2" ] (map chip chips)
+    , HE.div [ HA.class' "flex flex-wrap justify-center gap-2" ] (map chip vibe.choices)
     , HE.p [ HA.class' "text-sm text-ink/60" ]
         [ HE.text
             if vibe.locked then "Locked in: someone has started swiping."

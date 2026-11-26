@@ -10,7 +10,7 @@ import Flame.Html.Attribute as HA
 import Flame.Html.Element as HE
 import Tender.App (Message(..), Model(..), Screen(..))
 import Tender.Types (Found, photoUrl)
-import Tender.Vibe (chipLabel)
+import Tender.Vibe (Chip)
 import Tender.View.Card (actionBar, restaurantCard)
 import Tender.View.Icon (Icon(..), icon)
 import Tender.View.Layout (page)
@@ -25,10 +25,10 @@ km :: Number -> String
 km m = show (round (m / 1000.0)) <> " km"
 
 -- | The session's vibe above the cards, when it has one
-vibeLine :: forall a. Array String -> Html a
+vibeLine :: forall a. Array Chip -> Html a
 vibeLine vibe =
   HE.p [ HA.class' "-mt-2 flex flex-wrap gap-x-3 text-sm font-bold text-ink/70" ]
-    (map (HE.span_ <<< pure <<< HE.text <<< chipLabel) vibe)
+    (map (HE.span_ <<< pure <<< HE.text <<< _.label) vibe)
 
 -- | Why the places might be far away, when the browser couldn't find the user
 locationWarning :: forall a. Html a
