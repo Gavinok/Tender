@@ -1,22 +1,29 @@
+{-# OPTIONS_GHC -Wno-orphans #-}
+
 module Main (main) where
 
-import Data.Aeson (Value (Array, Null), eitherDecode, toJSON)
-import Data.Aeson.Types (Parser)
-import qualified Data.Aeson.KeyMap as KM
-import Data.Aeson.Types (Value (Object), parseEither)
-import qualified Data.ByteString.Lazy.Char8 as L8
+import Data.Aeson (Value (Array, Null), eitherDecode, object, toJSON)
+import Data.Aeson.KeyMap qualified as KM
+import Data.Aeson.Types (Parser, Value (Object), parseEither)
+import Data.ByteString.Lazy.Char8 qualified as L8
+import Data.Map.Strict qualified as Map
+import Data.String (IsString (..))
 import Data.Text (Text)
-import Database.SQLite.Simple (Connection, Only (..), execute_, query_, withConnection)
-import Network.HTTP.Simple (parseRequest_, setRequestHeaders)
-import qualified Data.Map.Strict as Map
+import Data.Text qualified as T
 import Data.Time (UTCTime (..), addUTCTime, fromGregorian)
+import Database.SQLite.Simple (Connection, Only (..), execute_, query_, withConnection)
 import Limits (Limit (..), rememberAt, seenAt, spend)
+import Network.HTTP.Simple (parseRequest_, setRequestHeaders)
 import Test.Hspec
 
+import Contract qualified
+import Data.Set qualified as Set
 import Db hiding (restaurantId)
+import Endpoints qualified
 import Fetch (FetchError (..))
 import OpenStreetMap (nearest, parseOverpass)
 import Places
+import Properties qualified
 import Provider (Provider (..), searchWithFallback)
 import Restaurant
 import User
@@ -38,7 +45,11 @@ sessionWith conn n = do
 joinOk :: Connection -> SessionId -> Maybe UserId -> IO UserId
 joinOk conn s returning = maybe (fail "session full") pure =<< joinSession conn s returning
 
-like, dislike :: Connection -> UserId -> Text -> IO ()
+-- | Ids written as string literals, in the tests only
+instance IsString RestaurantId where
+    fromString = RestaurantId . T.pack
+
+like, dislike :: Connection -> UserId -> RestaurantId -> IO ()
 like conn u r = recordDecision conn (Decision u r True)
 dislike conn u r = recordDecision conn (Decision u r False)
 
@@ -67,15 +78,29 @@ parseWith parser body = eitherDecode body >>= parseEither parser
 parse :: L8.ByteString -> Either String [Restaurant]
 parse = parseWith parsePlaces
 
+-- | A Text Search response for a neighbourhood, in Google's shape
+foundResponse :: Value
+foundResponse =
+    either error id . eitherDecode . L8.unlines $
+        [ "{\"places\": ["
+        , "  {\"displayName\": {\"text\": \"Fernwood\"}, \"formattedAddress\": \"Fernwood, Victoria, BC, Canada\","
+        , "   \"location\": {\"latitude\": 48.43, \"longitude\": -123.34}},"
+        , "  {\"displayName\": {\"text\": \"Fernwood Inn\"}, \"location\": {\"latitude\": 48.432, \"longitude\": -123.341}}"
+        , "]}"
+        ]
+
 -- | A restaurant with only the given name and position
 plain :: Source -> Text -> Loc -> Restaurant
-plain src n = Restaurant src n n Nothing Nothing Nothing Nothing [] Nothing
+plain src n = Restaurant src (RestaurantId n) n Nothing Nothing Nothing Nothing [] Nothing
 
 provider :: Text -> Either FetchError [Restaurant] -> Provider
 provider n result = Provider n (const (pure result))
 
 main :: IO ()
 main = hspec $ do
+    describe "endpoints" Endpoints.spec
+    describe "contract with the frontend" Contract.spec
+    describe "properties" Properties.spec
     describe "parsePlaces" $ do
         it "reads the fields shown on the card" $
             parse searchResponse
@@ -86,7 +111,7 @@ main = hspec $ do
                         "Pho Real"
                         (Just "https://maps.google.com/?cid=1")
                         (Just 4.5)
-                        (Just "$$")
+                        (Just Moderate)
                         (Just "Vietnamese Restaurant")
                         [Photo (GooglePhoto "places/ChIJ1/photos/AbC-1_x") (Just (Author "Sam" (Just "https://maps.google.com/maps/contrib/1")))]
                         (Just (Summary "Bright noodle spot known for its broth." (Just "Summarized with Gemini")))
@@ -105,13 +130,15 @@ main = hspec $ do
 
     describe "parseYelp" $ do
         it "reads a business, treating an empty image as no photo" $
-            parseWith parseYelp
+            parseWith
+                parseYelp
                 "{\"businesses\": [{\"id\": \"y1\", \"name\": \"Jam Cafe\", \"url\": \"https://www.yelp.com/biz/jam\", \"image_url\": \"\", \"rating\": 4.5, \"price\": \"$$\", \"categories\": [{\"alias\": \"breakfast\", \"title\": \"Breakfast & Brunch\"}], \"coordinates\": {\"latitude\": 48.42, \"longitude\": -123.36}}]}"
-                `shouldBe` Right [Restaurant Yelp "y1" "Jam Cafe" (Just "https://www.yelp.com/biz/jam") (Just 4.5) (Just "$$") (Just "Breakfast & Brunch") [] Nothing (Loc 48.42 (-123.36))]
+                `shouldBe` Right [Restaurant Yelp "y1" "Jam Cafe" (Just "https://www.yelp.com/biz/jam") (Just 4.5) (Just Moderate) (Just "Breakfast & Brunch") [] Nothing (Loc 48.42 (-123.36))]
 
     describe "parseOverpass" $ do
         it "reads nodes and ways, skipping places without a name" $
-            parseWith parseOverpass
+            parseWith
+                parseOverpass
                 ( L8.unlines
                     [ "{\"elements\": ["
                     , " {\"type\": \"node\", \"id\": 1, \"lat\": 48.43, \"lon\": -123.35, \"tags\": {\"amenity\": \"restaurant\", \"name\": \"Pho Real\", \"cuisine\": \"vietnamese;noodle\"}},"
@@ -203,6 +230,24 @@ main = hspec $ do
                 , "v1/places:searchNearby"
                 ]
 
+    describe "Loc JSON" $ do
+        it "reads a real place" $
+            eitherDecode "{\"latitude\":48.43,\"longitude\":-123.35}" `shouldBe` Right (Loc 48.43 (-123.35))
+        it "rejects coordinates off the globe, and null" $
+            mapM_
+                (\body -> (eitherDecode body :: Either String Loc) `shouldSatisfy` either (const True) (const False))
+                [ "{\"latitude\":500,\"longitude\":0}"
+                , "{\"latitude\":0,\"longitude\":-180.5}"
+                , "{\"latitude\":null,\"longitude\":0}"
+                ]
+
+    describe "Price" $ do
+        it "is sent as the symbols the frontend shows" $
+            map toJSON [minBound .. maxBound :: Price] `shouldBe` ["Free", "$", "$$", "$$$", "$$$$"]
+        it "reads Yelp's symbols" $
+            map priceFromSymbol ["$", "$$$$", "cheap"] `shouldBe` [Just Inexpensive, Just VeryExpensive, Nothing]
+
+    -- Its full shape is pinned with the other responses, in Contract
     describe "Restaurant JSON" $ do
         it "sends null for missing details" $
             case toJSON (Restaurant Google "ChIJ2" "New Spot" Nothing Nothing Nothing Nothing [] Nothing (Loc 1 2)) of
@@ -277,8 +322,8 @@ main = hspec $ do
             (old, [o]) <- sessionWith conn 1
             (fresh, [f]) <- sessionWith conn 1
             like conn o "a" >> like conn f "a"
-            _ <- sessionLocation conn old (Loc 0 0)
-            _ <- sessionLocation conn fresh (Loc 0 0)
+            _ <- sessionLocation conn old (Just (Loc 0 0))
+            _ <- sessionLocation conn fresh (Just (Loc 0 0))
             _ <- setVibe conn old []
             execute_ conn "UPDATE users SET joined = joined - 100000 WHERE rowid = 1"
             execute_ conn "UPDATE session_vibes SET updated = updated - 100000"
@@ -306,6 +351,42 @@ main = hspec $ do
             matchesFor conn (User first s) `shouldReturn` []
             like conn second "a"
             matchesFor conn (User first s) `shouldReturn` ["a"]
+
+    describe "parseFound" $ do
+        it "reads each match's name, address and location" $
+            parseEither parseFound foundResponse
+                `shouldBe` Right
+                    [ Found (Place "Fernwood" (Loc 48.43 (-123.34))) "Fernwood, Victoria, BC, Canada"
+                    , Found (Place "Fernwood Inn" (Loc 48.432 (-123.341))) ""
+                    ]
+        it "treats no matches as none" $
+            parseEither parseFound (object []) `shouldBe` Right []
+
+    describe "where the group is eating" $ do
+        let fernwood = Place "Fernwood" (Loc 48.43 (-123.34))
+        it "is set, replaced and cleared" $ withTestDb $ \conn -> do
+            (s, _) <- sessionWith conn 0
+            getPlace conn s `shouldReturn` Nothing
+            setPlace conn s (Just fernwood)
+            getPlace conn s `shouldReturn` Just fernwood
+            setPlace conn s Nothing
+            getPlace conn s `shouldReturn` Nothing
+        it "is where the session searches from, over anyone's location" $ withTestDb $ \conn -> do
+            (s, _) <- sessionWith conn 0
+            setPlace conn s (Just fernwood)
+            sessionLocation conn s (Just (Loc 51.04 (-114.1))) `shouldReturn` Just (Loc 48.43 (-123.34))
+        it "can't change once someone has started" $ withTestDb $ \conn -> do
+            (s, _) <- sessionWith conn 0
+            _ <- sessionLocation conn s (Just (Loc 51.04 (-114.1)))
+            setPlace conn s (Just fernwood)
+            getPlace conn s `shouldReturn` Nothing
+
+    describe "sessionMembers" $ do
+        it "lists everyone in joining order with what they decided on" $ withTestDb $ \conn -> do
+            (s, [a, b, c]) <- sessionWith conn 3
+            (_, [other]) <- sessionWith conn 1
+            like conn a "x" >> dislike conn a "y" >> like conn c "x" >> like conn other "z"
+            sessionMembers conn s `shouldReturn` [(a, Set.fromList ["x", "y"]), (b, Set.empty), (c, Set.fromList ["x"])]
 
     describe "othersLiked" $ do
         it "lists what others in the session liked that this user hasn't decided on" $ withTestDb $ \conn -> do
@@ -337,24 +418,24 @@ main = hspec $ do
         it "locks once someone starts swiping" $ withTestDb $ \conn -> do
             (s, _) <- sessionWith conn 0
             _ <- setVibe conn s [Patio]
-            _ <- sessionLocation conn s (Loc 48.43 (-123.35))
+            _ <- sessionLocation conn s (Just (Loc 48.43 (-123.35)))
             setVibe conn s [Fancy] `shouldReturn` ([Patio], True)
 
     describe "searching further" $ do
         it "starts at the default radius" $ withTestDb $ \conn -> do
             (s, _) <- sessionWith conn 0
-            _ <- sessionLocation conn s (Loc 48.43 (-123.35))
+            _ <- sessionLocation conn s (Just (Loc 48.43 (-123.35)))
             sessionRadius conn s `shouldReturn` defaultRadius
         it "doubles the radius up to the maximum" $ withTestDb $ \conn -> do
             (s, _) <- sessionWith conn 0
-            _ <- sessionLocation conn s (Loc 48.43 (-123.35))
+            _ <- sessionLocation conn s (Just (Loc 48.43 (-123.35)))
             widenSearch conn s 5000 `shouldReturn` 10000
             widenSearch conn s 10000 `shouldReturn` 20000
             widenSearch conn s 40000 `shouldReturn` maxRadius
             widenSearch conn s maxRadius `shouldReturn` maxRadius
         it "only widens one step when two people ask at once" $ withTestDb $ \conn -> do
             (s, _) <- sessionWith conn 0
-            _ <- sessionLocation conn s (Loc 48.43 (-123.35))
+            _ <- sessionLocation conn s (Just (Loc 48.43 (-123.35)))
             _ <- widenSearch conn s 5000
             widenSearch conn s 5000 `shouldReturn` 10000
         it "knows what each person has already decided on" $ withTestDb $ \conn -> do
@@ -365,13 +446,18 @@ main = hspec $ do
     describe "sessionLocation" $ do
         it "uses the first location sent for everyone in the session" $ withTestDb $ \conn -> do
             (s, _) <- sessionWith conn 0
-            sessionLocation conn s (Loc 48.43 (-123.35)) `shouldReturn` Loc 48.43 (-123.35)
-            sessionLocation conn s (Loc 49.28 (-123.12)) `shouldReturn` Loc 48.43 (-123.35)
+            sessionLocation conn s (Just (Loc 48.43 (-123.35))) `shouldReturn` Just (Loc 48.43 (-123.35))
+            sessionLocation conn s (Just (Loc 49.28 (-123.12))) `shouldReturn` Just (Loc 48.43 (-123.35))
         it "keeps each session's location separate" $ withTestDb $ \conn -> do
             (s, _) <- sessionWith conn 0
             (other, _) <- sessionWith conn 0
-            _ <- sessionLocation conn s (Loc 48.43 (-123.35))
-            sessionLocation conn other (Loc 51.04 (-114.1)) `shouldReturn` Loc 51.04 (-114.1)
+            _ <- sessionLocation conn s (Just (Loc 48.43 (-123.35)))
+            sessionLocation conn other (Just (Loc 51.04 (-114.1))) `shouldReturn` Just (Loc 51.04 (-114.1))
+        it "gives someone without a location the session's" $ withTestDb $ \conn -> do
+            (s, _) <- sessionWith conn 0
+            sessionLocation conn s Nothing `shouldReturn` Nothing
+            _ <- sessionLocation conn s (Just (Loc 48.43 (-123.35)))
+            sessionLocation conn s Nothing `shouldReturn` Just (Loc 48.43 (-123.35))
 
     describe "initSchema" $ do
         it "upgrades a database from before versioning, keeping likes and dropping stored restaurants" $
@@ -384,6 +470,6 @@ main = hspec $ do
                 query_ conn "SELECT userId, restaurantId, liked FROM decisions ORDER BY userId"
                     `shouldReturn` [("u1", "a", True), ("u2", "b", True) :: (String, String, Bool)]
                 query_ conn "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name"
-                    `shouldReturn` [Only ("decisions" :: String), Only "session_vibes", Only "sessions", Only "users"]
+                    `shouldReturn` [Only ("decisions" :: String), Only "session_places", Only "session_vibes", Only "sessions", Only "users"]
         it "can run more than once" $ withTestDb $ \conn ->
             initSchema conn `shouldReturn` ()

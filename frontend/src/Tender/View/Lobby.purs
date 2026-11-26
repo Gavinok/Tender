@@ -2,7 +2,6 @@ module Tender.View.Lobby (lobby) where
 
 import Prelude
 
-
 import Data.Maybe (Maybe(..))
 import Flame (Html)
 import Flame.Html.Attribute as HA
@@ -13,14 +12,24 @@ import Tender.Vibe (Vibe, chips)
 import Tender.QR (qrDataUrl)
 import Tender.View.Button (Variant(..), button)
 import Tender.View.Icon (Icon(..))
+import Tender.View.PlacePicker (placePicker, searchingNear)
+import Tender.Types (Found)
 
 -- | Invite people to the session, then start
-lobby :: forall a. Lobby -> { share :: a, start :: a, toggle :: String -> a } -> Html a
-lobby { link, copied, vibe } { share, start, toggle } =
+lobby
+  :: forall a
+   . Lobby
+  -> { share :: a, start :: a, toggle :: String -> a, picker :: { open :: a, clear :: a, query :: String -> a, find :: a, choose :: Found -> a, close :: a } }
+  -> Html a
+lobby { link, copied, vibe, picker } { share, start, toggle, picker: on } =
   HE.div [ HA.class' "flex flex-1 flex-col items-center justify-center gap-6 text-center" ]
     [ HE.h1 [ HA.class' "font-display text-5xl leading-none" ] [ HE.text "Where should we eat?" ]
     , HE.p [ HA.class' "max-w-xs text-lg text-ink/70" ]
         [ HE.text "Get everyone to scan this, then start swiping. Anything you all like is a match." ]
+    -- Before the QR code, so it's seen without scrolling on a phone
+    , case picker of
+        Just p | not vibe.locked -> placePicker p on
+        _ -> searchingNear vibe on
     , HE.figure [ HA.class' "-rotate-2 rounded-3xl border-[3px] border-ink bg-white p-4 shadow-card" ]
         [ HE.img [ HA.src (qrDataUrl link), HA.alt "QR code to join this session", HA.class' "block h-44 w-44" ]
         , HE.p [ HA.class' "w-44 truncate pt-2 font-mono text-xs text-ink/50", HA.title link ] [ HE.text link ]

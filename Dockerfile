@@ -2,9 +2,13 @@
 # Used by `make deploy` for Google Cloud Run.
 
 # --- Backend ---
-FROM haskell:9.4.8 AS backend
+FROM haskell:9.12.4-bookworm AS backend
+# zlib is frozen to link the system library, found through pkg-config
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends pkg-config zlib1g-dev \
+ && rm -rf /var/lib/apt/lists/*
 WORKDIR /build
-# The image's compiler is plain `ghc`, not the ghc-9.4.8 that cabal.project
+# The image's compiler is plain `ghc`, not the ghc-9.12.4 that cabal.project
 # names; the pinned versions in cabal.project.freeze keep it reproducible.
 # Dependencies are built from the package description alone, so this layer
 # is reused until they change. It has to be the library's: the executable's
@@ -33,13 +37,12 @@ FROM debian:bookworm-slim
 RUN apt-get update \
  && apt-get install -y --no-install-recommends ca-certificates libgmp10 netbase \
  && rm -rf /var/lib/apt/lists/*
-# Built on Debian 10, whose libffi has a different soname than bookworm's
-COPY --from=backend /usr/lib/x86_64-linux-gnu/libffi.so.6* /usr/lib/x86_64-linux-gnu/
 COPY --from=backend /build/tender-server /app/tender-server
 COPY --from=frontend /build/dist /app/frontend
 # Sessions only need to last as long as this instance, so the database lives
 # in /tmp. Cloud Run sets PORT.
 ENV PORT=8080 \
+    TENDER_LOG_FORMAT=json \
     TENDER_STATIC=/app/frontend \
     TENDER_DB=/tmp/tender.db
 USER nobody

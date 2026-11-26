@@ -1,6 +1,3 @@
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-
 -- | Restaurants and photos from the Google Places API (New)
 module Places (
     PlacesKey (..),
@@ -10,24 +7,28 @@ module Places (
     searchText,
     ringCircles,
     inRing,
-    metres,
     photoUri,
     parsePlaces,
     isPhotoName,
+    findPlaces,
+    parseFound,
 ) where
 
+import Control.Applicative ((<|>))
 import Control.Concurrent.Async (mapConcurrently)
 import Data.Aeson (Value, object, withObject, (.!=), (.:), (.:?), (.=))
-import qualified Data.Aeson.Types as AT
-import qualified Data.ByteString as BS
+import Data.Aeson.Types qualified as AT
+import Data.ByteString qualified as BS
 import Data.Char (isAlphaNum)
 import Data.Either (partitionEithers)
 import Data.List (nubBy, transpose)
 import Data.Maybe (listToMaybe)
+import Data.Set qualified as Set
 import Data.Text (Text)
-import qualified Data.Text as T
-import qualified Data.Text.Encoding as TE
+import Data.Text qualified as T
+import Data.Text.Encoding qualified as TE
 import Fetch (FetchError, fetchJSON)
+import Network.HTTP.Client (redactHeaders)
 import Network.HTTP.Simple (
     Header,
     Request,
@@ -37,11 +38,9 @@ import Network.HTTP.Simple (
     setRequestPath,
     setRequestQueryString,
  )
-import Network.HTTP.Client (redactHeaders)
-import qualified Data.Set as Set
 import Provider (Provider (..))
-import Vibe (Chip, Search (..), priceLevels, queryTerms, wantsOpenNow)
-import Restaurant (Author (..), Loc (..), Photo (..), PhotoSource (..), Restaurant (..), Source (..), Summary (..))
+import Restaurant (Author (..), Loc (..), Photo (..), PhotoSource (..), Price (..), Restaurant (..), Source (..), Summary (..), metres)
+import Vibe (Chip, Found (..), Place (..), Search (..), priceLevels, queryTerms, wantsOpenNow)
 
 newtype PlacesKey = PlacesKey BS.ByteString
 
@@ -86,13 +85,6 @@ inRing centre inner outer = nubBy (\a b -> restaurantId a == restaurantId b) . f
 interleave :: [[a]] -> [a]
 interleave = concat . transpose
 
--- | Distance in metres, flat approximation that is fine within 50km
-metres :: Loc -> Loc -> Double
-metres (Loc lat lon) (Loc lat' lon') =
-    let dy = (lat' - lat) * 111320
-        dx = (lon' - lon) * 111320 * cos (lat * pi / 180)
-     in sqrt (dx * dx + dy * dy)
-
 -- | Photos kept per place, of the up to 10 Google returns
 maxPhotos :: Int
 maxPhotos = 5
@@ -113,13 +105,17 @@ withKey (PlacesKey k) headers req =
         { redactHeaders = Set.insert "X-Goog-Api-Key" (redactHeaders req)
         }
 
+-- | Seconds to wait for a search before falling back to the next source
+searchTimeout :: Int
+searchTimeout = 10
+
 -- | Up to 20 restaurants within the radius in metres, most popular first
 searchNearby :: PlacesKey -> Loc -> Double -> IO (Either FetchError [Restaurant])
 searchNearby key l radius =
-    fetchJSON parsePlaces $
-        withKey key [("X-Goog-FieldMask", fieldMask)] $
-            setRequestBodyJSON body $
-                parseRequest_ "POST https://places.googleapis.com/v1/places:searchNearby"
+    fetchJSON searchTimeout parsePlaces
+        $ withKey key [("X-Goog-FieldMask", fieldMask)]
+        $ setRequestBodyJSON body
+        $ parseRequest_ "POST https://places.googleapis.com/v1/places:searchNearby"
   where
     body =
         object
@@ -133,10 +129,10 @@ searchNearby key l radius =
 -- | Up to 20 places matching the vibe within the radius in metres
 searchText :: PlacesKey -> Loc -> [Chip] -> Double -> IO (Either FetchError [Restaurant])
 searchText key l chips radius =
-    fetchJSON parsePlaces $
-        withKey key [("X-Goog-FieldMask", fieldMask)] $
-            setRequestBodyJSON body $
-                parseRequest_ "POST https://places.googleapis.com/v1/places:searchText"
+    fetchJSON searchTimeout parsePlaces
+        $ withKey key [("X-Goog-FieldMask", fieldMask)]
+        $ setRequestBodyJSON body
+        $ parseRequest_ "POST https://places.googleapis.com/v1/places:searchText"
   where
     body =
         object $
@@ -159,14 +155,36 @@ boxAround (Loc lat lon) radius =
     dLat = radius / 111320
     dLon = radius / (111320 * cos (lat * pi / 180))
 
+{- | Up to 5 places matching what the group typed for where they're eating,
+e.g. a neighbourhood, address or city. Asks only for names, addresses and
+locations.
+-}
+findPlaces :: PlacesKey -> Text -> IO (Either FetchError [Found])
+findPlaces key q =
+    fetchJSON searchTimeout parseFound
+        $ withKey key [("X-Goog-FieldMask", "places.displayName,places.formattedAddress,places.location")]
+        $ setRequestBodyJSON (object ["textQuery" .= q, "pageSize" .= (5 :: Int)])
+        $ parseRequest_ "POST https://places.googleapis.com/v1/places:searchText"
+
+parseFound :: Value -> AT.Parser [Found]
+parseFound = withObject "SearchTextResponse" $ \o ->
+    o .:? "places" .!= [] >>= traverse found
+  where
+    found = withObject "Place" $ \p -> do
+        n <- p .: "displayName" >>= (.: "text")
+        address <- p .:? "formattedAddress" .!= ""
+        l <- p .: "location"
+        pure (Found (Place n l) address)
+
 -- | A short lived url for the photo, at most the given width
 photoUri :: PlacesKey -> Text -> Int -> IO (Either FetchError Text)
 photoUri key resource width =
-    fetchJSON (withObject "Photo" (.: "photoUri")) $
-        withKey key [] $
-            setRequestQueryString [("maxWidthPx", Just (TE.encodeUtf8 (T.pack (show width)))), ("skipHttpRedirect", Just "true")] $
-                setRequestPath (TE.encodeUtf8 ("/v1/" <> resource <> "/media")) $
-                    parseRequest_ "GET https://places.googleapis.com"
+    -- Holds up a card's photo, so shorter than searches
+    fetchJSON 5 (withObject "Photo" (.: "photoUri"))
+        $ withKey key []
+        $ setRequestQueryString [("maxWidthPx", Just (TE.encodeUtf8 (T.pack (show width)))), ("skipHttpRedirect", Just "true")]
+        $ setRequestPath (TE.encodeUtf8 ("/v1/" <> resource <> "/media"))
+        $ parseRequest_ "GET https://places.googleapis.com"
 
 {- | Whether the text has the shape of a photo's resource name. The photo
 endpoint only passes these on, so it can't be used to call anything else.
@@ -190,7 +208,7 @@ parsePlaces = withObject "SearchNearbyResponse" $ \o ->
             <*> (p .: "displayName" >>= (.: "text"))
             <*> p .:? "googleMapsUri"
             <*> p .:? "rating"
-            <*> (maybe Nothing priceSymbol <$> p .:? "priceLevel")
+            <*> ((>>= priceFromLevel) <$> p .:? "priceLevel")
             <*> (p .:? "primaryTypeDisplayName" >>= traverse (.: "text"))
             -- Each photo shown is a billed request, so only the first few
             <*> traverse parsePhoto (take maxPhotos found)
@@ -206,20 +224,20 @@ parsePlaces = withObject "SearchNearbyResponse" $ \o ->
                 disclosure <- g .:? "disclosureText" >>= traverse (.: "text")
                 pure (flip Summary disclosure <$> overview)
         editorial <- p .:? "editorialSummary" >>= traverse (.: "text")
-        pure (maybe (flip Summary Nothing <$> editorial) Just ai)
+        pure (ai <|> (flip Summary Nothing <$> editorial))
     parsePhoto = withObject "Photo" $ \ph -> do
         authors <- ph .:? "authorAttributions" .!= []
-        Photo <$> (GooglePhoto <$> ph .: "name") <*> traverse parseAuthor (listToMaybe authors)
+        Photo . GooglePhoto <$> ph .: "name" <*> traverse parseAuthor (listToMaybe authors)
     parseAuthor = withObject "AuthorAttribution" $ \a ->
         Author <$> a .: "displayName" <*> (fmap absolute <$> a .:? "uri")
     -- Author links come back without a scheme, e.g. //maps.google.com/...
     absolute u = if "//" `T.isPrefixOf` u then "https:" <> u else u
 
-priceSymbol :: Text -> Maybe Text
-priceSymbol = \case
-    "PRICE_LEVEL_FREE" -> Just "Free"
-    "PRICE_LEVEL_INEXPENSIVE" -> Just "$"
-    "PRICE_LEVEL_MODERATE" -> Just "$$"
-    "PRICE_LEVEL_EXPENSIVE" -> Just "$$$"
-    "PRICE_LEVEL_VERY_EXPENSIVE" -> Just "$$$$"
+priceFromLevel :: Text -> Maybe Price
+priceFromLevel = \case
+    "PRICE_LEVEL_FREE" -> Just Free
+    "PRICE_LEVEL_INEXPENSIVE" -> Just Inexpensive
+    "PRICE_LEVEL_MODERATE" -> Just Moderate
+    "PRICE_LEVEL_EXPENSIVE" -> Just Expensive
+    "PRICE_LEVEL_VERY_EXPENSIVE" -> Just VeryExpensive
     _ -> Nothing

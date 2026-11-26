@@ -1,0 +1,27 @@
+[
+    {
+        "chips": [],
+        "locked": false,
+        "place": null
+    },
+    {
+        "chips": [
+            "cheap",
+            "fancy",
+            "patio",
+            "date-night",
+            "big-group",
+            "veggie",
+            "drinks",
+            "brunch",
+            "late-night",
+            "open-now"
+        ],
+        "locked": true,
+        "place": {
+            "latitude": 48.43,
+            "longitude": -123.34,
+            "name": "Fernwood"
+        }
+    }
+]

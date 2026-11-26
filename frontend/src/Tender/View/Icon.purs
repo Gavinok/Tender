@@ -19,6 +19,7 @@ data Icon
   | Refresh
   | Check
   | MapPin
+  | Plus
 
 paths :: Icon -> Array String
 paths = case _ of
@@ -31,6 +32,7 @@ paths = case _ of
   Utensils -> [ "M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2", "M7 2v20", "M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7" ]
   Check -> [ "M20 6 9 17l-5-5" ]
   MapPin -> [ "M20 10c0 4.99-5.54 10.19-7.4 11.8a1 1 0 0 1-1.2 0C9.54 20.19 4 14.99 4 10a8 8 0 0 1 16 0", "M12 7a3 3 0 1 0 0 6 3 3 0 0 0 0-6z" ]
+  Plus -> [ "M5 12h14", "M12 5v14" ]
   Refresh -> [ "M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8", "M21 3v5h-5", "M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16", "M8 16H3v5" ]
 
 -- | An icon with the given classes, e.g. `icon Heart "w-6 h-6 fill-current"`.

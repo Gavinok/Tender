@@ -2,7 +2,9 @@ module Tender.App
   ( Message(..)
   , Model(..)
   , Screen(..)
+  , locationText
   , Lobby
+  , Picker
   , Swiper
   , init
   , update
@@ -11,26 +13,31 @@ module Tender.App
 import Prelude
 
 import Data.Array (cons, elem, filter, head, length, snoc, uncons)
+import Data.Bifunctor (lmap)
+import Data.String (trim)
+import Data.String as String
 import Data.Either (Either(..), either)
 import Data.Generic.Rep (class Generic)
 import Data.Show.Generic (genericShow)
 import Data.Maybe (Maybe(..), maybe)
-import Effect.Aff (Aff, Milliseconds(..), attempt, delay, message)
+import Effect.Aff (Aff, Milliseconds(..), attempt, delay)
 import Effect.Class (liftEffect)
 import Data.Tuple (Tuple)
 import Data.Tuple.Nested ((/\))
 import Flame (Update)
-import Tender.Api (ApiError(..), createSession, decide, getRestaurants, getVibe, joinSession, setVibe)
+import Tender.Api (ApiError(..), createSession, decide, findPlaces, getRestaurants, getVibe, heartbeat, joinSession, setPlace, setVibe)
 import Tender.Vibe (Vibe)
 import Tender.Swipe (flyOut)
 import Tender.Swipe as Swipe
-import Tender.Browser (Shared(..), existingSession, geolocation, reload, rememberSession, rememberUser, rememberedUser, shareLink, shareOrCopy, vibrate)
-import Tender.Types (ErrorMessage, Loc, Restaurant, RestaurantId, SessionId, Url, UserId)
+import Tender.Browser (LocationProblem(..), Shared(..), existingSession, geolocation, reload, rememberSession, rememberUser, rememberedUser, shareLink, shareOrCopy, startNewSession, tabHidden, vibrate)
+import Tender.Types (ErrorMessage, Found, Loc, Person, Place, Restaurant, RestaurantId, SessionId, Url, UserId)
 
 -- | What we know once the user has joined a session
 type Swiper =
   { user :: UserId
-  , loc :: Loc
+  -- | Nothing when the browser couldn't find the user, who then gets the
+  -- | session's location
+  , loc :: Maybe Loc
   -- | How far the session searches, in metres, and how far it can go
   , radius :: Number
   , maxRadius :: Number
@@ -45,6 +52,8 @@ type Swiper =
   -- | Restaurants this person liked, newest first, to show when one becomes a match
   , liked :: Array Restaurant
   , matches :: Array Restaurant
+  -- | Everyone in the session, as of the last heartbeat
+  , people :: Array Person
   -- | Whether the list of matches is open
   , showMatches :: Boolean
   -- | The session's vibe chips
@@ -64,6 +73,17 @@ type Lobby =
   -- | Show that the link was just copied
   , copied :: Boolean
   , vibe :: Vibe
+  -- | Open while someone is choosing where the group is eating
+  , picker :: Maybe Picker
+  }
+
+-- | Looking up where the group is eating. `results` is Nothing until the
+-- | first lookup comes back.
+type Picker =
+  { query :: String
+  , results :: Maybe (Array Found)
+  , searching :: Boolean
+  , problem :: Maybe ErrorMessage
   }
 
 -- | The model represents the state of the app
@@ -73,6 +93,9 @@ data Model
   | QR Lobby
   | Active Swiper Screen
   | ServerError ErrorMessage
+  -- | Joined, but there's no location to search from: the user's couldn't be
+  -- | found and nobody else in the session has one yet
+  | NeedLocation { session :: SessionId, user :: UserId, message :: ErrorMessage, picker :: Maybe Picker }
 
 derive instance Eq Screen
 derive instance Generic Screen _
@@ -89,7 +112,22 @@ data Message
   = DetermineSession
   | JoinSession SessionId Url
   | StartSwiping
-  | Started UserId Loc
+  -- | Joined, with the user's location or why it couldn't be found
+  | Started SessionId UserId (Either LocationProblem Loc)
+  -- | The search had no location to use, with why the user's couldn't be
+  -- | found and what the server said
+  | LocationFailed SessionId UserId LocationProblem ErrorMessage
+  -- | Ask for the user's location again, staying in the session
+  | RetryLocation
+  -- | Choosing where the group is eating, instead of using locations
+  | OpenPicker
+  | ClosePicker
+  | PlaceQuery String
+  | FindPlaces
+  | PlacesFound (Either ErrorMessage (Array Found))
+  | ChoosePlace Found
+  -- | Back to everyone's own locations
+  | ClearPlace
   | Like
   | Dislike
   -- | A key pressed anywhere on the page
@@ -110,9 +148,16 @@ data Message
   -- | The decision on this restaurant is saved. Brings the session's matches
   -- | this person is part of, including ones others completed since.
   | Decided { id :: RestaurantId, liked :: Boolean, matches :: Array RestaurantId, othersLiked :: Array RestaurantId }
+  -- | Time to tell the server the user is still here
+  | Heartbeat
+  -- | Who is in the session and the user's matches, or Nothing if the
+  -- | heartbeat failed
+  | HeardBack (Maybe { people :: Array Person, matches :: Array RestaurantId })
   | FailedToLoad ErrorMessage
   -- | Start again from the session in the url
   | Retry
+  -- | Leave this session for a new one
+  | NewSession
   | ToggleMatches
   | ShareInvite
   | LinkCopied
@@ -120,9 +165,44 @@ data Message
 
 -- | Show a failed request to the user
 failed :: ApiError -> Message
-failed = case _ of
-  NotFound e -> FailedToLoad e
-  Failed e -> FailedToLoad e
+failed = FailedToLoad <<< errorText
+
+newPicker :: Picker
+newPicker = { query: "", results: Nothing, searching: false, problem: Nothing }
+
+pickerOf :: Model -> Maybe Picker
+pickerOf = case _ of
+  QR lobby -> lobby.picker
+  NeedLocation n -> n.picker
+  _ -> Nothing
+
+-- | Change the open picker, wherever it is
+withPicker :: Model -> (Maybe Picker -> Maybe Picker) -> Model
+withPicker model f = case model of
+  QR lobby -> QR lobby { picker = f lobby.picker }
+  NeedLocation n -> NeedLocation n { picker = f n.picker }
+  _ -> model
+
+toPlace :: Found -> Place
+toPlace f = { name: f.name, latitude: f.latitude, longitude: f.longitude }
+
+locOf :: Place -> Loc
+locOf p = { latitude: p.latitude, longitude: p.longitude }
+
+-- | What went wrong finding the user's location, and what they can do
+locationText :: LocationProblem -> String
+locationText = case _ of
+  Blocked -> "Location is blocked for this site. Allow it from the icon at the left of the address bar, then try again."
+  DeviceOff -> "Your browser allows Tender to see your location, but your device isn't sharing it with the browser. Turn on location for your browser in your device's settings."
+  NotAllowed -> "Tender didn't get permission to see your location. Try again and allow it when your browser asks."
+  Unavailable -> "Your device couldn't work out where you are."
+  TimedOut -> "Finding your location took too long."
+  Unsupported -> "This browser can't share your location with Tender."
+
+errorText :: ApiError -> ErrorMessage
+errorText = case _ of
+  NotFound e -> e
+  Failed e -> e
 
 orFail :: forall a. (a -> Message) -> Either ApiError a -> Message
 orFail = either failed
@@ -132,6 +212,22 @@ advance :: Swiper -> Tuple Model (Array (Aff (Maybe Message)))
 advance swiper = case uncons swiper.upcoming of
   Nothing -> Active swiper NoneLeft /\ []
   Just { head, tail } -> Active swiper { upcoming = tail, photo = 0, summaryOpen = false } (Swiping head) /\ []
+
+-- | How long until the next heartbeat. More often while out of cards, where
+-- | someone is waiting to hear about matches.
+heartbeatEvery :: Screen -> Milliseconds
+heartbeatEvery = case _ of
+  NoneLeft -> Milliseconds 5000.0
+  _ -> Milliseconds 10000.0
+
+-- | Restaurants the user liked that are in the matches and weren't before,
+-- | newest first, with them added to the user's matches
+newMatches :: Array RestaurantId -> Swiper -> { new :: Array Restaurant, swiper :: Swiper }
+newMatches ids swiper =
+  let
+    new = filter (\l -> elem l.id ids && not (elem l.id (_.id <$> swiper.matches))) swiper.liked
+  in
+    { new, swiper: swiper { matches = new <> swiper.matches } }
 
 -- | Restaurants someone else liked first, otherwise keeping the order
 likedFirst :: Array RestaurantId -> Array Restaurant -> Array Restaurant
@@ -154,6 +250,7 @@ update :: Update Model Message
 update model = case model, _ of
   _, FailedToLoad e -> ServerError e /\ []
   _, Retry -> model /\ [ liftEffect reload $> Nothing ]
+  _, NewSession -> model /\ [ liftEffect startNewSession $> Nothing ]
 
   _, DetermineSession -> model /\
     [ Just <$> do
@@ -166,7 +263,7 @@ update model = case model, _ of
             JoinSession s <$> shareLink s
     ]
   _, JoinSession session link ->
-    QR { session, link, copied: false, vibe: { chips: [], locked: false } } /\ [ pollVibe session ]
+    QR { session, link, copied: false, vibe: { chips: [], locked: false, place: Nothing }, picker: Nothing } /\ [ pollVibe session ]
   -- Keeps checking while in the lobby so everyone sees the same chips; stops once swiping
   QR lobby, VibePolled v -> QR lobby { vibe = v } /\ [ delay (Milliseconds 3000.0) $> Just PollVibe ]
   QR { session }, PollVibe -> model /\ [ pollVibe session ]
@@ -186,19 +283,63 @@ update model = case model, _ of
     QR lobby { copied = true } /\ [ delay (Milliseconds 2000.0) $> Just HideCopied ]
   QR lobby, HideCopied -> QR lobby { copied = false } /\ []
 
-  QR { session }, StartSwiping -> model /\
-    [ attempt geolocation >>= case _ of
-        Left e -> pure $ Just $ FailedToLoad $ "Could not get your location: " <> message e
-        Right loc -> do
-          returning <- liftEffect $ rememberedUser session
-          joined <- joinSession session returning
-          case joined of
-            Right u -> liftEffect (rememberUser session u) $> Just (Started u loc)
-            Left e -> pure $ Just $ failed e
+  -- Without a location the user can still join, and gets the session's
+  -- With a place chosen, nobody needs their location
+  QR { session, vibe }, StartSwiping -> model /\
+    [ do
+        located <- maybe geolocation (pure <<< Right <<< locOf) vibe.place
+        returning <- liftEffect $ rememberedUser session
+        joined <- joinSession session returning
+        case joined of
+          Right u -> liftEffect (rememberUser session u) $> Just (Started session u located)
+          Left e -> pure $ Just $ failed e
     ]
-  _, Started user loc ->
-    Active { user, loc, radius: 0.0, maxRadius: 0.0, upcoming: [], photo: 0, summaryOpen: false, othersLiked: [], liked: [], matches: [], showMatches: false, vibe: [] } Fetching
-      /\ [ Just <<< orFail Loaded <$> getRestaurants user loc Nothing ]
+  _, Started session user located ->
+    let
+      loc = either (const Nothing) Just located
+      -- Only reached when nobody else in the session has a location either
+      noLocation problem e = LocationFailed session user problem (errorText e)
+    in
+      Active { user, loc, radius: 0.0, maxRadius: 0.0, upcoming: [], photo: 0, summaryOpen: false, othersLiked: [], liked: [], matches: [], people: [], showMatches: false, vibe: [] } Fetching
+        /\
+          [ Just <<< either (either noLocation (const failed) located) Loaded <$> getRestaurants user loc Nothing
+          -- Soon after the search, so the server knows what the user was shown
+          , delay (Milliseconds 2000.0) $> Just Heartbeat
+          ]
+  _, LocationFailed session user problem serverSaid ->
+    NeedLocation { session, user, message: locationText problem <> " " <> serverSaid, picker: Nothing } /\ []
+  NeedLocation { session, user }, RetryLocation ->
+    Loading /\ [ Just <<< Started session user <$> geolocation ]
+
+  -- Choosing where the group is eating, from the lobby or when there's no location
+  QR lobby, OpenPicker | not lobby.vibe.locked -> QR lobby { picker = Just newPicker } /\ []
+  NeedLocation n, OpenPicker -> NeedLocation n { picker = Just newPicker } /\ []
+  _, ClosePicker -> withPicker model (const Nothing) /\ []
+  _, PlaceQuery q -> withPicker model (map _ { query = q }) /\ []
+  _, FindPlaces -> case pickerOf model of
+    Just p | not p.searching ->
+      if String.length (trim p.query) < 2 then withPicker model (map _ { problem = Just "Type at least 2 letters." }) /\ []
+      else
+        withPicker model (map _ { searching = true, problem = Nothing })
+          /\ [ Just <<< PlacesFound <<< lmap errorText <$> findPlaces (trim p.query) ]
+    _ -> model /\ []
+  _, PlacesFound found ->
+    withPicker model (map \p -> either (\e -> p { searching = false, problem = Just e }) (\fs -> p { searching = false, results = Just fs }) found) /\ []
+  QR lobby, ChoosePlace f | not lobby.vibe.locked ->
+    let
+      place = toPlace f
+    in
+      QR lobby { picker = Nothing, vibe = lobby.vibe { place = Just place } }
+        /\ [ setPlace lobby.session (Just place) <#> either (const Nothing) (Just <<< VibeSaved) ]
+  QR lobby, ClearPlace | not lobby.vibe.locked ->
+    QR lobby { vibe = lobby.vibe { place = Nothing } }
+      /\ [ setPlace lobby.session Nothing <#> either (const Nothing) (Just <<< VibeSaved) ]
+  -- Nobody has a location yet, so the session isn't locked and this sticks
+  NeedLocation { session, user }, ChoosePlace f ->
+    let
+      place = toPlace f
+    in
+      Loading /\ [ setPlace session (Just place) $> Just (Started session user (Right (locOf place))) ]
   Active swiper Fetching, Loaded found ->
     advance swiper
       { upcoming = likedFirst found.othersLiked found.restaurants
@@ -224,8 +365,7 @@ update model = case model, _ of
   Active swiper (Swiping r), Decided d | r.id == d.id ->
     let
       liked = if d.liked then cons r swiper.liked else swiper.liked
-      new = filter (\l -> elem l.id d.matches && not (elem l.id (_.id <$> swiper.matches))) liked
-      next = swiper { upcoming = likedFirst d.othersLiked swiper.upcoming, othersLiked = d.othersLiked, liked = liked, matches = new <> swiper.matches }
+      { new, swiper: next } = newMatches d.matches swiper { upcoming = likedFirst d.othersLiked swiper.upcoming, othersLiked = d.othersLiked, liked = liked }
     in
       -- Celebrate one, newest first; any others are in the list of matches
       case head new of
@@ -241,6 +381,29 @@ update model = case model, _ of
   Active _ (Swiping _), KeyPressed "ArrowLeft" -> update model Dislike
 
   Active swiper (Matched _), Continue -> advance swiper
+
+  -- One loop for the whole session, started with it. Skipped while the page
+  -- is hidden, so a phone in a pocket shows as away; a failed heartbeat just
+  -- waits for the next.
+  Active swiper screen, Heartbeat -> model /\
+    [ do
+        hidden <- liftEffect tabHidden
+        if hidden then delay (heartbeatEvery screen) $> Just Heartbeat
+        else Just <<< HeardBack <<< either (const Nothing) Just <$> heartbeat swiper.user
+    ]
+  -- Out of cards, new matches are celebrated here; while swiping, each
+  -- decision brings them instead
+  Active swiper screen, HeardBack heard ->
+    let
+      withPeople = maybe swiper (\h -> swiper { people = h.people }) heard
+      { new, swiper: next } = case screen, heard of
+        NoneLeft, Just h -> newMatches h.matches withPeople
+        _, _ -> { new: [], swiper: withPeople }
+      again = delay (heartbeatEvery screen) $> Just Heartbeat
+    in
+      case head new of
+        Just m -> Active next (Matched m) /\ [ liftEffect vibrate $> Nothing, again ]
+        Nothing -> Active next screen /\ [ again ]
 
   Active swiper screen, ToggleMatches ->
     Active swiper { showMatches = not swiper.showMatches } screen /\ []

@@ -11,9 +11,11 @@ ghc = "asdf:mise-plugins/mise-ghcup"
 hls = "https://github.com/mise-plugins/mise-ghcup"
 
 [tools]
-ghc = "9.4.8"
+ghc = "9.12.4"
 cabal = "3.16.1.0"
-# Last HLS release with binaries for GHC 9.4.8
-hls = "2.11.0.0"
+# ghcup's recommended HLS, with binaries for GHC 9.12.4
+hls = "2.14.0.0"
 node = "22"
 purescript = "0.15.15"
+# Formats the backend; CI checks with the same version
+"github:fourmolu/fourmolu" = "0.21.0.0"

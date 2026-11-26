@@ -5,3 +5,6 @@ watch:
 	find app src -name "*.hs" | entr -r make all
 test:
 	cabal test
+# fourmolu from mise.toml, the version CI checks with
+format:
+	mise exec -- fourmolu --mode inplace src app test

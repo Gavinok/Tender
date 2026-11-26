@@ -3,6 +3,7 @@
 #   make         build and start the backend (port 5001) and frontend (port 1234)
 #   make phone   the same, also served over https on your tailnet for phones
 #   make test    test both halves
+#   make format  format both halves, as CI checks
 #
 # Deploying to Google Cloud Run (see README):
 #   make deploy-setup   once per project: services, image registry, the key as a secret
@@ -28,6 +29,10 @@ phone:
 test:
 	$(MAKE) -C backend test
 	$(MAKE) -C frontend test
+
+format:
+	$(MAKE) -C backend format
+	$(MAKE) -C frontend format
 
 # --- Google Cloud Run ---
 
@@ -63,4 +68,4 @@ deploy:
 	  --allow-unauthenticated --min-instances 0 --max-instances 1 --memory 512Mi --cpu 1 --port 8080 \
 	  --set-secrets GOOGLE_PLACES_KEY=$(SECRET):latest
 
-.PHONY: all dev phone test deploy-setup deploy-secret deploy
+.PHONY: all dev phone test format deploy-setup deploy-secret deploy

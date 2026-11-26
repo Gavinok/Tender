@@ -1,0 +1,50 @@
+{
+    "maxRadius": 50000,
+    "othersLiked": [
+        "ChIJ1"
+    ],
+    "radius": 5000,
+    "restaurants": [
+        {
+            "category": "Vietnamese Restaurant",
+            "id": "ChIJ1",
+            "name": "Pho Real",
+            "photos": [
+                {
+                    "author": {
+                        "name": "Sam",
+                        "uri": "https://maps.google.com/contrib/1"
+                    },
+                    "name": "places/ChIJ1/photos/p1"
+                },
+                {
+                    "author": null,
+                    "url": "https://example.com/pho.jpg"
+                }
+            ],
+            "price": "$$",
+            "rating": 4.5,
+            "source": "google",
+            "summary": {
+                "disclosure": "Summarized with Gemini",
+                "text": "Big bowls of pho."
+            },
+            "url": "https://maps.google.com/?cid=1"
+        },
+        {
+            "category": null,
+            "id": "osm:node/1",
+            "name": "Fish Store",
+            "photos": [],
+            "price": null,
+            "rating": null,
+            "source": "openstreetmap",
+            "summary": null,
+            "url": null
+        }
+    ],
+    "vibe": [
+        "patio",
+        "veggie"
+    ]
+}

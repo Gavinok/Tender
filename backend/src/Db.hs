@@ -1,45 +1,58 @@
 {-# LANGUAGE DeriveAnyClass #-}
-{-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE DerivingStrategies #-}
 
-module Db (initDb, initSchema, withDb, addUserToDb, joinSession, maxPerSession, pruneOlderThan, sessionLocation, sessionRadius, widenSearch, decidedBy, getVibe, setVibe, recordDecision, isMatch, matchesFor, othersLiked, Decision (..), getUser) where
+module Db (initDb, initSchema, DbPool, openPool, withConn, addUserToDb, joinSession, maxPerSession, pruneOlderThan, sessionLocation, getPlace, setPlace, sessionRadius, widenSearch, decidedBy, getVibe, setVibe, recordDecision, isMatch, matchesFor, othersLiked, sessionMembers, Decision (..), getUser) where
 
-import Control.Monad (forM_)
+import Control.Applicative ((<|>))
+import Control.Exception (bracket)
+import Control.Monad (forM_, unless)
+import Data.List (nub)
+import Data.Maybe (listToMaybe, mapMaybe)
+import Data.Pool (Pool, defaultPoolConfig, newPool, setNumStripes, withResource)
+import Data.Set qualified as Set
+import Data.String (fromString)
+import Data.Text qualified as T
 import Database.SQLite.Simple (
     Connection,
     Only (..),
     Query,
     ToRow,
+    close,
     execute,
     execute_,
+    open,
     query,
     query_,
-    withConnection,
     withImmediateTransaction,
     withTransaction,
  )
-import Data.List (nub)
-import Data.Maybe (listToMaybe, mapMaybe)
-import qualified Data.Text as T
-import Vibe (Chip, chipFromId, chipId, defaultRadius, maxRadius)
-import Data.String (fromString)
 import GHC.Generics (Generic)
-import Data.Text (Text)
-import Restaurant (Loc (..))
-import qualified User as U
+import Restaurant (Loc (..), RestaurantId)
+import User qualified as U
+import Vibe (Chip, Place (..), chipFromId, chipId, defaultRadius, maxRadius)
 
-{- | Open a connection for the duration of the action, closing it even if
-the action throws.
--}
-withDb :: FilePath -> (Connection -> IO a) -> IO a
-withDb path act = withConnection path $ \conn -> do
+openDb :: FilePath -> IO Connection
+openDb path = do
+    conn <- open path
     -- Wait for concurrent writers instead of failing with SQLITE_BUSY
     execute_ conn "PRAGMA busy_timeout = 5000"
-    act conn
+    pure conn
+
+-- | Open connections, kept for reuse between requests
+type DbPool = Pool Connection
+
+{- | A few connections, closed after a minute unused. The app runs as one
+instance, so one pool is all of them.
+-}
+openPool :: FilePath -> IO DbPool
+openPool path = newPool (setNumStripes (Just 1) (defaultPoolConfig (openDb path) close 60 4))
+
+-- | Run the action with a connection from the pool, returning it after
+withConn :: DbPool -> (Connection -> IO a) -> IO a
+withConn = withResource
 
 -- | Create the schema. Run once at startup.
 initDb :: FilePath -> IO ()
-initDb path = withDb path $ \conn -> do
+initDb path = bracket (openDb path) close $ \conn -> do
     execute_ conn "PRAGMA journal_mode = WAL"
     initSchema conn
 
@@ -58,26 +71,28 @@ initSchema conn = do
 -- | Each entry is applied once, in order. Only ever append to this list.
 migrations :: [[Query]]
 migrations =
-    [ -- 1: the original schema, already present in databases from before versioning
-      [ mconcat
+    [
+        [ -- 1: the original schema, already present in databases from before versioning
+          mconcat
             [ "CREATE TABLE IF NOT EXISTS restaurants "
             , "(id TEXT PRIMARY KEY, url TEXT, name Text, rating FLOAT, price TEXT, hours INTEGER, category TEXT,"
             , " imagelink TEXT,"
             , " latitude FLOAT, longitude FLOAT"
             , " )"
             ]
-      , "CREATE TABLE IF NOT EXISTS users (userId TEXT, session TEXT)"
-      , "CREATE TABLE IF NOT EXISTS likes (userId TEXT, restaurantId TEXT)"
-      ]
-    , -- 2: record dislikes as well as likes, one decision per user and restaurant
-      [ mconcat
+        , "CREATE TABLE IF NOT EXISTS users (userId TEXT, session TEXT)"
+        , "CREATE TABLE IF NOT EXISTS likes (userId TEXT, restaurantId TEXT)"
+        ]
+    ,
+        [ -- 2: record dislikes as well as likes, one decision per user and restaurant
+          mconcat
             [ "CREATE TABLE decisions "
             , "(userId TEXT NOT NULL, restaurantId TEXT NOT NULL, liked INTEGER NOT NULL,"
             , " PRIMARY KEY (userId, restaurantId))"
             ]
-      , "INSERT OR IGNORE INTO decisions SELECT userId, restaurantId, 1 FROM likes"
-      , "DROP TABLE likes"
-      ]
+        , "INSERT OR IGNORE INTO decisions SELECT userId, restaurantId, 1 FROM likes"
+        , "DROP TABLE likes"
+        ]
     , -- 3: restaurants come fresh from Google Places, whose terms don't allow
       -- storing them. Decisions keep only the place id, which is allowed.
       ["DROP TABLE restaurants"]
@@ -87,10 +102,13 @@ migrations =
       ["CREATE TABLE session_vibes (session TEXT PRIMARY KEY, chips TEXT NOT NULL)"]
     , -- 6: how far the session searches, in metres, widened by "search further"
       ["ALTER TABLE sessions ADD COLUMN radius REAL NOT NULL DEFAULT 5000"]
-    , -- 7: when people joined and vibes changed, so old ones can be deleted
-      [ "ALTER TABLE users ADD COLUMN joined INTEGER NOT NULL DEFAULT 0"
-      , "ALTER TABLE session_vibes ADD COLUMN updated INTEGER NOT NULL DEFAULT 0"
-      ]
+    ,
+        [ -- 7: when people joined and vibes changed, so old ones can be deleted
+          "ALTER TABLE users ADD COLUMN joined INTEGER NOT NULL DEFAULT 0"
+        , "ALTER TABLE session_vibes ADD COLUMN updated INTEGER NOT NULL DEFAULT 0"
+        ]
+    , -- 8: where the group said they're eating, used instead of their locations
+      ["CREATE TABLE session_places (session TEXT PRIMARY KEY, name TEXT NOT NULL, latitude REAL NOT NULL, longitude REAL NOT NULL, updated INTEGER NOT NULL DEFAULT 0)"]
     ]
 
 addUserToDb :: Connection -> U.User -> IO ()
@@ -133,18 +151,44 @@ pruneOlderThan conn secs = withTransaction conn $ do
     execute conn (fromString ("DELETE FROM users WHERE joined < " ++ cutoff)) (Only secs)
     execute_ conn "DELETE FROM sessions WHERE session NOT IN (SELECT session FROM users)"
     execute conn (fromString ("DELETE FROM session_vibes WHERE updated < " ++ cutoff ++ " AND session NOT IN (SELECT session FROM users)")) (Only secs)
+    execute conn (fromString ("DELETE FROM session_places WHERE updated < " ++ cutoff ++ " AND session NOT IN (SELECT session FROM users)")) (Only secs)
 
 {- | Where the session searches for restaurants: the first location anyone
 in it sent. Everyone else gets that one too, so they all see the same
-restaurants and can match on them.
+restaurants and can match on them. Someone whose location couldn't be
+found sends none and gets the session's, which is Nothing until someone
+has sent one.
 -}
-sessionLocation :: Connection -> U.SessionId -> Loc -> IO Loc
-sessionLocation conn s (Loc lat lon) = do
-    execute conn "INSERT OR IGNORE INTO sessions (session, latitude, longitude) VALUES (?, ?, ?)" (s, lat, lon)
+sessionLocation :: Connection -> U.SessionId -> Maybe Loc -> IO (Maybe Loc)
+sessionLocation conn s sent = do
+    -- Where the group said they're eating wins over anyone's location
+    chosen <- getPlace conn s
+    forM_ ((placeLoc <$> chosen) <|> sent) $ \(Loc lat lon) ->
+        execute conn "INSERT OR IGNORE INTO sessions (session, latitude, longitude) VALUES (?, ?, ?)" (s, lat, lon)
     found <- query conn "SELECT latitude, longitude FROM sessions WHERE session = ?" (Only s)
     pure $ case found of
-        [(lat', lon')] -> Loc lat' lon'
-        _ -> Loc lat lon
+        [(lat, lon)] -> Just (Loc lat lon)
+        _ -> Nothing
+
+-- | Where the group said they're eating, if they have
+getPlace :: Connection -> U.SessionId -> IO (Maybe Place)
+getPlace conn s =
+    listToMaybe . map (\(n, lat, lon) -> Place n (Loc lat lon))
+        <$> query conn "SELECT name, latitude, longitude FROM session_places WHERE session = ?" (Only s)
+
+{- | Set where the group is eating, or with Nothing go back to their own
+locations. Like the vibe, it locks once someone starts swiping.
+-}
+setPlace :: Connection -> U.SessionId -> Maybe Place -> IO ()
+setPlace conn s place = withTransaction conn $ do
+    (_, locked) <- getVibe conn s
+    unless locked $ case place of
+        Nothing -> execute conn "DELETE FROM session_places WHERE session = ?" (Only s)
+        Just (Place n (Loc lat lon)) ->
+            execute
+                conn
+                "INSERT INTO session_places (session, name, latitude, longitude, updated) VALUES (?, ?, ?, ?, strftime('%s', 'now')) ON CONFLICT (session) DO UPDATE SET name = excluded.name, latitude = excluded.latitude, longitude = excluded.longitude, updated = excluded.updated"
+                (s, n, lat, lon)
 
 -- | How far the session searches, in metres
 sessionRadius :: Connection -> U.SessionId -> IO Double
@@ -164,7 +208,7 @@ widenSearch conn s from = do
     sessionRadius conn s
 
 -- | Restaurants the user has already liked or not, to leave out of new searches
-decidedBy :: Connection -> U.UserId -> IO [Text]
+decidedBy :: Connection -> U.UserId -> IO [RestaurantId]
 decidedBy conn u = map fromOnly <$> query conn "SELECT restaurantId FROM decisions WHERE userId = ? ORDER BY restaurantId" (Only u)
 
 {- | The session's vibe chips, and whether they are locked. They lock once
@@ -199,10 +243,10 @@ setVibe conn s chips = withImmediateTransaction conn $ do
 -- | Whether a user liked a restaurant
 data Decision = Decision
     { userId :: !U.UserId
-    , restaurantId :: !Text
+    , restaurantId :: !RestaurantId
     , liked :: !Bool
     }
-    deriving (Show, Generic)
+    deriving stock (Show, Generic)
     deriving anyclass (ToRow)
 
 -- | Record a decision, replacing any earlier one for the same restaurant
@@ -223,7 +267,7 @@ getUser conn u =
 {- | Restaurants someone else in the session has liked that this user hasn't
 decided on yet, so they can be shown first
 -}
-othersLiked :: Connection -> U.User -> IO [Text]
+othersLiked :: Connection -> U.User -> IO [RestaurantId]
 othersLiked conn u =
     map fromOnly
         <$> query
@@ -241,7 +285,7 @@ othersLiked conn u =
 too. Sent with every decision, so people hear about matches others made
 on their next swipe.
 -}
-matchesFor :: Connection -> U.User -> IO [Text]
+matchesFor :: Connection -> U.User -> IO [RestaurantId]
 matchesFor conn u =
     map fromOnly
         <$> query
@@ -256,8 +300,29 @@ matchesFor conn u =
             )
             (U.session u, U.userId u, U.userId u)
 
+{- | Everyone in the session in the order they joined, each with the
+restaurants they have decided on
+-}
+sessionMembers :: Connection -> U.SessionId -> IO [(U.UserId, Set.Set RestaurantId)]
+sessionMembers conn s = do
+    rows <-
+        query
+            conn
+            ( mconcat
+                [ "SELECT users.userId, decisions.restaurantId FROM users "
+                , "LEFT JOIN decisions ON decisions.userId = users.userId "
+                , "WHERE users.session = ? ORDER BY users.joined, users.rowid"
+                ]
+            )
+            (Only s)
+    -- Rows come grouped by user, in joining order
+    pure (foldr add [] rows)
+  where
+    add (u, r) ((u', rs) : rest) | u == u' = (u, maybe rs (`Set.insert` rs) r) : rest
+    add (u, r) acc = (u, maybe Set.empty Set.singleton r) : acc
+
 -- | Whether more than one person in the session has liked the restaurant
-isMatch :: Connection -> U.SessionId -> Text -> IO Bool
+isMatch :: Connection -> U.SessionId -> RestaurantId -> IO Bool
 isMatch conn s restaurant = do
     likes <-
         query
