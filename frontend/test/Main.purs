@@ -36,11 +36,15 @@ restaurant id =
       , { name: Just ("places/" <> id <> "/photos/p2"), url: Nothing, author: Just { name: "Kai", uri: Nothing } }
       ]
   , summary: Just { text: "Bright noodle spot known for its broth.", disclosure: Just "Summarized with Gemini" }
+  , reviews:
+      [ { author: { name: "Kai", uri: Just "https://maps.google.com/contrib/2" }, rating: Just 5.0, text: "Rich broth, fast service.", when: Just "a month ago" }
+      , { author: { name: "Rae", uri: Nothing }, rating: Nothing, text: "Cash only.", when: Nothing }
+      ]
   }
 
 -- | A place with nothing but a name, as Google sometimes returns
 bare :: String -> Restaurant
-bare id = (restaurant id) { url = Nothing, rating = Nothing, photos = [], summary = Nothing }
+bare id = (restaurant id) { url = Nothing, rating = Nothing, photos = [], summary = Nothing, reviews = [] }
 
 swiper :: Swiper
 swiper = { user: UserId "u", loc: Just here, radius: 5000.0, maxRadius: 50000.0, upcoming: [], photo: 0, summaryOpen: false, othersLiked: [], liked: [], matches: [], people: [], heartbeatIn: 10, showMatches: false, vibe: [] }
@@ -307,6 +311,9 @@ main = runSpecAndExitProcess [ consoleReporter ] do
       renders model text = do
         html <- liftEffect $ render (view model)
         html `shouldSatisfy` contains (Pattern text)
+      rendersNot model text = do
+        html <- liftEffect $ render (view model)
+        html `shouldSatisfy` (not <<< contains (Pattern text))
     it "shows vibe chips in the lobby, marking the chosen ones" do
       renders (QR lobbyAt { vibe = { chips: [ "patio" ], choices: [ patio, veggie ], locked: false, place: Nothing } }) "aria-pressed=\"true\">☀️ Patio<"
       renders (QR lobbyAt { vibe = { chips: [ "patio" ], choices: [ patio, veggie ], locked: true, place: Nothing } }) "Locked in"
@@ -333,6 +340,14 @@ main = runSpecAndExitProcess [ consoleReporter ] do
       renders (Active swiper { photo = 1 } (Swiping (restaurant "a"))) "aria-label=\"Photo 2 of 2\""
     it "links each card to a search for its menu" do
       renders (Active swiper (Swiping (restaurant "a"))) "search?q=a%20menu"
+    it "shows the reviews under the summary when it's opened, crediting their authors" do
+      let open = Active swiper { summaryOpen = true } (Swiping (restaurant "a"))
+      renders open "Rich broth, fast service."
+      renders open "a month ago"
+      renders open "https://maps.google.com/contrib/2"
+      renders open "Cash only."
+      rendersNot (Active swiper (Swiping (restaurant "a"))) "Rich broth, fast service."
+      rendersNot (Active swiper { summaryOpen = true } (Swiping (bare "a") { summary = Just { text: "x", disclosure: Nothing } })) "What people said"
 
     it "previews the summary and shows it in full with Google's disclosure when opened" do
       renders (Active swiper (Swiping (restaurant "a"))) "line-clamp-2\">Bright noodle spot"

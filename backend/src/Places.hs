@@ -22,7 +22,7 @@ import Data.ByteString qualified as BS
 import Data.Char (isAlphaNum)
 import Data.Either (partitionEithers)
 import Data.List (nubBy, transpose)
-import Data.Maybe (listToMaybe)
+import Data.Maybe (catMaybes, listToMaybe)
 import Data.Set qualified as Set
 import Data.Text (Text)
 import Data.Text qualified as T
@@ -39,7 +39,7 @@ import Network.HTTP.Simple (
     setRequestQueryString,
  )
 import Provider (Provider (..))
-import Restaurant (Author (..), Loc (..), Photo (..), PhotoSource (..), Price (..), Restaurant (..), Source (..), Summary (..), metres)
+import Restaurant (Author (..), Loc (..), Photo (..), PhotoSource (..), Price (..), Restaurant (..), Review (..), Source (..), Summary (..), metres)
 import Vibe (Chip, Found (..), Place (..), Search (..), priceLevels, queryTerms, wantsOpenNow)
 
 newtype PlacesKey = PlacesKey BS.ByteString
@@ -93,7 +93,7 @@ maxPhotos = 5
 field asked for, and rating and priceLevel put this in the Enterprise SKU.
 -}
 fieldMask :: BS.ByteString
-fieldMask = "places.id,places.displayName,places.location,places.rating,places.priceLevel,places.googleMapsUri,places.primaryTypeDisplayName,places.photos,places.generativeSummary,places.editorialSummary"
+fieldMask = "places.id,places.displayName,places.location,places.rating,places.priceLevel,places.googleMapsUri,places.primaryTypeDisplayName,places.photos,places.generativeSummary,places.editorialSummary,places.reviews"
 
 {- | The key goes in a header rather than the url so it can't end up in
 logs. http-client only hides Authorization when it shows a request (as
@@ -213,6 +213,7 @@ parsePlaces = withObject "SearchNearbyResponse" $ \o ->
             -- Each photo shown is a billed request, so only the first few
             <*> traverse parsePhoto (take maxPhotos found)
             <*> parseSummary p
+            <*> (p .:? "reviews" .!= [] >>= fmap catMaybes . traverse parseReview)
             <*> p .: "location"
     -- Google's AI summary where there is one, otherwise its editorial summary
     parseSummary p = do
@@ -225,6 +226,15 @@ parsePlaces = withObject "SearchNearbyResponse" $ \o ->
                 pure (flip Summary disclosure <$> overview)
         editorial <- p .:? "editorialSummary" >>= traverse (.: "text")
         pure (ai <|> (flip Summary Nothing <$> editorial))
+    -- Google also sends reviews with a rating and no words, which have nothing to show
+    parseReview = withObject "Review" $ \v -> do
+        body <- v .:? "text" >>= traverse (.: "text")
+        author <- v .: "authorAttribution" >>= parseAuthor
+        rate <- v .:? "rating"
+        age <- v .:? "relativePublishTimeDescription"
+        pure $ case T.strip <$> body of
+            Just t | not (T.null t) -> Just (Review author rate t age)
+            _ -> Nothing
     parsePhoto = withObject "Photo" $ \ph -> do
         authors <- ph .:? "authorAttributions" .!= []
         Photo . GooglePhoto <$> ph .: "name" <*> traverse parseAuthor (listToMaybe authors)
