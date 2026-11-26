@@ -10,6 +10,8 @@ module Places (
     photoUri,
     parsePlaces,
     isPhotoName,
+    findPlaces,
+    parseFound,
 ) where
 
 import Control.Applicative ((<|>))
@@ -37,7 +39,7 @@ import Network.HTTP.Simple (
  )
 import Provider (Provider (..))
 import Restaurant (Author (..), Loc (..), Photo (..), PhotoSource (..), Price (..), Restaurant (..), Source (..), Summary (..), metres)
-import Vibe (Chip, Search (..), priceLevels, queryTerms, wantsOpenNow)
+import Vibe (Chip, Found (..), Place (..), Search (..), priceLevels, queryTerms, wantsOpenNow)
 
 newtype PlacesKey = PlacesKey BS.ByteString
 
@@ -151,6 +153,27 @@ boxAround (Loc lat lon) radius =
   where
     dLat = radius / 111320
     dLon = radius / (111320 * cos (lat * pi / 180))
+
+{- | Up to 5 places matching what the group typed for where they're eating,
+e.g. a neighbourhood, address or city. Asks only for names, addresses and
+locations.
+-}
+findPlaces :: PlacesKey -> Text -> IO (Either FetchError [Found])
+findPlaces key q =
+    fetchJSON searchTimeout parseFound
+        $ withKey key [("X-Goog-FieldMask", "places.displayName,places.formattedAddress,places.location")]
+        $ setRequestBodyJSON (object ["textQuery" .= q, "pageSize" .= (5 :: Int)])
+        $ parseRequest_ "POST https://places.googleapis.com/v1/places:searchText"
+
+parseFound :: Value -> AT.Parser [Found]
+parseFound = withObject "SearchTextResponse" $ \o ->
+    o .:? "places" .!= [] >>= traverse found
+  where
+    found = withObject "Place" $ \p -> do
+        n <- p .: "displayName" >>= (.: "text")
+        address <- p .:? "formattedAddress" .!= ""
+        l <- p .: "location"
+        pure (Found (Place n l) address)
 
 -- | A short lived url for the photo, at most the given width
 photoUri :: PlacesKey -> Text -> Int -> IO (Either FetchError Text)

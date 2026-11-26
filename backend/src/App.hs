@@ -40,7 +40,7 @@ import Data.ByteString qualified as BS
 import Data.Text (Text)
 import Data.Text.Encoding qualified as TE
 import Data.Text.Lazy qualified as TL
-import Network.HTTP.Types (Status, status200, status400, status404, status409, status413, status429, status502)
+import Network.HTTP.Types (Status, status200, status400, status404, status409, status413, status429, status502, status503)
 import Network.Mime (defaultMimeLookup)
 import Network.Wai (Application, rawPathInfo, remoteHost)
 import Network.Wai.Middleware.AddHeaders (addHeaders)
@@ -55,6 +55,7 @@ import Text.Read (readMaybe)
 import Data.List (partition)
 import Data.Set qualified as Set
 import Db
+import Fetch (FetchError)
 import Limits (Counter, Limit (..), Recent, newCounter, newRecent, remember, seenRecently, trySpend)
 import Log (LogFormat (..), Logger, Severity (..), newLogger)
 import OpenStreetMap (openStreetMap)
@@ -64,7 +65,7 @@ import Provider (Provider (..), searchWithFallback)
 import Restaurant (Loc, Restaurant, RestaurantId (..))
 import Restaurant qualified as R
 import User qualified as U
-import Vibe (Chip, Search (..), chipFromId, chipId, maxRadius)
+import Vibe (Chip, Found, Place, Search (..), chipFromId, chipId, maxRadius)
 import Yelp (YelpKey (..), yelp)
 
 -- | Configuration shared by every request
@@ -80,6 +81,8 @@ data Env = Env
     , envLog :: Logger
     , envPresence :: Presence
     -- ^ Who in each session was heard from lately, and what they were shown
+    , envFindPlaces :: Maybe (Text -> IO (Either FetchError [Found]))
+    -- ^ Looks up where the group says they're eating; needs a Google key
     }
 
 {- | Caps on what costs money. The site-wide daily caps are the hard stop on
@@ -176,8 +179,20 @@ newtype VibeRequest = VibeRequest [Text]
 instance FromJSON VibeRequest where
     parseJSON = withObject "VibeRequest" $ \o -> VibeRequest <$> o .: "chips"
 
-vibeJSON :: ([Chip], Bool) -> Value
-vibeJSON (chips, locked) = object ["chips" .= map chipId chips, "locked" .= locked]
+{- | The lobby's shared choices: the vibe chips, where they're eating, and
+| whether someone has started swiping and locked them
+-}
+vibeJSON :: ([Chip], Bool) -> Maybe Place -> Value
+vibeJSON (chips, locked) place = object ["chips" .= map chipId chips, "locked" .= locked, "place" .= place]
+
+lobbyState :: Connection -> U.SessionId -> IO Value
+lobbyState c s = vibeJSON <$> getVibe c s <*> getPlace c s
+
+-- | Body of a /place request: where they're eating, or null for their own locations
+newtype PlaceRequest = PlaceRequest (Maybe Place)
+
+instance FromJSON PlaceRequest where
+    parseJSON = withObject "PlaceRequest" $ \o -> PlaceRequest <$> o .:? "place"
 
 -- | Body of a /presence request
 newtype PresenceRequest = PresenceRequest U.UserId
@@ -241,7 +256,7 @@ server = do
     scotty port $ do
         -- Cloud Run logs every request itself, so only log them here locally
         unless (format == Just "json") $ middleware logStdout
-        app (Env pool providers placesKey static limits logAt presence)
+        app (Env pool providers placesKey static limits logAt presence (findPlaces <$> placesKey))
 
 {- | Delete sessions older than a day, every hour, so the database (in
 memory on Cloud Run) doesn't grow for as long as the server runs
@@ -365,7 +380,7 @@ app env = do
         sessionText <- pathParam "session"
         case U.sessionFromText sessionText of
             Nothing -> errorResponse status400 "Invalid session"
-            Just s -> liftIO (db $ \c -> getVibe c s) >>= json . vibeJSON
+            Just s -> liftIO (db (`lobbyState` s)) >>= json
 
     post "/api/vibe/:session" $ do
         sessionText <- pathParam "session"
@@ -373,7 +388,35 @@ app env = do
         case (U.sessionFromText sessionText, traverse chipFromId ids) of
             (Nothing, _) -> errorResponse status400 "Invalid session"
             (_, Nothing) -> errorResponse status400 "Unknown vibe"
-            (Just s, Just chips) -> spendWrite env >> liftIO (db $ \c -> setVibe c s chips) >>= json . vibeJSON
+            (Just s, Just chips) -> spendWrite env >> liftIO (db $ \c -> setVibe c s chips >> lobbyState c s) >>= json
+
+    -- Where the group is eating, shared and locked like the vibe
+    post "/api/place/:session" $ do
+        sessionText <- pathParam "session"
+        PlaceRequest place <- jsonData
+        case U.sessionFromText sessionText of
+            Nothing -> errorResponse status400 "Invalid session"
+            Just s -> spendWrite env >> liftIO (db $ \c -> setPlace c s place >> lobbyState c s) >>= json
+
+    -- Places matching what someone typed for where they're eating. Each
+    -- lookup is a Google call, so it counts like a search.
+    get "/api/places" $ do
+        q <- T.strip <$> queryParam "q"
+        case envFindPlaces env of
+            Nothing -> errorResponse status503 "Looking up places needs GOOGLE_PLACES_KEY"
+            Just find
+                | T.length q < 2 || T.length q > 100 -> errorResponse status400 "Type between 2 and 100 characters"
+                | otherwise -> do
+                    visitor <- visitorOf
+                    let limits = envLimits env
+                    refused <- liftIO $ allowed (searchesPerVisitor limits) (searchesToday limits) visitor 1
+                    maybe (pure ()) (\why -> errorResponse status429 why >> finish) refused
+                    found <- liftIO (find q)
+                    case found of
+                        Right places -> json places
+                        Left e -> do
+                            liftIO $ envLog env Warning ("Looking up " ++ show q ++ " failed: " ++ show e)
+                            errorResponse status502 "Couldn't look that up. Try again."
 
     -- Restaurants near the session's location, fresh for each person
     post "/api/restaurants" $ do

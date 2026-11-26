@@ -18,10 +18,12 @@ import Test.Hspec.Wai
 
 import App (Env (..), application, newLimitsWith)
 import Db (initDb, openPool)
+import Fetch (FetchError)
 import Places (PlacesKey (..))
 import Presence (newPresence)
 import Provider (Provider (..))
 import Restaurant
+import Vibe (Found (..), Place (..))
 
 -- | Always finds the same two places, without calling anyone
 fake :: Provider
@@ -40,12 +42,22 @@ freshDb = do
 
 -- | The app with the given site-wide daily caps on searches and photos
 appWith :: Int -> Int -> Maybe FilePath -> IO Application
-appWith searchCap photoCap static = do
+appWith searchCap photoCap static = appLooking searchCap photoCap static (Just lookUp)
+
+-- | Finds Kelowna for anything, without calling anyone
+lookUp :: Text -> IO (Either FetchError [Found])
+lookUp _ = pure (Right [Found kelowna "Kelowna, BC, Canada"])
+
+kelowna :: Place
+kelowna = Place "Kelowna" (Loc 49.88 (-119.49))
+
+appLooking :: Int -> Int -> Maybe FilePath -> Maybe (Text -> IO (Either FetchError [Found])) -> IO Application
+appLooking searchCap photoCap static lookup' = do
     db <- freshDb
     limits <- newLimitsWith searchCap photoCap
     pool <- openPool db
     presence <- newPresence
-    application (Env pool [fake] (Just (PlacesKey "not a real key")) static limits (\_ _ -> pure ()) presence)
+    application (Env pool [fake] (Just (PlacesKey "not a real key")) static limits (\_ _ -> pure ()) presence lookup')
 
 app :: IO Application
 app = appWith 1000 1000 Nothing
@@ -120,6 +132,34 @@ spec = do
                 decide b "p1" True `shouldRespondWith` "{\"matches\":[\"p1\"],\"othersLiked\":[]}"
                 decide a "p2" False `shouldRespondWith` "{\"matches\":[\"p1\"],\"othersLiked\":[]}"
 
+        describe "where the group is eating" $ do
+            let choose s place = postJSON ("/api/place/" <> encodeText s) (encode (object ["place" .= place]))
+            it "is shared in the lobby and can be cleared" $ do
+                s <- newSession
+                get ("/api/vibe/" <> encodeText s) `shouldRespondWith` "{\"chips\":[],\"locked\":false,\"place\":null}"
+                choose s (Just kelowna) `shouldRespondWith` "{\"chips\":[],\"locked\":false,\"place\":{\"latitude\":49.88,\"longitude\":-119.49,\"name\":\"Kelowna\"}}"
+                get ("/api/vibe/" <> encodeText s) `shouldRespondWith` "{\"chips\":[],\"locked\":false,\"place\":{\"latitude\":49.88,\"longitude\":-119.49,\"name\":\"Kelowna\"}}"
+                choose s (Nothing :: Maybe Place) `shouldRespondWith` "{\"chips\":[],\"locked\":false,\"place\":null}"
+            it "is searched from without anyone's location" $ do
+                (s, u) <- joined
+                _ <- choose s (Just kelowna)
+                postJSON "/api/restaurants" (encode (object ["user" .= u])) `shouldRespondWith` 200
+            it "locks once someone starts swiping" $ do
+                (s, u) <- joined
+                _ <- search u
+                choose s (Just kelowna) `shouldRespondWith` "{\"chips\":[],\"locked\":true,\"place\":null}"
+            it "refuses a place off the globe or without a name" $ do
+                s <- newSession
+                postJSON ("/api/place/" <> encodeText s) "{\"place\":{\"name\":\"Nowhere\",\"latitude\":500,\"longitude\":0}}" `shouldRespondWith` 422
+                postJSON ("/api/place/" <> encodeText s) "{\"place\":{\"name\":\" \",\"latitude\":1,\"longitude\":2}}" `shouldRespondWith` 422
+
+        describe "GET /api/places" $ do
+            it "lists matches for what was typed" $
+                get "/api/places?q=kelowna" `shouldRespondWith` "[{\"address\":\"Kelowna, BC, Canada\",\"latitude\":49.88,\"longitude\":-119.49,\"name\":\"Kelowna\"}]"
+            it "wants between 2 and 100 characters" $ do
+                get "/api/places?q=k" `shouldRespondWith` 400
+                get ("/api/places?q=" <> S8.replicate 101 'k') `shouldRespondWith` 400
+
         describe "POST /api/presence" $ do
             let heartbeat u = postJSON "/api/presence" (encode (object ["user" .= u]))
             it "shows who is swiping and who hasn't searched yet, in joining order" $ do
@@ -157,6 +197,15 @@ spec = do
         describe "GET /api/photo"
             $ it "only serves photos of places a search returned"
             $ get "/api/photo?name=places/elsewhere/photos/x" `shouldRespondWith` 404
+
+    with (appWith 1 1000 Nothing) $
+        it "counts place lookups against the daily search cap" $ do
+            get "/api/places?q=kelowna" `shouldRespondWith` 200
+            get "/api/places?q=kelowna" `shouldRespondWith` 429
+
+    with (appLooking 1000 1000 Nothing Nothing)
+        $ it "can't look up places without a Google key"
+        $ get "/api/places?q=kelowna" `shouldRespondWith` 503
 
     -- No photos left today, so a known place stops at the limit before calling Google
     with (appWith 1 0 Nothing) $ do

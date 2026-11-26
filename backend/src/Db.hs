@@ -1,9 +1,10 @@
 {-# LANGUAGE DeriveAnyClass #-}
 
-module Db (initDb, initSchema, DbPool, openPool, withConn, addUserToDb, joinSession, maxPerSession, pruneOlderThan, sessionLocation, sessionRadius, widenSearch, decidedBy, getVibe, setVibe, recordDecision, isMatch, matchesFor, othersLiked, sessionMembers, Decision (..), getUser) where
+module Db (initDb, initSchema, DbPool, openPool, withConn, addUserToDb, joinSession, maxPerSession, pruneOlderThan, sessionLocation, getPlace, setPlace, sessionRadius, widenSearch, decidedBy, getVibe, setVibe, recordDecision, isMatch, matchesFor, othersLiked, sessionMembers, Decision (..), getUser) where
 
+import Control.Applicative ((<|>))
 import Control.Exception (bracket)
-import Control.Monad (forM_)
+import Control.Monad (forM_, unless)
 import Data.List (nub)
 import Data.Maybe (listToMaybe, mapMaybe)
 import Data.Pool (Pool, defaultPoolConfig, newPool, setNumStripes, withResource)
@@ -26,7 +27,7 @@ import Database.SQLite.Simple (
 import GHC.Generics (Generic)
 import Restaurant (Loc (..), RestaurantId)
 import User qualified as U
-import Vibe (Chip, chipFromId, chipId, defaultRadius, maxRadius)
+import Vibe (Chip, Place (..), chipFromId, chipId, defaultRadius, maxRadius)
 
 openDb :: FilePath -> IO Connection
 openDb path = do
@@ -105,6 +106,8 @@ migrations =
           "ALTER TABLE users ADD COLUMN joined INTEGER NOT NULL DEFAULT 0"
         , "ALTER TABLE session_vibes ADD COLUMN updated INTEGER NOT NULL DEFAULT 0"
         ]
+    , -- 8: where the group said they're eating, used instead of their locations
+      ["CREATE TABLE session_places (session TEXT PRIMARY KEY, name TEXT NOT NULL, latitude REAL NOT NULL, longitude REAL NOT NULL, updated INTEGER NOT NULL DEFAULT 0)"]
     ]
 
 addUserToDb :: Connection -> U.User -> IO ()
@@ -145,6 +148,7 @@ pruneOlderThan conn secs = withTransaction conn $ do
     execute conn (fromString ("DELETE FROM users WHERE joined < " ++ cutoff)) (Only secs)
     execute_ conn "DELETE FROM sessions WHERE session NOT IN (SELECT session FROM users)"
     execute conn (fromString ("DELETE FROM session_vibes WHERE updated < " ++ cutoff ++ " AND session NOT IN (SELECT session FROM users)")) (Only secs)
+    execute conn (fromString ("DELETE FROM session_places WHERE updated < " ++ cutoff ++ " AND session NOT IN (SELECT session FROM users)")) (Only secs)
 
 {- | Where the session searches for restaurants: the first location anyone
 in it sent. Everyone else gets that one too, so they all see the same
@@ -154,12 +158,34 @@ has sent one.
 -}
 sessionLocation :: Connection -> U.SessionId -> Maybe Loc -> IO (Maybe Loc)
 sessionLocation conn s sent = do
-    forM_ sent $ \(Loc lat lon) ->
+    -- Where the group said they're eating wins over anyone's location
+    chosen <- getPlace conn s
+    forM_ ((placeLoc <$> chosen) <|> sent) $ \(Loc lat lon) ->
         execute conn "INSERT OR IGNORE INTO sessions (session, latitude, longitude) VALUES (?, ?, ?)" (s, lat, lon)
     found <- query conn "SELECT latitude, longitude FROM sessions WHERE session = ?" (Only s)
     pure $ case found of
         [(lat, lon)] -> Just (Loc lat lon)
         _ -> Nothing
+
+-- | Where the group said they're eating, if they have
+getPlace :: Connection -> U.SessionId -> IO (Maybe Place)
+getPlace conn s =
+    listToMaybe . map (\(n, lat, lon) -> Place n (Loc lat lon))
+        <$> query conn "SELECT name, latitude, longitude FROM session_places WHERE session = ?" (Only s)
+
+{- | Set where the group is eating, or with Nothing go back to their own
+locations. Like the vibe, it locks once someone starts swiping.
+-}
+setPlace :: Connection -> U.SessionId -> Maybe Place -> IO ()
+setPlace conn s place = withTransaction conn $ do
+    (_, locked) <- getVibe conn s
+    unless locked $ case place of
+        Nothing -> execute conn "DELETE FROM session_places WHERE session = ?" (Only s)
+        Just (Place n (Loc lat lon)) ->
+            execute
+                conn
+                "INSERT INTO session_places (session, name, latitude, longitude, updated) VALUES (?, ?, ?, ?, strftime('%s', 'now')) ON CONFLICT (session) DO UPDATE SET name = excluded.name, latitude = excluded.latitude, longitude = excluded.longitude, updated = excluded.updated"
+                (s, n, lat, lon)
 
 -- | How far the session searches, in metres
 sessionRadius :: Connection -> U.SessionId -> IO Double
