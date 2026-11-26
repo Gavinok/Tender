@@ -2,6 +2,7 @@ module Tender.App
   ( Message(..)
   , Model(..)
   , Screen(..)
+  , locationText
   , Lobby
   , Swiper
   , init
@@ -10,13 +11,12 @@ module Tender.App
 
 import Prelude
 
-import Data.Bifunctor (lmap)
 import Data.Array (cons, elem, filter, head, length, snoc, uncons)
 import Data.Either (Either(..), either)
 import Data.Generic.Rep (class Generic)
 import Data.Show.Generic (genericShow)
 import Data.Maybe (Maybe(..), maybe)
-import Effect.Aff (Aff, Milliseconds(..), attempt, delay, message)
+import Effect.Aff (Aff, Milliseconds(..), attempt, delay)
 import Effect.Class (liftEffect)
 import Data.Tuple (Tuple)
 import Data.Tuple.Nested ((/\))
@@ -25,7 +25,7 @@ import Tender.Api (ApiError(..), createSession, decide, getRestaurants, getVibe,
 import Tender.Vibe (Vibe)
 import Tender.Swipe (flyOut)
 import Tender.Swipe as Swipe
-import Tender.Browser (Shared(..), existingSession, geolocation, reload, rememberSession, rememberUser, rememberedUser, shareLink, shareOrCopy, startNewSession, tabHidden, vibrate)
+import Tender.Browser (LocationProblem(..), Shared(..), existingSession, geolocation, reload, rememberSession, rememberUser, rememberedUser, shareLink, shareOrCopy, startNewSession, tabHidden, vibrate)
 import Tender.Types (ErrorMessage, Loc, Person, Restaurant, RestaurantId, SessionId, Url, UserId)
 
 -- | What we know once the user has joined a session
@@ -78,6 +78,9 @@ data Model
   | QR Lobby
   | Active Swiper Screen
   | ServerError ErrorMessage
+  -- | Joined, but there's no location to search from: the user's couldn't be
+  -- | found and nobody else in the session has one yet
+  | NeedLocation { user :: UserId, message :: ErrorMessage }
 
 derive instance Eq Screen
 derive instance Generic Screen _
@@ -95,7 +98,12 @@ data Message
   | JoinSession SessionId Url
   | StartSwiping
   -- | Joined, with the user's location or why it couldn't be found
-  | Started UserId (Either String Loc)
+  | Started UserId (Either LocationProblem Loc)
+  -- | The search had no location to use, with why the user's couldn't be
+  -- | found and what the server said
+  | LocationFailed UserId LocationProblem ErrorMessage
+  -- | Ask for the user's location again, staying in the session
+  | RetryLocation
   | Like
   | Dislike
   -- | A key pressed anywhere on the page
@@ -134,6 +142,16 @@ data Message
 -- | Show a failed request to the user
 failed :: ApiError -> Message
 failed = FailedToLoad <<< errorText
+
+-- | What went wrong finding the user's location, and what they can do
+locationText :: LocationProblem -> String
+locationText = case _ of
+  Blocked -> "Location is blocked for this site. Allow it from the icon at the left of the address bar, then try again."
+  DeviceOff -> "Your browser allows Tender to see your location, but your device isn't sharing it with the browser. Turn on location for your browser in your device's settings."
+  NotAllowed -> "Tender didn't get permission to see your location. Try again and allow it when your browser asks."
+  Unavailable -> "Your device couldn't work out where you are."
+  TimedOut -> "Finding your location took too long."
+  Unsupported -> "This browser can't share your location with Tender."
 
 errorText :: ApiError -> ErrorMessage
 errorText = case _ of
@@ -222,7 +240,7 @@ update model = case model, _ of
   -- Without a location the user can still join, and gets the session's
   QR { session }, StartSwiping -> model /\
     [ do
-        located <- lmap message <$> attempt geolocation
+        located <- geolocation
         returning <- liftEffect $ rememberedUser session
         joined <- joinSession session returning
         case joined of
@@ -233,7 +251,7 @@ update model = case model, _ of
     let
       loc = either (const Nothing) Just located
       -- Only reached when nobody else in the session has a location either
-      noLocation why e = FailedToLoad $ "Could not get your location (" <> why <> "). " <> errorText e
+      noLocation problem e = LocationFailed user problem (errorText e)
     in
       Active { user, loc, radius: 0.0, maxRadius: 0.0, upcoming: [], photo: 0, summaryOpen: false, othersLiked: [], liked: [], matches: [], people: [], showMatches: false, vibe: [] } Fetching
         /\
@@ -241,6 +259,10 @@ update model = case model, _ of
           -- Soon after the search, so the server knows what the user was shown
           , delay (Milliseconds 2000.0) $> Just Heartbeat
           ]
+  _, LocationFailed user problem serverSaid ->
+    NeedLocation { user, message: locationText problem <> " " <> serverSaid } /\ []
+  NeedLocation { user }, RetryLocation ->
+    Loading /\ [ Just <<< Started user <$> geolocation ]
   Active swiper Fetching, Loaded found ->
     advance swiper
       { upcoming = likedFirst found.othersLiked found.restaurants

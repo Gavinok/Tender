@@ -3,6 +3,7 @@ module Tender.Browser
   , backendUrl
   , existingSession
   , geolocation
+  , LocationProblem(..)
   , rememberSession
   , rememberUser
   , rememberedUser
@@ -18,6 +19,8 @@ module Tender.Browser
 import Prelude
 
 import Data.Array (filter, last)
+import Data.Bifunctor (lmap)
+import Data.Either (Either(..))
 import Data.Maybe (Maybe(..))
 import Data.String (Pattern(..), split)
 import Effect (Effect)
@@ -28,7 +31,31 @@ import Web.HTML (window)
 import Web.HTML.Location (assign, origin, pathname)
 import Web.HTML.Window (location)
 
-foreign import _geolocation :: EffectFnAff Loc
+-- | Why the browser couldn't give the user's location
+data LocationProblem
+  -- | The site's location permission is blocked
+  = Blocked
+  -- | The site is allowed, but the device or its settings refused
+  | DeviceOff
+  -- | The prompt was dismissed, or the browser refused without asking
+  | NotAllowed
+  | Unavailable
+  | TimedOut
+  -- | No geolocation at all, e.g. on http
+  | Unsupported
+
+derive instance Eq LocationProblem
+
+instance Show LocationProblem where
+  show = case _ of
+    Blocked -> "Blocked"
+    DeviceOff -> "DeviceOff"
+    NotAllowed -> "NotAllowed"
+    Unavailable -> "Unavailable"
+    TimedOut -> "TimedOut"
+    Unsupported -> "Unsupported"
+
+foreign import _locate :: (Loc -> Either String Loc) -> (String -> Either String Loc) -> EffectFnAff (Either String Loc)
 
 -- | The backend is reached through the same origin under /api, so it works
 -- | behind a tunnel or reverse proxy. In development parcel forwards /api to
@@ -39,8 +66,16 @@ backendUrl path = do
   pure $ o <> "/api/" <> path
 
 -- | Ask the browser for the user's location. Fails if they refuse.
-geolocation :: Aff Loc
-geolocation = fromEffectFnAff _geolocation
+geolocation :: Aff (Either LocationProblem Loc)
+geolocation = lmap problem <$> fromEffectFnAff (_locate Right Left)
+  where
+  problem = case _ of
+    "blocked" -> Blocked
+    "device" -> DeviceOff
+    "unavailable" -> Unavailable
+    "timeout" -> TimedOut
+    "unsupported" -> Unsupported
+    _ -> NotAllowed
 
 -- | Link for other people to join the session
 shareLink :: SessionId -> Effect Url

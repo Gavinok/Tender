@@ -10,8 +10,8 @@ import Data.Tuple (Tuple(..))
 import Effect.Class (liftEffect)
 import Flame.Renderer.String (render)
 import Effect (Effect)
-import Tender.App (Lobby, Message(..), Model(..), Screen(..), Swiper, update)
-import Tender.Browser (sessionFromPath)
+import Tender.App (Lobby, Message(..), Model(..), Screen(..), Swiper, locationText, update)
+import Tender.Browser (LocationProblem(..), sessionFromPath)
 import Tender.Types (Person, Restaurant, RestaurantId(..), SessionId(..), UserId(..))
 import Tender.Types (Status(..)) as Status
 import Tender.View (view)
@@ -144,8 +144,20 @@ main = runSpecAndExitProcess [ consoleReporter ] do
         `shouldEqual` Tuple (Active swiper (Swiping (restaurant "b"))) 0
 
     it "searches from the session's location when the user's couldn't be found" do
-      step Loading (Started (UserId "u") (Left "denied"))
+      step Loading (Started (UserId "u") (Left NotAllowed))
         `shouldEqual` Tuple (Active swiper { loc = Nothing, radius = 0.0, maxRadius = 0.0 } Fetching) 2
+
+    it "asks for the location again, as the same user, when there's none to search from" do
+      step (Active swiper Fetching) (LocationFailed (UserId "u") Blocked "Nobody else has one.")
+        `shouldEqual` Tuple (NeedLocation { user: UserId "u", message: locationText Blocked <> " Nobody else has one." }) 0
+      step (NeedLocation { user: UserId "u", message: "x" }) RetryLocation `shouldEqual` Tuple Loading 1
+      step (QR lobbyAt) RetryLocation `shouldEqual` Tuple (QR lobbyAt) 0
+
+    it "says what to do for each way finding the location can fail" do
+      locationText Blocked `shouldSatisfy` contains (Pattern "address bar")
+      locationText DeviceOff `shouldSatisfy` contains (Pattern "device's settings")
+      locationText NotAllowed `shouldSatisfy` contains (Pattern "allow it when your browser asks")
+      locationText TimedOut `shouldSatisfy` contains (Pattern "too long")
 
     it "leaves for a new session from any screen" do
       step (Active swiper (Swiping (restaurant "a"))) NewSession `shouldEqual` Tuple (Active swiper (Swiping (restaurant "a"))) 1
@@ -281,6 +293,9 @@ main = runSpecAndExitProcess [ consoleReporter ] do
       renders (Active swiper { radius = 40000.0 } NoneLeft) "Search further (up to 50 km)"
     it "says when there is nothing left" do
       renders (Active swiper NoneLeft) "everything nearby"
+      renders (NeedLocation { user: UserId "u", message: "Location is blocked for this site." }) "We need your location"
+      renders (NeedLocation { user: UserId "u", message: "Location is blocked for this site." }) "Location is blocked for this site."
+      renders (NeedLocation { user: UserId "u", message: "x" }) ">Try again<"
       renders (Active swiper { people = [ me, friend, { you: false, status: Status.Away, swiped: 0, left: Nothing } ] } NoneLeft) "2 here · 1 done"
       renders (Active swiper { people = [ me, friend ] } NoneLeft) ">You<"
       renders (Active swiper { people = [ me, friend ] } NoneLeft) ">Friend 1<"
