@@ -26,14 +26,15 @@ lobby { link, copied, vibe, picker } { share, start, toggle, picker: on } =
     [ HE.h1 [ HA.class' "font-display text-5xl leading-none" ] [ HE.text "Where should we eat?" ]
     , HE.p [ HA.class' "max-w-xs text-lg text-ink/70" ]
         [ HE.text "Get everyone to scan this, then start swiping. Anything you all like is a match." ]
+    -- Before the QR code, so it's seen without scrolling on a phone
+    , case picker of
+        Just p | not vibe.locked -> placePicker p on
+        _ -> searchingNear vibe on
     , HE.figure [ HA.class' "-rotate-2 rounded-3xl border-[3px] border-ink bg-white p-4 shadow-card" ]
         [ HE.img [ HA.src (qrDataUrl link), HA.alt "QR code to join this session", HA.class' "block h-44 w-44" ]
         , HE.p [ HA.class' "w-44 truncate pt-2 font-mono text-xs text-ink/50", HA.title link ] [ HE.text link ]
         ]
     , vibeChips vibe toggle
-    , case picker of
-        Just p | not vibe.locked -> placePicker p on
-        _ -> searchingNear vibe on
     , HE.div [ HA.class' "flex flex-col items-center gap-3" ]
         [ if copied then button Secondary (Just Check) "Link copied!" share
           else button Secondary (Just Share) "Share invite" share
