@@ -2,5 +2,5 @@
 #   git config blame.ignoreRevsFile .git-blame-ignore-revs
 # Format the backend with fourmolu
 e56d7bc95249de93a48c153b724f66e6d8f0c6bf
-Format the frontend with purs-tidy
+# Format the frontend with purs-tidy
 a4a6797e69d27e8b5df97dd0ec8fcda56cdfb6f9
