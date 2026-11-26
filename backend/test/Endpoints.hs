@@ -118,6 +118,21 @@ spec = do
                 decide b "p1" True `shouldRespondWith` "{\"matches\":[\"p1\"],\"othersLiked\":[]}"
                 decide a "p2" False `shouldRespondWith` "{\"matches\":[\"p1\"],\"othersLiked\":[]}"
 
+        describe "GET /api/matches" $ do
+            it "lists the user's matches, including ones others completed" $ do
+                s <- newSession
+                let path = "/api/addtosession/" <> encodeText s
+                a <- unquote . simpleBody <$> get path
+                b <- unquote . simpleBody <$> get path
+                let decide u r = postJSON "/api/decision" (encode (object ["user" .= u, "restaurant" .= (r :: Text), "liked" .= True]))
+                _ <- decide a "p1"
+                get ("/api/matches/" <> encodeText a) `shouldRespondWith` "{\"matches\":[]}"
+                _ <- decide b "p1"
+                get ("/api/matches/" <> encodeText a) `shouldRespondWith` "{\"matches\":[\"p1\"]}"
+            it "doesn't know users who never joined" $ do
+                get "/api/matches/00000000-0000-0000-0000-000000000000" `shouldRespondWith` 404
+                get "/api/matches/not-a-uuid" `shouldRespondWith` 404
+
         describe "GET /api/photo"
             $ it "only serves photos of places a search returned"
             $ get "/api/photo?name=places/elsewhere/photos/x" `shouldRespondWith` 404
