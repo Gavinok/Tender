@@ -3,7 +3,10 @@ module Test.Main where
 import Prelude
 
 import Data.Array (length)
-import Data.Either (Either(..))
+import Data.Either (Either(..), either)
+import Control.Monad.Error.Class (throwError)
+import Effect.Aff (Aff)
+import Effect.Exception (error)
 import Data.Maybe (Maybe(..))
 import Data.String (Pattern(..), contains)
 import Data.Tuple (Tuple(..))
@@ -15,8 +18,12 @@ import Tender.Browser (LocationProblem(..), sessionFromPath)
 import Tender.Types (Found, Person, Place, Restaurant, RestaurantId(..), SessionId(..), UserId(..))
 import Tender.Types (Status(..)) as Status
 import Tender.View (view)
+import Tender.Vibe (chips)
+import Foreign (Foreign)
+import Yoga.JSON (class ReadForeign)
+import Yoga.JSON as JSON
 import Test.Spec (describe, it)
-import Test.Spec.Assertions (shouldEqual, shouldSatisfy)
+import Test.Spec.Assertions (fail, shouldEqual, shouldSatisfy)
 import Test.Spec.Reporter.Console (consoleReporter)
 import Test.Spec.Runner.Node (runSpecAndExitProcess)
 
@@ -83,8 +90,44 @@ step :: Model -> Message -> Tuple Model Int
 step model msg = case update model msg of
   Tuple m effects -> Tuple m (length effects)
 
+foreign import readGolden :: String -> Effect String
+
+-- | JSON read with the frontend's own decoders, failing the test if it doesn't fit
+decode :: forall a. ReadForeign a => String -> Aff a
+decode = orThrow <<< JSON.readJSON
+
+orThrow :: forall e a. Show e => Either e a -> Aff a
+orThrow = either (throwError <<< error <<< show) pure
+
 main :: Effect Unit
 main = runSpecAndExitProcess [ consoleReporter ] do
+  -- Contract tests: the frontend's decoders against the JSON the backend's
+  -- golden tests pin, so a change on either side fails here, not in the browser
+  describe "the backend's JSON" do
+    it "decodes restaurants" do
+      text <- liftEffect (readGolden "restaurant")
+      decoded :: Array Restaurant <- decode text
+      map _.id decoded `shouldEqual` [ RestaurantId "ChIJ1", RestaurantId "osm:node/1" ]
+      map _.price decoded `shouldEqual` [ Just "$$", Nothing ]
+    it "decodes who's in the session" do
+      text <- liftEffect (readGolden "presence")
+      decoded :: Array Person <- decode text
+      map _.status decoded `shouldEqual` [ Status.Swiping, Status.Done, Status.Away ]
+    it "decodes where the group is eating, and lookup matches" do
+      text <- liftEffect (readGolden "place")
+      parts :: Array Foreign <- decode text
+      case parts of
+        [ p, f ] -> do
+          place :: Place <- orThrow (JSON.read p)
+          found :: Found <- orThrow (JSON.read f)
+          place.name `shouldEqual` "Fernwood"
+          found.address `shouldEqual` "Fernwood, Victoria, BC, Canada"
+        _ -> fail "expected a place and a match"
+    it "has the same chips as the backend" do
+      text <- liftEffect (readGolden "chips")
+      ids :: Array String <- decode text
+      map _.id chips `shouldEqual` ids
+
   describe "update" do
     it "fetches the restaurants once started" do
       step (QR lobbyAt) (Started (SessionId "s") (UserId "u") (Right here))

@@ -401,6 +401,12 @@ main = hspec $ do
             setPlace conn s (Just fernwood)
             getPlace conn s `shouldReturn` Nothing
 
+    describe "Chips"
+        $ it "keeps the ids the frontend's chips use"
+        $ defaultGolden "chips"
+        $ L8.unpack . encodePretty
+        $ map chipId allChips
+
     describe "Place JSON"
         $ it "keeps the shape the frontend reads"
         $ defaultGolden "place"

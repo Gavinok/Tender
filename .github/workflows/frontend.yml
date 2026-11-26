@@ -5,10 +5,14 @@ on:
     branches: [master]
     paths:
       - "frontend/**"
+      # The frontend's tests decode the backend's golden JSON
+      - "backend/.golden/**"
       - ".github/workflows/frontend.yml"
   pull_request:
     paths:
       - "frontend/**"
+      # The frontend's tests decode the backend's golden JSON
+      - "backend/.golden/**"
       - ".github/workflows/frontend.yml"
 
 # Only the latest push to a branch needs checking
