@@ -8,7 +8,6 @@ import Data.Maybe (fromMaybe)
 import Data.Text qualified as T
 import Data.Word (Word64)
 import Database.SQLite.Simple (Connection, withImmediateTransaction)
-import GHC.Generics (Generic)
 import System.Environment.Blank (getEnv)
 import Web.Scotty (
     ActionM,
@@ -35,7 +34,6 @@ import Web.Scotty (
     status,
  )
 
-import Data.Aeson (FromJSON (parseJSON), Value, object, withObject, (.:), (.:?), (.=))
 import Data.ByteString qualified as BS
 import Data.Text (Text)
 import Data.Text.Encoding qualified as TE
@@ -62,10 +60,11 @@ import OpenStreetMap (openStreetMap)
 import Places
 import Presence (Presence, dealtNow, lookupAll, newPresence, people, pruneStale, seenNow)
 import Provider (Provider (..), searchWithFallback)
-import Restaurant (Loc, Restaurant, RestaurantId (..))
+import Restaurant (Restaurant, RestaurantId (..))
 import Restaurant qualified as R
 import User qualified as U
-import Vibe (Chip, Found, Place, Search (..), chipFromId, chipId, maxRadius)
+import Vibe (Found, Search (..), chipFromId, maxRadius)
+import Wire
 import Yelp (YelpKey (..), yelp)
 
 -- | Configuration shared by every request
@@ -159,56 +158,9 @@ visitorOf = do
         -- Running locally: the connection's address, without its port
         _ -> T.dropWhileEnd (/= ':') . T.pack . show . remoteHost <$> request
 
--- | Body of a /restaurants request: who is asking, and where they are
-data RestaurantsRequest = RestaurantsRequest
-    { searcher :: !U.UserId
-    , loc :: !(Maybe Loc)
-    -- ^ Nothing when the browser couldn't find the person; the session's is used
-    , widenFrom :: !(Maybe Double)
-    -- ^ Set by "search further": the radius the person was shown, to double
-    }
-    deriving stock (Generic, Show)
-
-instance FromJSON RestaurantsRequest where
-    parseJSON = withObject "RestaurantsRequest" $ \o ->
-        RestaurantsRequest <$> o .: "user" <*> o .:? "loc" <*> o .:? "widenFrom"
-
--- | Body of a POST /vibe request
-newtype VibeRequest = VibeRequest [Text]
-
-instance FromJSON VibeRequest where
-    parseJSON = withObject "VibeRequest" $ \o -> VibeRequest <$> o .: "chips"
-
-{- | The lobby's shared choices: the vibe chips, where they're eating, and
-| whether someone has started swiping and locked them
--}
-vibeJSON :: ([Chip], Bool) -> Maybe Place -> Value
-vibeJSON (chips, locked) place = object ["chips" .= map chipId chips, "locked" .= locked, "place" .= place]
-
-lobbyState :: Connection -> U.SessionId -> IO Value
-lobbyState c s = vibeJSON <$> getVibe c s <*> getPlace c s
-
--- | Body of a /place request: where they're eating, or null for their own locations
-newtype PlaceRequest = PlaceRequest (Maybe Place)
-
-instance FromJSON PlaceRequest where
-    parseJSON = withObject "PlaceRequest" $ \o -> PlaceRequest <$> o .:? "place"
-
--- | Body of a /presence request
-newtype PresenceRequest = PresenceRequest U.UserId
-
-instance FromJSON PresenceRequest where
-    parseJSON = withObject "PresenceRequest" $ \o -> PresenceRequest <$> o .: "user"
-
--- | Body of a /decision request
-data DecisionRequest = DecisionRequest
-    { user :: !U.UserId
-    , restaurant :: !RestaurantId
-    , liked :: !Bool
-    }
-    deriving stock (Generic, Show)
-
-instance FromJSON DecisionRequest
+-- | The lobby's shared choices for the session
+lobbyState :: Connection -> U.SessionId -> IO Lobby
+lobbyState c s = (\(chips, locked) place -> Lobby chips locked place) <$> getVibe c s <*> getPlace c s
 
 {- | Restaurant sources in the order given by TENDER_SOURCES (default
 google,yelp,openstreetmap), leaving out the ones without a key
@@ -280,7 +232,7 @@ numberSetting name def = do
 
 -- | Respond with an error status and a message the frontend can show
 errorResponse :: Status -> Text -> ActionM ()
-errorResponse s msg = status s >> json (object ["error" .= msg])
+errorResponse s msg = status s >> json (ErrorResponse msg)
 
 -- | Restaurants someone else in the session liked first, otherwise in the source's order
 likedFirst :: Set.Set RestaurantId -> [Restaurant] -> [Restaurant]
@@ -373,7 +325,7 @@ app env = do
                 liftIO $ seenNow (envPresence env) uid
                 (members, matches) <- liftIO $ db $ \c -> (,) <$> sessionMembers c (U.session u) <*> matchesFor c u
                 (now, seenBy) <- liftIO $ lookupAll (envPresence env)
-                json (object ["people" .= people now uid members seenBy, "matches" .= matches])
+                json (PresenceResponse (people now uid members seenBy) matches)
 
     -- The session's vibe chips, and whether swiping has started and locked them
     get "/api/vibe/:session" $ do
@@ -451,14 +403,7 @@ app env = do
                         -- Leaving out ones this person already decided on, e.g. before a reload
                         let shown = likedFirst (Set.fromList others) (filter ((`Set.notMember` Set.fromList decided) . R.restaurantId) rs)
                         liftIO $ dealtNow (envPresence env) uid (map R.restaurantId shown)
-                        json $
-                            object
-                                [ "restaurants" .= shown
-                                , "othersLiked" .= others
-                                , "vibe" .= map chipId chips
-                                , "radius" .= radius
-                                , "maxRadius" .= maxRadius
-                                ]
+                        json (RestaurantsResponse shown others chips radius maxRadius)
 
     -- Redirects to the photo with the given resource name, so the key stays here
     get "/api/photo" $ do
@@ -498,7 +443,7 @@ app env = do
                     seenNow (envPresence env) (U.userId u)
                     recordDecision c (Decision (U.userId u) r l)
                     (,) <$> matchesFor c u <*> othersLiked c u
-                json (object ["matches" .= matches, "othersLiked" .= others])
+                json (DecisionResponse matches others)
 
     -- Anything else: the frontend's files, and its page for every other path
     -- (such as /<session>) so links work. Only when a frontend is configured.

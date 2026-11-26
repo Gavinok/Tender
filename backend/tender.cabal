@@ -15,7 +15,7 @@ common shared
 library
     import:           shared
     hs-source-dirs:   src
-    exposed-modules:  App, Db, Fetch, Limits, Log, Presence, OpenStreetMap, Places, Provider, Restaurant, User, Vibe, Yelp
+    exposed-modules:  App, Db, Fetch, Limits, Log, Presence, OpenStreetMap, Places, Provider, Restaurant, User, Vibe, Wire, Yelp
     build-depends:    aeson         >=2.1   && <2.3
                     , bytestring    >=0.11  && <0.13
                     , http-conduit  >=2.3   && <2.4
@@ -47,7 +47,7 @@ test-suite spec
     type:             exitcode-stdio-1.0
     hs-source-dirs:   test
     main-is:          Spec.hs
-    other-modules:    Endpoints, Properties
+    other-modules:    Contract, Endpoints, Properties
     build-depends:    tender
                     , uuid
                     , QuickCheck
