@@ -3,6 +3,7 @@ module Tender.Api
   , createSession
   , decide
   , getRestaurants
+  , getMatches
   , getVibe
   , setVibe
   , joinSession
@@ -62,6 +63,10 @@ post path body = do
 
 createSession :: Aff (Either ApiError SessionId)
 createSession = get "newsession"
+
+-- | The restaurants the user and someone else in their session both liked
+getMatches :: UserId -> Aff (Either ApiError { matches :: Array RestaurantId })
+getMatches (UserId u) = get ("matches/" <> u)
 
 getVibe :: SessionId -> Aff (Either ApiError Vibe)
 getVibe (SessionId s) = get ("vibe/" <> s)

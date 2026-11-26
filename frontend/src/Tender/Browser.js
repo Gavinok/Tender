@@ -57,3 +57,5 @@ export const _rememberUser = (session) => (user) => () => {
     window.localStorage.setItem(userKey(session), user);
   } catch (e) {}
 };
+
+export const tabHidden = () => document.visibilityState === "hidden";

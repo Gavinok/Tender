@@ -24,6 +24,7 @@ import Web.Scotty (
     defaultHandler,
     Handler (..),
     pathParam,
+    pathParamMaybe,
     post,
     queryParam,
     queryParamMaybe,
@@ -327,6 +328,14 @@ app env = do
                 spendWrite env
                 joined <- liftIO $ db $ \c -> joinSession c s returning
                 maybe (errorResponse status409 "This session is full") json joined
+
+    -- The user's matches so far, polled while they have nothing left to swipe
+    get "/api/matches/:user" $ do
+        found <- (>>= U.userFromText) <$> pathParamMaybe "user"
+        known <- liftIO $ maybe (pure Nothing) (\uid -> db (`getUser` uid)) found
+        case known of
+            Nothing -> errorResponse status404 "Unknown user"
+            Just u -> liftIO (db (`matchesFor` u)) >>= \matches -> json (object ["matches" .= matches])
 
     -- The session's vibe chips, and whether swiping has started and locked them
     get "/api/vibe/:session" $ do

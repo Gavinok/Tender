@@ -12,6 +12,7 @@ module Tender.Browser
   , shareLink
   , shareOrCopy
   , startNewSession
+  , tabHidden
   ) where
 
 import Prelude
@@ -59,6 +60,11 @@ sessionFromPath path = SessionId <$> last (filter (_ /= "") (split (Pattern "/")
 -- | Back returns to the session the user was in.
 startNewSession :: Effect Unit
 startNewSession = assign "/" =<< location =<< window
+
+-- | Whether the page is in a background tab or the phone's screen is off.
+-- | Not web-html's visibilityState, which reads readyState in 4.1.1 and so
+-- | is never hidden. Fixed in 4.1.2, once the package set has it.
+foreign import tabHidden :: Effect Boolean
 
 foreign import reload :: Effect Unit
 
