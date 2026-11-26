@@ -10,7 +10,7 @@ import Flame.Html.Element as HE
 import Tender.Types (Restaurant)
 import Tender.View.Button (Variant(..), button, linkButton)
 import Tender.View.Icon (Icon(..), icon)
-import Tender.View.Photo (photoCredit, restaurantPhoto)
+import Tender.View.Photo (menuUrl, photoCredit, restaurantPhoto)
 import Tender.View.States (matchList)
 
 -- | Pieces of confetti falling across the screen. Positions are spread with
@@ -59,6 +59,7 @@ celebration r continue =
         ]
     , HE.div [ HA.class' "flex flex-col items-center gap-3" ]
         [ maybe (HE.text "") (linkButton Secondary (Just ExternalLink) "Let's go") r.url
+        , linkButton OnColour (Just ExternalLink) "See the menu" (menuUrl r)
         , button OnColour Nothing "Keep swiping" continue
         ]
     ]

@@ -331,6 +331,9 @@ main = runSpecAndExitProcess [ consoleReporter ] do
       renders (Active swiper { photo = 1 } (Swiping (restaurant "a"))) "src=\"/api/photo?name=places/a/photos/p2\""
       renders (Active swiper { photo = 1 } (Swiping (restaurant "a"))) "Photo: Kai"
       renders (Active swiper { photo = 1 } (Swiping (restaurant "a"))) "aria-label=\"Photo 2 of 2\""
+    it "links each card to a search for its menu" do
+      renders (Active swiper (Swiping (restaurant "a"))) "search?q=a%20menu"
+
     it "previews the summary and shows it in full with Google's disclosure when opened" do
       renders (Active swiper (Swiping (restaurant "a"))) "line-clamp-2\">Bright noodle spot"
       renders (Active swiper { summaryOpen = true } (Swiping (restaurant "a"))) "Summarized with Gemini"
