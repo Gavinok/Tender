@@ -1,0 +1,5 @@
+# fourmolu's defaults, except module headers keep their -- | comments.
+# Chosen as the settings that changed the existing code the least.
+indentation: 4
+haddock-style: multi-line
+haddock-style-module: single-line
