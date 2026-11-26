@@ -10,8 +10,12 @@ watch:
 serve:
 	npx parcel serve assets/index.html --port 1234
 
-test:
+test: lint
 	npx spago test
+
+# ESLint and the type check of the hand-written JavaScript
+lint:
+	npm run lint
 
 # purs-tidy from package.json, the version CI checks with
 format:
@@ -35,7 +39,7 @@ unshare:
 	tailscale serve --https=$(SHARE_PORT) off \
 	  || sudo tailscale serve --https=$(SHARE_PORT) off
 
-.PHONY: all build watch serve test format clean share unshare dist
+.PHONY: all build watch serve test lint format clean share unshare dist
 
 # Production build into dist/, as the Dockerfile does
 dist:
