@@ -1,4 +1,14 @@
-module App (server, application, Env (..), Limits, newLimitsWith) where
+module App (
+    server,
+    application,
+    Env (..),
+    Limits,
+    newLimitsWith,
+    visitorLimitReached,
+    siteLimitReached,
+    sessionFull,
+    noLocationYet,
+) where
 
 import Control.Concurrent (forkIO, threadDelay)
 import Control.Exception (SomeException, try)
@@ -58,7 +68,7 @@ import Limits (Counter, Limit (..), Recent, newCounter, newRecent, remember, see
 import Log (LogFormat (..), Logger, Severity (..), newLogger)
 import OpenStreetMap (openStreetMap)
 import Places
-import Presence (Presence, dealtNow, lookupAll, newPresence, people, pruneStale, seenNow)
+import Presence (Presence, dealtNow, lookupAll, newPresence, nextHeartbeatFor, people, pruneStale, seenNow)
 import Provider (Provider (..), searchWithFallback)
 import Restaurant (Restaurant, RestaurantId (..))
 import Restaurant qualified as R
@@ -131,20 +141,20 @@ allowed :: Counter -> Counter -> Text -> Int -> IO (Maybe Text)
 allowed perVisitor site visitor cost = do
     mine <- trySpend perVisitor visitor cost
     if not mine
-        then pure (Just "You've hit Tender's limit for now. Try again in an hour.")
+        then pure (Just visitorLimitReached)
         else do
             ours <- trySpend site "site" cost
             pure $
                 if ours
                     then Nothing
-                    else Just "Tender has hit its daily limit. Try again tomorrow."
+                    else Just siteLimitReached
 
 -- | Refuse once the visitor has changed too much this hour
 spendWrite :: Env -> ActionM ()
 spendWrite env = do
     visitor <- visitorOf
     ok <- liftIO $ trySpend (writesPerVisitor (envLimits env)) visitor 1
-    unless ok $ errorResponse status429 "You've hit Tender's limit for now. Try again in an hour." >> finish
+    unless ok $ errorResponse status429 visitorLimitReached >> finish
 
 {- | Who is asking, for per-visitor limits. Cloud Run's front end appends the
 address it got the request from to X-Forwarded-For, so the last entry is
@@ -230,6 +240,13 @@ numberSetting name def = do
         Nothing -> pure def
         Just v -> maybe (die (name ++ " should be a whole number, not " ++ show v)) pure (readMaybe v)
 
+-- | Messages the frontend shows as they are, named so the tests check the same words
+visitorLimitReached, siteLimitReached, sessionFull, noLocationYet :: Text
+visitorLimitReached = "You've hit Tender's limit for now. Try again in an hour."
+siteLimitReached = "Tender has hit its daily limit. Try again tomorrow."
+sessionFull = "This session is full"
+noLocationYet = "Nobody else in this session has shared their location yet."
+
 -- | Respond with an error status and a message the frontend can show
 errorResponse :: Status -> Text -> ActionM ()
 errorResponse s msg = status s >> json (ErrorResponse msg)
@@ -308,7 +325,7 @@ app env = do
                 returning <- (>>= U.userFromText) <$> queryParamMaybe "user"
                 spendWrite env
                 joined <- liftIO $ db $ \c -> joinSession c s returning
-                maybe (errorResponse status409 "This session is full") json joined
+                maybe (errorResponse status409 sessionFull) json joined
 
     {- Heartbeat from someone in a session, every 10 seconds. Answers with
     everyone in it, whether they're swiping, done or away, and the user's
@@ -325,7 +342,8 @@ app env = do
                 liftIO $ seenNow (envPresence env) uid
                 (members, matches) <- liftIO $ db $ \c -> (,) <$> sessionMembers c (U.session u) <*> matchesFor c u
                 (now, seenBy) <- liftIO $ lookupAll (envPresence env)
-                json (PresenceResponse (people now uid members seenBy) matches)
+                let everyone = people now uid members seenBy
+                json (PresenceResponse everyone matches (nextHeartbeatFor everyone))
 
     -- The session's vibe chips, and whether swiping has started and locked them
     get "/api/vibe/:session" $ do
@@ -384,7 +402,7 @@ app env = do
                     l <- sessionLocation c s here
                     radius <- maybe (sessionRadius c s) (widenSearch c s) wider
                     (l,,radius,) <$> getVibe c s <*> decidedBy c uid
-                l <- maybe (errorResponse status409 "Nobody else in this session has shared their location yet." >> finish) pure located
+                l <- maybe (errorResponse status409 noLocationYet >> finish) pure located
                 -- Searching further only needs the ring outside what the person saw
                 let inner = maybe 0 (min radius) wider
                 visitor <- visitorOf

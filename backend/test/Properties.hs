@@ -14,7 +14,7 @@ import Data.Set qualified as Set
 import Data.UUID qualified as UUID
 import Limits (Limit (..), Usage, spend)
 import Places (inRing, isPhotoName)
-import Presence (Activity (..), Seen (..), activity, awayAfter, cardsLeft, dealt, seen)
+import Presence (Activity (..), Person (..), Seen (..), activity, awayAfter, cardsLeft, dealt, nextHeartbeat, nextHeartbeatFor, seen)
 import Restaurant
 import User (UserId (..))
 
@@ -53,6 +53,10 @@ spec = do
                         [ null deals || deckOf afterDeals == Just dealtAll
                         , deckOf (seen start me afterDeals) == deckOf afterDeals
                         ]
+        it "allows two missed heartbeats before someone is away" $
+            awayAfter `shouldSatisfy` (>= 3 * fromIntegral (maximum (map nextHeartbeat [minBound .. maxBound])))
+        it "beats sooner for someone done, who is waiting to hear about matches" $
+            (nextHeartbeatFor [Person True Done 3 (Just 0)], nextHeartbeatFor [Person True Swiping 3 (Just 5)]) `shouldBe` (5, 10)
         it "is away until heard from" $
             activity start Set.empty Nothing `shouldBe` Away
 

@@ -102,10 +102,12 @@ instance ToJSON DecisionResponse where
 data PresenceResponse = PresenceResponse
     { prPeople :: [Person]
     , prMatches :: [RestaurantId]
+    , prNext :: Int
+    -- ^ Seconds until the next heartbeat
     }
 
 instance ToJSON PresenceResponse where
-    toJSON r = object ["people" .= prPeople r, "matches" .= prMatches r]
+    toJSON r = object ["people" .= prPeople r, "matches" .= prMatches r, "next" .= prNext r]
 
 {- | GET and POST /api/vibe/:session and POST /api/place/:session: the
 lobby's shared choices, and whether someone has started swiping and

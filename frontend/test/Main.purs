@@ -43,7 +43,7 @@ bare :: String -> Restaurant
 bare id = (restaurant id) { url = Nothing, rating = Nothing, photos = [], summary = Nothing }
 
 swiper :: Swiper
-swiper = { user: UserId "u", loc: Just here, radius: 5000.0, maxRadius: 50000.0, upcoming: [], photo: 0, summaryOpen: false, othersLiked: [], liked: [], matches: [], people: [], showMatches: false, vibe: [] }
+swiper = { user: UserId "u", loc: Just here, radius: 5000.0, maxRadius: 50000.0, upcoming: [], photo: 0, summaryOpen: false, othersLiked: [], liked: [], matches: [], people: [], heartbeatIn: 10, showMatches: false, vibe: [] }
 
 here :: { latitude :: Number, longitude :: Number }
 here = { latitude: 1.0, longitude: 2.0 }
@@ -186,8 +186,9 @@ main = runSpecAndExitProcess [ consoleReporter ] do
     it "looks up what was typed once it's long enough" do
       step (QR lobbyAt { picker = Just blankPicker }) (PlaceQuery "K")
         `shouldEqual` Tuple (QR lobbyAt { picker = Just blankPicker { query = "K" } }) 0
+      -- The backend says if it's too short, so even one letter is sent
       step (QR lobbyAt { picker = Just blankPicker { query = "K" } }) FindPlaces
-        `shouldEqual` Tuple (QR lobbyAt { picker = Just blankPicker { query = "K", problem = Just "Type at least 2 letters." } }) 0
+        `shouldEqual` Tuple (QR lobbyAt { picker = Just blankPicker { query = "K", searching = true } }) 1
       step (QR lobbyAt { picker = Just blankPicker { query = "Kelowna" } }) FindPlaces
         `shouldEqual` Tuple (QR lobbyAt { picker = Just blankPicker { query = "Kelowna", searching = true } }) 1
       step (QR lobbyAt { picker = Just blankPicker { searching = true } }) (PlacesFound (Right [ kelowna ]))
@@ -263,19 +264,27 @@ main = runSpecAndExitProcess [ consoleReporter ] do
     it "sends a heartbeat from any screen, and keeps the people it hears back" do
       step (Active swiper (Swiping (restaurant "a"))) Heartbeat `shouldEqual` Tuple (Active swiper (Swiping (restaurant "a"))) 1
       step (Active swiper NoneLeft) Heartbeat `shouldEqual` Tuple (Active swiper NoneLeft) 1
-      step (Active swiper (Swiping (restaurant "a"))) (HeardBack (Just { people: [ friend ], matches: [] }))
+      step (Active swiper (Swiping (restaurant "a"))) (HeardBack (Just { people: [ friend ], matches: [], next: 10 }))
         `shouldEqual` Tuple (Active swiper { people = [ friend ] } (Swiping (restaurant "a"))) 1
+
+    it "waits as long as the backend says before the next heartbeat" do
+      step (Active swiper NoneLeft) (HeardBack (Just { people: [], matches: [], next: 5 }))
+        `shouldEqual` Tuple (Active swiper { heartbeatIn = 5 } NoneLeft) 1
+
+    it "keeps the last interval when a heartbeat fails" do
+      step (Active swiper { heartbeatIn = 5 } NoneLeft) (HeardBack Nothing)
+        `shouldEqual` Tuple (Active swiper { heartbeatIn = 5 } NoneLeft) 1
 
     it "keeps going when a heartbeat fails" do
       step (Active swiper { people = [ friend ] } NoneLeft) (HeardBack Nothing)
         `shouldEqual` Tuple (Active swiper { people = [ friend ] } NoneLeft) 1
 
     it "celebrates a match heard about while out of cards" do
-      step (Active swiper { liked = [ restaurant "a" ] } NoneLeft) (HeardBack (Just { people: [], matches: [ RestaurantId "a" ] }))
+      step (Active swiper { liked = [ restaurant "a" ] } NoneLeft) (HeardBack (Just { people: [], matches: [ RestaurantId "a" ], next: 10 }))
         `shouldEqual` Tuple (Active swiper { liked = [ restaurant "a" ], matches = [ restaurant "a" ] } (Matched (restaurant "a"))) 2
 
     it "leaves matches heard about while swiping to the next decision" do
-      step (Active swiper { liked = [ restaurant "a" ] } (Swiping (restaurant "b"))) (HeardBack (Just { people: [], matches: [ RestaurantId "a" ] }))
+      step (Active swiper { liked = [ restaurant "a" ] } (Swiping (restaurant "b"))) (HeardBack (Just { people: [], matches: [ RestaurantId "a" ], next: 10 }))
         `shouldEqual` Tuple (Active swiper { liked = [ restaurant "a" ] } (Swiping (restaurant "b"))) 1
 
     it "shows when there are no restaurants left" do
