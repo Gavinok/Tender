@@ -38,14 +38,16 @@ jobs:
           ghc-version: ${{ env.GHC_VERSION }}
           cabal-version: "3.16.1.0"
       - run: cabal update
-      - run: cabal build all --dry-run
+      # The compiler setup found, by path: a cached GHC has no ghc-9.12.4
+      # link for cabal.project's with-compiler to find
+      - run: cabal build all --dry-run -w "${{ steps.setup.outputs.ghc-exe }}"
       - uses: actions/cache@v4
         with:
           path: ${{ steps.setup.outputs.cabal-store }}
           key: cabal-${{ hashFiles('backend/dist-newstyle/cache/plan.json') }}
           restore-keys: cabal-
-      - run: cabal build all
-      - run: cabal test
+      - run: cabal build all -w "${{ steps.setup.outputs.ghc-exe }}"
+      - run: cabal test -w "${{ steps.setup.outputs.ghc-exe }}"
 
   fourmolu:
     runs-on: ubuntu-latest
