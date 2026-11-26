@@ -17,10 +17,10 @@ module Limits (
 ) where
 
 import Data.IORef (IORef, atomicModifyIORef', newIORef, readIORef)
-import qualified Data.Map.Strict as Map
+import Data.Map.Strict qualified as Map
 import Data.Text (Text)
-import Restaurant (RestaurantId)
 import Data.Time (NominalDiffTime, UTCTime, addUTCTime, getCurrentTime)
+import Restaurant (RestaurantId)
 
 -- | At most this many per window
 data Limit = Limit

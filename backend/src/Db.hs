@@ -4,28 +4,28 @@ module Db (initDb, initSchema, DbPool, openPool, withConn, addUserToDb, joinSess
 
 import Control.Exception (bracket)
 import Control.Monad (forM_)
+import Data.List (nub)
+import Data.Maybe (listToMaybe, mapMaybe)
 import Data.Pool (Pool, defaultPoolConfig, newPool, setNumStripes, withResource)
+import Data.String (fromString)
+import Data.Text qualified as T
 import Database.SQLite.Simple (
     Connection,
     Only (..),
     Query,
     ToRow,
+    close,
     execute,
     execute_,
+    open,
     query,
     query_,
-    close,
-    open,
     withTransaction,
  )
-import Data.List (nub)
-import Data.Maybe (listToMaybe, mapMaybe)
-import qualified Data.Text as T
-import Vibe (Chip, chipFromId, chipId, defaultRadius, maxRadius)
-import Data.String (fromString)
 import GHC.Generics (Generic)
 import Restaurant (Loc (..), RestaurantId)
-import qualified User as U
+import User qualified as U
+import Vibe (Chip, chipFromId, chipId, defaultRadius, maxRadius)
 
 openDb :: FilePath -> IO Connection
 openDb path = do
@@ -68,26 +68,28 @@ initSchema conn = do
 -- | Each entry is applied once, in order. Only ever append to this list.
 migrations :: [[Query]]
 migrations =
-    [ -- 1: the original schema, already present in databases from before versioning
-      [ mconcat
+    [
+        [ -- 1: the original schema, already present in databases from before versioning
+          mconcat
             [ "CREATE TABLE IF NOT EXISTS restaurants "
             , "(id TEXT PRIMARY KEY, url TEXT, name Text, rating FLOAT, price TEXT, hours INTEGER, category TEXT,"
             , " imagelink TEXT,"
             , " latitude FLOAT, longitude FLOAT"
             , " )"
             ]
-      , "CREATE TABLE IF NOT EXISTS users (userId TEXT, session TEXT)"
-      , "CREATE TABLE IF NOT EXISTS likes (userId TEXT, restaurantId TEXT)"
-      ]
-    , -- 2: record dislikes as well as likes, one decision per user and restaurant
-      [ mconcat
+        , "CREATE TABLE IF NOT EXISTS users (userId TEXT, session TEXT)"
+        , "CREATE TABLE IF NOT EXISTS likes (userId TEXT, restaurantId TEXT)"
+        ]
+    ,
+        [ -- 2: record dislikes as well as likes, one decision per user and restaurant
+          mconcat
             [ "CREATE TABLE decisions "
             , "(userId TEXT NOT NULL, restaurantId TEXT NOT NULL, liked INTEGER NOT NULL,"
             , " PRIMARY KEY (userId, restaurantId))"
             ]
-      , "INSERT OR IGNORE INTO decisions SELECT userId, restaurantId, 1 FROM likes"
-      , "DROP TABLE likes"
-      ]
+        , "INSERT OR IGNORE INTO decisions SELECT userId, restaurantId, 1 FROM likes"
+        , "DROP TABLE likes"
+        ]
     , -- 3: restaurants come fresh from Google Places, whose terms don't allow
       -- storing them. Decisions keep only the place id, which is allowed.
       ["DROP TABLE restaurants"]
@@ -97,10 +99,11 @@ migrations =
       ["CREATE TABLE session_vibes (session TEXT PRIMARY KEY, chips TEXT NOT NULL)"]
     , -- 6: how far the session searches, in metres, widened by "search further"
       ["ALTER TABLE sessions ADD COLUMN radius REAL NOT NULL DEFAULT 5000"]
-    , -- 7: when people joined and vibes changed, so old ones can be deleted
-      [ "ALTER TABLE users ADD COLUMN joined INTEGER NOT NULL DEFAULT 0"
-      , "ALTER TABLE session_vibes ADD COLUMN updated INTEGER NOT NULL DEFAULT 0"
-      ]
+    ,
+        [ -- 7: when people joined and vibes changed, so old ones can be deleted
+          "ALTER TABLE users ADD COLUMN joined INTEGER NOT NULL DEFAULT 0"
+        , "ALTER TABLE session_vibes ADD COLUMN updated INTEGER NOT NULL DEFAULT 0"
+        ]
     ]
 
 addUserToDb :: Connection -> U.User -> IO ()

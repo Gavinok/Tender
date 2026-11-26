@@ -4,13 +4,13 @@ module OpenStreetMap (openStreetMap, searchOverpass, parseOverpass, nearest) whe
 
 import Control.Applicative ((<|>))
 import Data.Aeson (Value, withObject, (.!=), (.:), (.:?))
-import qualified Data.Aeson.Types as AT
+import Data.Aeson.Types qualified as AT
 import Data.Char (toUpper)
 import Data.List (sortOn)
 import Data.Maybe (catMaybes)
 import Data.Text (Text)
-import qualified Data.Text as T
-import qualified Data.Text.Encoding as TE
+import Data.Text qualified as T
+import Data.Text.Encoding qualified as TE
 import Fetch (FetchError, fetchJSON)
 import Network.HTTP.Simple (parseRequest_, setRequestBodyURLEncoded, setRequestHeaders)
 import Provider (Provider (..))
@@ -29,9 +29,9 @@ searchOverpass l@(Loc lat lon) inner radius =
     -- The query tells Overpass to give up after 20 seconds; this allows a bit more
     request =
         -- Overpass asks clients to identify themselves
-        setRequestHeaders [("User-Agent", "Tender (https://github.com/Gavinok/Tender)")] $
-            setRequestBodyURLEncoded [("data", TE.encodeUtf8 query)] $
-                parseRequest_ "POST https://overpass-api.de/api/interpreter"
+        setRequestHeaders [("User-Agent", "Tender (https://github.com/Gavinok/Tender)")]
+            $ setRequestBodyURLEncoded [("data", TE.encodeUtf8 query)]
+            $ parseRequest_ "POST https://overpass-api.de/api/interpreter"
     query =
         T.concat
             [ "[out:json][timeout:20];"
