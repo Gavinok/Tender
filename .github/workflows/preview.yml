@@ -1,0 +1,54 @@
+name: Preview
+
+# Opt-in: add the "preview" label to a pull request to deploy its branch as a
+# Cloud Run revision with no live traffic and its own URL. It's redeployed on
+# every push while the label stays, and the URL is commented on the PR and on
+# the issues it closes.
+on:
+  pull_request:
+    types: [labeled, synchronize]
+
+permissions:
+  contents: read
+
+jobs:
+  preview:
+    if: contains(github.event.pull_request.labels.*.name, 'preview') && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    # One deploy per branch at a time, never cancelled halfway
+    concurrency:
+      group: preview-${{ github.head_ref }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      # To sign in to Google Cloud as github-deployer
+      id-token: write
+      # To comment previews on the PR and issues
+      pull-requests: write
+      issues: write
+    env:
+      PROJECT: ${{ vars.GCP_PROJECT }}
+      BRANCH: ${{ github.head_ref }}
+      SHA: ${{ github.event.pull_request.head.sha }}
+      # Docker layers cached between runs, so unchanged steps aren't rebuilt
+      BUILD_FLAGS: --cache-from type=gha --cache-to type=gha,mode=max
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOYER }}
+      - uses: google-github-actions/setup-gcloud@v2
+      - run: gcloud auth configure-docker us-west1-docker.pkg.dev --quiet
+      - uses: docker/setup-buildx-action@v3
+      - name: Deploy a preview of the branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          preview=$(scripts/preview-tag "$BRANCH")
+          make deploy-preview TAG="${SHA::7}" PREVIEW="$preview"
+          url=$(make -s preview-url PREVIEW="$preview")
+          echo "Preview: $url" >> "$GITHUB_STEP_SUMMARY"
+          scripts/comment-preview "$BRANCH" "$url" "${SHA::7}"

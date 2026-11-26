@@ -1,7 +1,7 @@
 name: CI
 
-# Every push: checks the side that changed, then deploys. master goes to
-# production; any other branch gets a preview with its own URL.
+# Every push: checks the side that changed. master then deploys production
+# (previews are opt-in, see preview.yml).
 on:
   push:
 
@@ -166,19 +166,16 @@ jobs:
 
   deploy:
     needs: [changes, ci]
-    if: needs.changes.outputs.app == 'true'
+    if: github.ref == 'refs/heads/master' && needs.changes.outputs.app == 'true'
     runs-on: ubuntu-latest
-    # One deploy per branch at a time, never cancelled halfway
+    # Never cancelled halfway
     concurrency:
-      group: deploy-${{ github.ref }}
+      group: deploy-production
       cancel-in-progress: false
     permissions:
       contents: read
       # To sign in to Google Cloud as github-deployer
       id-token: write
-      # To comment previews on the branch's PR and issues
-      pull-requests: write
-      issues: write
     env:
       PROJECT: ${{ vars.GCP_PROJECT }}
       # Docker layers cached between runs, so unchanged steps aren't rebuilt
@@ -193,15 +190,4 @@ jobs:
       - run: gcloud auth configure-docker us-west1-docker.pkg.dev --quiet
       - uses: docker/setup-buildx-action@v3
       - name: Deploy production
-        if: github.ref == 'refs/heads/master'
         run: make deploy TAG="${GITHUB_SHA::7}" REVISION="${GITHUB_SHA::7}-${GITHUB_RUN_NUMBER}"
-      - name: Deploy a preview of the branch
-        if: github.ref != 'refs/heads/master'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          preview=$(scripts/preview-tag "$GITHUB_REF_NAME")
-          make deploy-preview TAG="${GITHUB_SHA::7}" PREVIEW="$preview"
-          url=$(make -s preview-url PREVIEW="$preview")
-          echo "Preview: $url" >> "$GITHUB_STEP_SUMMARY"
-          scripts/comment-preview "$GITHUB_REF_NAME" "$url" "${GITHUB_SHA::7}"
