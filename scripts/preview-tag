@@ -1,0 +1,12 @@
+#!/bin/sh
+# The Cloud Run tag for a branch's preview, e.g. `scripts/preview-tag
+# where-eating` prints `where-eating`. Tags are lowercase letters, digits
+# and hyphens, start with a letter, and must fit in the preview's hostname
+# (TAG---tender-...run.app), so the branch name is cleaned up and cut short.
+set -eu
+tag=$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | sed -e 's/[^a-z0-9]\{1,\}/-/g' -e 's/^-*//' -e 's/^\([0-9]\)/b-\1/' | cut -c1-30 | sed -e 's/-*$//')
+if [ -z "$tag" ]; then
+  echo "can't make a preview tag from \"$1\"" >&2
+  exit 1
+fi
+echo "$tag"
