@@ -39,7 +39,7 @@ bare :: String -> Restaurant
 bare id = (restaurant id) { url = Nothing, rating = Nothing, photos = [], summary = Nothing }
 
 swiper :: Swiper
-swiper = { user: UserId "u", loc: here, radius: 5000.0, maxRadius: 50000.0, upcoming: [], photo: 0, summaryOpen: false, othersLiked: [], liked: [], matches: [], showMatches: false, vibe: [] }
+swiper = { user: UserId "u", loc: here, radius: 5000.0, maxRadius: 50000.0, upcoming: [], photo: 0, summaryOpen: false, othersLiked: [], liked: [], matches: [], polls: 0, showMatches: false, vibe: [] }
 
 here :: { latitude :: Number, longitude :: Number }
 here = { latitude: 1.0, longitude: 2.0 }
@@ -81,7 +81,7 @@ main = runSpecAndExitProcess [ consoleReporter ] do
         `shouldEqual` Tuple (Active swiper { upcoming = [ restaurant "a", restaurant "b" ], othersLiked = [ RestaurantId "c" ] } (Swiping (restaurant "c"))) 0
 
     it "says there are none when the search finds nothing" do
-      step (Active swiper Fetching) (Loaded { restaurants: [], othersLiked: [], vibe: [], radius: 5000.0, maxRadius: 50000.0 }) `shouldEqual` Tuple (Active swiper NoneLeft) 0
+      step (Active swiper Fetching) (Loaded { restaurants: [], othersLiked: [], vibe: [], radius: 5000.0, maxRadius: 50000.0 }) `shouldEqual` Tuple (Active swiper { polls = 1 } NoneLeft) 1
 
     it "moves to the next restaurant without asking the server" do
       step (Active swiper { upcoming = [ restaurant "b" ] } (Swiping (restaurant "a"))) (decided "a" false [])
@@ -190,9 +190,28 @@ main = runSpecAndExitProcess [ consoleReporter ] do
       step (Active swiper (Swiping (restaurant "a"))) ToggleMatches
         `shouldEqual` Tuple (Active swiper { showMatches = true } (Swiping (restaurant "a"))) 0
 
+    it "checks for matches while out of cards" do
+      step (Active swiper { polls = 1 } NoneLeft) (PollMatches 1) `shouldEqual` Tuple (Active swiper { polls = 1 } NoneLeft) 1
+      step (Active swiper { polls = 1 } NoneLeft) (MatchesPolled 1 [])
+        `shouldEqual` Tuple (Active swiper { polls = 1 } NoneLeft) 1
+
+    it "celebrates a match made while out of cards, then checks again after" do
+      step (Active swiper { polls = 1, liked = [ restaurant "a" ] } NoneLeft) (MatchesPolled 1 [ RestaurantId "a" ])
+        `shouldEqual` Tuple (Active swiper { polls = 1, liked = [ restaurant "a" ], matches = [ restaurant "a" ] } (Matched (restaurant "a"))) 1
+      step (Active swiper { polls = 1, liked = [ restaurant "a" ], matches = [ restaurant "a" ] } (Matched (restaurant "a"))) Continue
+        `shouldEqual` Tuple (Active swiper { polls = 2, liked = [ restaurant "a" ], matches = [ restaurant "a" ] } NoneLeft) 1
+
+    it "ignores checks from an earlier visit to the out-of-cards screen" do
+      step (Active swiper { polls = 2 } NoneLeft) (PollMatches 1) `shouldEqual` Tuple (Active swiper { polls = 2 } NoneLeft) 0
+      step (Active swiper { polls = 2, liked = [ restaurant "a" ] } NoneLeft) (MatchesPolled 1 [ RestaurantId "a" ])
+        `shouldEqual` Tuple (Active swiper { polls = 2, liked = [ restaurant "a" ] } NoneLeft) 0
+
+    it "stops checking once swiping again" do
+      step (Active swiper { polls = 1 } (Swiping (restaurant "b"))) (PollMatches 1) `shouldEqual` Tuple (Active swiper { polls = 1 } (Swiping (restaurant "b"))) 0
+
     it "shows when there are no restaurants left" do
       step (Active swiper (Swiping (restaurant "a"))) (decided "a" false [])
-        `shouldEqual` Tuple (Active swiper NoneLeft) 0
+        `shouldEqual` Tuple (Active swiper { polls = 1 } NoneLeft) 1
 
     it "shows errors" do
       step Loading (FailedToLoad "nope") `shouldEqual` Tuple (ServerError "nope") 0
