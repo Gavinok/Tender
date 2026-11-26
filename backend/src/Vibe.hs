@@ -1,5 +1,5 @@
 -- | Vibe chips a group picks in the lobby, and what each means for the search
-module Vibe (Chip (..), Search (..), Place (..), Found (..), defaultRadius, maxRadius, allChips, chipId, chipFromId, queryTerms, priceLevels, wantsOpenNow) where
+module Vibe (Chip (..), Search (..), Place (..), Found (..), defaultRadius, maxRadius, allChips, chipId, chipLabel, chipFromId, queryTerms, priceLevels, wantsOpenNow) where
 
 import Data.Aeson (FromJSON (parseJSON), ToJSON (toJSON), object, withObject, (.:), (.=))
 import Data.List (nub)
@@ -75,6 +75,27 @@ allChips :: [Chip]
 allChips = [minBound .. maxBound]
 
 -- | The id the frontend uses for the chip
+
+{- | What the lobby shows. The frontend gets these with the ids, so a chip
+is defined only here.
+-}
+chipLabel :: Chip -> Text
+chipLabel = \case
+    Cheap -> "💸 Cheap eats"
+    Fancy -> "✨ Treat yourself"
+    Patio -> "☀️ Patio"
+    DateNight -> "🕯️ Date night"
+    BigGroup -> "👯 Big group"
+    Veggie -> "🥦 Veggie"
+    Drinks -> "🍸 Drinks"
+    Brunch -> "🥞 Brunch"
+    LateNight -> "🌙 Late night"
+    OpenNow -> "🕐 Open now"
+
+-- | As the frontend shows it: the id it sends back, and the label
+instance ToJSON Chip where
+    toJSON c = object ["id" .= chipId c, "label" .= chipLabel c]
+
 chipId :: Chip -> Text
 chipId = \case
     Cheap -> "cheap"

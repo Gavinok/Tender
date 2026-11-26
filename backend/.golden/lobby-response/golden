@@ -1,6 +1,48 @@
 [
     {
         "chips": [],
+        "choices": [
+            {
+                "id": "cheap",
+                "label": "💸 Cheap eats"
+            },
+            {
+                "id": "fancy",
+                "label": "✨ Treat yourself"
+            },
+            {
+                "id": "patio",
+                "label": "☀️ Patio"
+            },
+            {
+                "id": "date-night",
+                "label": "🕯️ Date night"
+            },
+            {
+                "id": "big-group",
+                "label": "👯 Big group"
+            },
+            {
+                "id": "veggie",
+                "label": "🥦 Veggie"
+            },
+            {
+                "id": "drinks",
+                "label": "🍸 Drinks"
+            },
+            {
+                "id": "brunch",
+                "label": "🥞 Brunch"
+            },
+            {
+                "id": "late-night",
+                "label": "🌙 Late night"
+            },
+            {
+                "id": "open-now",
+                "label": "🕐 Open now"
+            }
+        ],
         "locked": false,
         "place": null
     },
@@ -16,6 +58,48 @@
             "brunch",
             "late-night",
             "open-now"
+        ],
+        "choices": [
+            {
+                "id": "cheap",
+                "label": "💸 Cheap eats"
+            },
+            {
+                "id": "fancy",
+                "label": "✨ Treat yourself"
+            },
+            {
+                "id": "patio",
+                "label": "☀️ Patio"
+            },
+            {
+                "id": "date-night",
+                "label": "🕯️ Date night"
+            },
+            {
+                "id": "big-group",
+                "label": "👯 Big group"
+            },
+            {
+                "id": "veggie",
+                "label": "🥦 Veggie"
+            },
+            {
+                "id": "drinks",
+                "label": "🍸 Drinks"
+            },
+            {
+                "id": "brunch",
+                "label": "🥞 Brunch"
+            },
+            {
+                "id": "late-night",
+                "label": "🌙 Late night"
+            },
+            {
+                "id": "open-now",
+                "label": "🕐 Open now"
+            }
         ],
         "locked": true,
         "place": {

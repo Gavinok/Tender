@@ -26,7 +26,7 @@ import Data.Tuple (Tuple)
 import Data.Tuple.Nested ((/\))
 import Flame (Update)
 import Tender.Api (ApiError(..), createSession, decide, findPlaces, getRestaurants, getVibe, heartbeat, joinSession, setPlace, setVibe)
-import Tender.Vibe (Vibe)
+import Tender.Vibe (Chip, Vibe)
 import Tender.Swipe (flyOut)
 import Tender.Swipe as Swipe
 import Tender.Browser (LocationProblem(..), Shared(..), existingSession, geolocation, reload, rememberSession, rememberUser, rememberedUser, shareLink, shareOrCopy, startNewSession, tabHidden, vibrate)
@@ -57,7 +57,7 @@ type Swiper =
   -- | Whether the list of matches is open
   , showMatches :: Boolean
   -- | The session's vibe chips
-  , vibe :: Array String
+  , vibe :: Array Chip
   }
 
 -- | What a user who has joined a session is looking at
@@ -134,7 +134,7 @@ data Message
   | KeyPressed String
   -- | Skip past the current match and keep swiping
   | Continue
-  | Loaded { restaurants :: Array Restaurant, othersLiked :: Array RestaurantId, vibe :: Array String, radius :: Number, maxRadius :: Number }
+  | Loaded { restaurants :: Array Restaurant, othersLiked :: Array RestaurantId, vibe :: Array Chip, radius :: Number, maxRadius :: Number }
   | SearchFurther
   | NextPhoto
   | PreviousPhoto
@@ -263,7 +263,7 @@ update model = case model, _ of
             JoinSession s <$> shareLink s
     ]
   _, JoinSession session link ->
-    QR { session, link, copied: false, vibe: { chips: [], locked: false, place: Nothing }, picker: Nothing } /\ [ pollVibe session ]
+    QR { session, link, copied: false, vibe: { chips: [], choices: [], locked: false, place: Nothing }, picker: Nothing } /\ [ pollVibe session ]
   -- Keeps checking while in the lobby so everyone sees the same chips; stops once swiping
   QR lobby, VibePolled v -> QR lobby { vibe = v } /\ [ delay (Milliseconds 3000.0) $> Just PollVibe ]
   QR { session }, PollVibe -> model /\ [ pollVibe session ]

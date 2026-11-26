@@ -2,7 +2,7 @@
 module Endpoints (spec) where
 
 import Control.Monad (forM_, replicateM_)
-import Data.Aeson (encode, object, (.=))
+import Data.Aeson (ToJSON, encode, object, (.=))
 import Data.ByteString.Char8 qualified as S8
 import Data.ByteString.Lazy.Char8 qualified as L8
 import Data.Text (Text)
@@ -15,6 +15,7 @@ import System.FilePath ((</>))
 import System.IO (hClose, openTempFile)
 import Test.Hspec
 import Test.Hspec.Wai
+import Test.Hspec.Wai.Matcher (bodyEquals)
 
 import App (Env (..), application, newLimitsWith)
 import Db (initDb, openPool)
@@ -24,6 +25,7 @@ import Presence (newPresence)
 import Provider (Provider (..))
 import Restaurant
 import Vibe (Found (..), Place (..))
+import Wire (Lobby (..))
 
 -- | Always finds the same two places, without calling anyone
 fake :: Provider
@@ -43,6 +45,10 @@ freshDb = do
 -- | The app with the given site-wide daily caps on searches and photos
 appWith :: Int -> Int -> Maybe FilePath -> IO Application
 appWith searchCap photoCap static = appLooking searchCap photoCap static (Just lookUp)
+
+-- | A 200 with the JSON of the value, encoded as the handler encodes it
+respondsWith :: (ToJSON a) => WaiSession st SResponse -> a -> WaiExpectation st
+respondsWith action expected = action `shouldRespondWith` 200{matchBody = bodyEquals (encode expected)}
 
 -- | Finds Kelowna for anything, without calling anyone
 lookUp :: Text -> IO (Either FetchError [Found])
@@ -136,10 +142,10 @@ spec = do
             let choose s place = postJSON ("/api/place/" <> encodeText s) (encode (object ["place" .= place]))
             it "is shared in the lobby and can be cleared" $ do
                 s <- newSession
-                get ("/api/vibe/" <> encodeText s) `shouldRespondWith` "{\"chips\":[],\"locked\":false,\"place\":null}"
-                choose s (Just kelowna) `shouldRespondWith` "{\"chips\":[],\"locked\":false,\"place\":{\"latitude\":49.88,\"longitude\":-119.49,\"name\":\"Kelowna\"}}"
-                get ("/api/vibe/" <> encodeText s) `shouldRespondWith` "{\"chips\":[],\"locked\":false,\"place\":{\"latitude\":49.88,\"longitude\":-119.49,\"name\":\"Kelowna\"}}"
-                choose s (Nothing :: Maybe Place) `shouldRespondWith` "{\"chips\":[],\"locked\":false,\"place\":null}"
+                get ("/api/vibe/" <> encodeText s) `respondsWith` Lobby [] False Nothing
+                choose s (Just kelowna) `respondsWith` Lobby [] False (Just kelowna)
+                get ("/api/vibe/" <> encodeText s) `respondsWith` Lobby [] False (Just kelowna)
+                choose s (Nothing :: Maybe Place) `respondsWith` Lobby [] False Nothing
             it "is searched from without anyone's location" $ do
                 (s, u) <- joined
                 _ <- choose s (Just kelowna)
@@ -147,7 +153,7 @@ spec = do
             it "locks once someone starts swiping" $ do
                 (s, u) <- joined
                 _ <- search u
-                choose s (Just kelowna) `shouldRespondWith` "{\"chips\":[],\"locked\":true,\"place\":null}"
+                choose s (Just kelowna) `respondsWith` Lobby [] True Nothing
             it "refuses a place off the globe or without a name" $ do
                 s <- newSession
                 postJSON ("/api/place/" <> encodeText s) "{\"place\":{\"name\":\"Nowhere\",\"latitude\":500,\"longitude\":0}}" `shouldRespondWith` 422
