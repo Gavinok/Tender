@@ -1,0 +1,20 @@
+[
+    {
+        "left": 17,
+        "status": "swiping",
+        "swiped": 3,
+        "you": true
+    },
+    {
+        "left": 0,
+        "status": "done",
+        "swiped": 20,
+        "you": false
+    },
+    {
+        "left": null,
+        "status": "away",
+        "swiped": 0,
+        "you": false
+    }
+]

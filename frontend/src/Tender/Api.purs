@@ -3,7 +3,7 @@ module Tender.Api
   , createSession
   , decide
   , getRestaurants
-  , getMatches
+  , heartbeat
   , getVibe
   , setVibe
   , joinSession
@@ -18,7 +18,7 @@ import Effect.Aff (Aff, Error, attempt, message)
 import Effect.Class (liftEffect)
 import Fetch (Method(..), Response, fetch)
 import Tender.Browser (backendUrl)
-import Tender.Types (ErrorMessage, Loc, Restaurant, RestaurantId, SessionId(..), UserId(..))
+import Tender.Types (ErrorMessage, Loc, Person, Restaurant, RestaurantId, SessionId(..), UserId(..))
 import Tender.Vibe (Vibe)
 import Yoga.JSON (class ReadForeign, class WriteForeign)
 import Yoga.JSON as JSON
@@ -64,9 +64,10 @@ post path body = do
 createSession :: Aff (Either ApiError SessionId)
 createSession = get "newsession"
 
--- | The restaurants the user and someone else in their session both liked
-getMatches :: UserId -> Aff (Either ApiError { matches :: Array RestaurantId })
-getMatches (UserId u) = get ("matches/" <> u)
+-- | Say the user is still here. Answers with everyone in the session and
+-- | the restaurants the user and someone else both liked.
+heartbeat :: UserId -> Aff (Either ApiError { people :: Array Person, matches :: Array RestaurantId })
+heartbeat user = post "presence" { user }
 
 getVibe :: SessionId -> Aff (Either ApiError Vibe)
 getVibe (SessionId s) = get ("vibe/" <> s)

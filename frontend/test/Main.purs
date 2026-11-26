@@ -12,7 +12,8 @@ import Flame.Renderer.String (render)
 import Effect (Effect)
 import Tender.App (Lobby, Message(..), Model(..), Screen(..), Swiper, update)
 import Tender.Browser (sessionFromPath)
-import Tender.Types (Restaurant, RestaurantId(..), SessionId(..), UserId(..))
+import Tender.Types (Person, Restaurant, RestaurantId(..), SessionId(..), UserId(..))
+import Tender.Types (Status(..)) as Status
 import Tender.View (view)
 import Test.Spec (describe, it)
 import Test.Spec.Assertions (shouldEqual, shouldSatisfy)
@@ -40,13 +41,20 @@ bare :: String -> Restaurant
 bare id = (restaurant id) { url = Nothing, rating = Nothing, photos = [], summary = Nothing }
 
 swiper :: Swiper
-swiper = { user: UserId "u", loc: Just here, radius: 5000.0, maxRadius: 50000.0, upcoming: [], photo: 0, summaryOpen: false, othersLiked: [], liked: [], matches: [], polls: 0, showMatches: false, vibe: [] }
+swiper = { user: UserId "u", loc: Just here, radius: 5000.0, maxRadius: 50000.0, upcoming: [], photo: 0, summaryOpen: false, othersLiked: [], liked: [], matches: [], people: [], showMatches: false, vibe: [] }
 
 here :: { latitude :: Number, longitude :: Number }
 here = { latitude: 1.0, longitude: 2.0 }
 
 lobbyAt :: Lobby
 lobbyAt = { session: SessionId "s", link: "http://example.com/s", copied: false, vibe: { chips: [], locked: false } }
+
+-- | The user and a friend who has finished
+me :: Person
+me = { you: true, status: Status.Swiping, swiped: 3, left: Just 12 }
+
+friend :: Person
+friend = { you: false, status: Status.Done, swiped: 20, left: Just 0 }
 
 -- | A decision saved, with what others liked and no matches
 decided :: String -> Boolean -> Array String -> Message
@@ -71,7 +79,7 @@ main = runSpecAndExitProcess [ consoleReporter ] do
   describe "update" do
     it "fetches the restaurants once started" do
       step (QR lobbyAt) (Started (UserId "u") (Right here))
-        `shouldEqual` Tuple (Active swiper { radius = 0.0, maxRadius = 0.0 } Fetching) 1
+        `shouldEqual` Tuple (Active swiper { radius = 0.0, maxRadius = 0.0 } Fetching) 2
 
     it "shows the first restaurant and keeps the rest" do
       step (Active swiper Fetching) (Loaded { restaurants: [ restaurant "a", restaurant "b" ], othersLiked: [], vibe: [], radius: 5000.0, maxRadius: 50000.0 })
@@ -82,7 +90,7 @@ main = runSpecAndExitProcess [ consoleReporter ] do
         `shouldEqual` Tuple (Active swiper { upcoming = [ restaurant "a", restaurant "b" ], othersLiked = [ RestaurantId "c" ] } (Swiping (restaurant "c"))) 0
 
     it "says there are none when the search finds nothing" do
-      step (Active swiper Fetching) (Loaded { restaurants: [], othersLiked: [], vibe: [], radius: 5000.0, maxRadius: 50000.0 }) `shouldEqual` Tuple (Active swiper { polls = 1 } NoneLeft) 1
+      step (Active swiper Fetching) (Loaded { restaurants: [], othersLiked: [], vibe: [], radius: 5000.0, maxRadius: 50000.0 }) `shouldEqual` Tuple (Active swiper NoneLeft) 0
 
     it "moves to the next restaurant without asking the server" do
       step (Active swiper { upcoming = [ restaurant "b" ] } (Swiping (restaurant "a"))) (decided "a" false [])
@@ -137,7 +145,7 @@ main = runSpecAndExitProcess [ consoleReporter ] do
 
     it "searches from the session's location when the user's couldn't be found" do
       step Loading (Started (UserId "u") (Left "denied"))
-        `shouldEqual` Tuple (Active swiper { loc = Nothing, radius = 0.0, maxRadius = 0.0 } Fetching) 1
+        `shouldEqual` Tuple (Active swiper { loc = Nothing, radius = 0.0, maxRadius = 0.0 } Fetching) 2
 
     it "leaves for a new session from any screen" do
       step (Active swiper (Swiping (restaurant "a"))) NewSession `shouldEqual` Tuple (Active swiper (Swiping (restaurant "a"))) 1
@@ -195,28 +203,27 @@ main = runSpecAndExitProcess [ consoleReporter ] do
       step (Active swiper (Swiping (restaurant "a"))) ToggleMatches
         `shouldEqual` Tuple (Active swiper { showMatches = true } (Swiping (restaurant "a"))) 0
 
-    it "checks for matches while out of cards" do
-      step (Active swiper { polls = 1 } NoneLeft) (PollMatches 1) `shouldEqual` Tuple (Active swiper { polls = 1 } NoneLeft) 1
-      step (Active swiper { polls = 1 } NoneLeft) (MatchesPolled 1 [])
-        `shouldEqual` Tuple (Active swiper { polls = 1 } NoneLeft) 1
+    it "sends a heartbeat from any screen, and keeps the people it hears back" do
+      step (Active swiper (Swiping (restaurant "a"))) Heartbeat `shouldEqual` Tuple (Active swiper (Swiping (restaurant "a"))) 1
+      step (Active swiper NoneLeft) Heartbeat `shouldEqual` Tuple (Active swiper NoneLeft) 1
+      step (Active swiper (Swiping (restaurant "a"))) (HeardBack (Just { people: [ friend ], matches: [] }))
+        `shouldEqual` Tuple (Active swiper { people = [ friend ] } (Swiping (restaurant "a"))) 1
 
-    it "celebrates a match made while out of cards, then checks again after" do
-      step (Active swiper { polls = 1, liked = [ restaurant "a" ] } NoneLeft) (MatchesPolled 1 [ RestaurantId "a" ])
-        `shouldEqual` Tuple (Active swiper { polls = 1, liked = [ restaurant "a" ], matches = [ restaurant "a" ] } (Matched (restaurant "a"))) 1
-      step (Active swiper { polls = 1, liked = [ restaurant "a" ], matches = [ restaurant "a" ] } (Matched (restaurant "a"))) Continue
-        `shouldEqual` Tuple (Active swiper { polls = 2, liked = [ restaurant "a" ], matches = [ restaurant "a" ] } NoneLeft) 1
+    it "keeps going when a heartbeat fails" do
+      step (Active swiper { people = [ friend ] } NoneLeft) (HeardBack Nothing)
+        `shouldEqual` Tuple (Active swiper { people = [ friend ] } NoneLeft) 1
 
-    it "ignores checks from an earlier visit to the out-of-cards screen" do
-      step (Active swiper { polls = 2 } NoneLeft) (PollMatches 1) `shouldEqual` Tuple (Active swiper { polls = 2 } NoneLeft) 0
-      step (Active swiper { polls = 2, liked = [ restaurant "a" ] } NoneLeft) (MatchesPolled 1 [ RestaurantId "a" ])
-        `shouldEqual` Tuple (Active swiper { polls = 2, liked = [ restaurant "a" ] } NoneLeft) 0
+    it "celebrates a match heard about while out of cards" do
+      step (Active swiper { liked = [ restaurant "a" ] } NoneLeft) (HeardBack (Just { people: [], matches: [ RestaurantId "a" ] }))
+        `shouldEqual` Tuple (Active swiper { liked = [ restaurant "a" ], matches = [ restaurant "a" ] } (Matched (restaurant "a"))) 2
 
-    it "stops checking once swiping again" do
-      step (Active swiper { polls = 1 } (Swiping (restaurant "b"))) (PollMatches 1) `shouldEqual` Tuple (Active swiper { polls = 1 } (Swiping (restaurant "b"))) 0
+    it "leaves matches heard about while swiping to the next decision" do
+      step (Active swiper { liked = [ restaurant "a" ] } (Swiping (restaurant "b"))) (HeardBack (Just { people: [], matches: [ RestaurantId "a" ] }))
+        `shouldEqual` Tuple (Active swiper { liked = [ restaurant "a" ] } (Swiping (restaurant "b"))) 1
 
     it "shows when there are no restaurants left" do
       step (Active swiper (Swiping (restaurant "a"))) (decided "a" false [])
-        `shouldEqual` Tuple (Active swiper { polls = 1 } NoneLeft) 1
+        `shouldEqual` Tuple (Active swiper NoneLeft) 0
 
     it "shows errors" do
       step Loading (FailedToLoad "nope") `shouldEqual` Tuple (ServerError "nope") 0
@@ -274,5 +281,10 @@ main = runSpecAndExitProcess [ consoleReporter ] do
       renders (Active swiper { radius = 40000.0 } NoneLeft) "Search further (up to 50 km)"
     it "says when there is nothing left" do
       renders (Active swiper NoneLeft) "everything nearby"
+      renders (Active swiper { people = [ me, friend, { you: false, status: Status.Away, swiped: 0, left: Nothing } ] } NoneLeft) "2 here · 1 done"
+      renders (Active swiper { people = [ me, friend ] } NoneLeft) ">You<"
+      renders (Active swiper { people = [ me, friend ] } NoneLeft) ">Friend 1<"
+      renders (Active swiper { people = [ me, friend ] } NoneLeft) ">12 left<"
+      renders (Active swiper { people = [ me, friend ] } NoneLeft) "width: 20%"
       renders (Active swiper { loc = Nothing } (Swiping (restaurant "a"))) "Showing places near where your group started"
       renders (Active swiper NoneLeft) "Start a new session<"

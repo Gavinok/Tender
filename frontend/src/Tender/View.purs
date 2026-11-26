@@ -14,6 +14,7 @@ import Tender.Vibe (chipLabel)
 import Tender.View.Card (actionBar, restaurantCard)
 import Tender.View.Icon (Icon(..), icon)
 import Tender.View.Layout (page)
+import Tender.View.Presence (presenceStrip)
 import Tender.View.Lobby (lobby)
 import Tender.View.Match (celebration, matchesSheet)
 import Tender.View.States (cardSkeleton, outOfRestaurants, problem, setting)
@@ -46,7 +47,8 @@ view (QR l) = page { matches: Nothing, newSession: Just NewSession } [ lobby l {
 
 view (Active swiper screen) =
   page { matches: Just { count: length swiper.matches, open: ToggleMatches }, newSession: Just NewSession } $
-    (if isNothing swiper.loc then [ locationWarning ] else [])
+    [ presenceStrip swiper.people ]
+      <> (if isNothing swiper.loc then [ locationWarning ] else [])
       <>
         [ case screen of
             Fetching -> cardSkeleton

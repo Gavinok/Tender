@@ -1,6 +1,6 @@
 {-# LANGUAGE DeriveAnyClass #-}
 
-module User (User (..), UserId (..), SessionId (..), newUserId, newSessionId, sessionFromText, userFromText) where
+module User (User (..), UserId (..), SessionId (..), newUserId, newSessionId, sessionFromText, userFromText, userIdText) where
 
 import Data.Aeson (FromJSON, ToJSON)
 import Data.Text (Text)
@@ -13,7 +13,7 @@ import Database.SQLite.Simple.ToField (ToField (toField))
 import GHC.Generics (Generic)
 
 newtype UserId = UserId UUID
-    deriving stock (Eq, Show)
+    deriving stock (Eq, Ord, Show)
     deriving newtype (FromJSON, ToJSON)
 
 newtype SessionId = SessionId UUID
@@ -28,6 +28,9 @@ newSessionId = SessionId <$> nextRandom
 
 sessionFromText :: Text -> Maybe SessionId
 sessionFromText = fmap SessionId . UUID.fromText
+
+userIdText :: UserId -> Text
+userIdText (UserId u) = UUID.toText u
 
 userFromText :: Text -> Maybe UserId
 userFromText = fmap UserId . UUID.fromText

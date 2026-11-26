@@ -8,6 +8,7 @@ package:
     - either
     - fetch
     - flame
+    - foreign
     - maybe
     - prelude
     - strings

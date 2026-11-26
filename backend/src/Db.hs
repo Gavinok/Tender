@@ -1,12 +1,13 @@
 {-# LANGUAGE DeriveAnyClass #-}
 
-module Db (initDb, initSchema, DbPool, openPool, withConn, addUserToDb, joinSession, maxPerSession, pruneOlderThan, sessionLocation, sessionRadius, widenSearch, decidedBy, getVibe, setVibe, recordDecision, isMatch, matchesFor, othersLiked, Decision (..), getUser) where
+module Db (initDb, initSchema, DbPool, openPool, withConn, addUserToDb, joinSession, maxPerSession, pruneOlderThan, sessionLocation, sessionRadius, widenSearch, decidedBy, getVibe, setVibe, recordDecision, isMatch, matchesFor, othersLiked, sessionMembers, Decision (..), getUser) where
 
 import Control.Exception (bracket)
 import Control.Monad (forM_)
 import Data.List (nub)
 import Data.Maybe (listToMaybe, mapMaybe)
 import Data.Pool (Pool, defaultPoolConfig, newPool, setNumStripes, withResource)
+import Data.Set qualified as Set
 import Data.String (fromString)
 import Data.Text qualified as T
 import Database.SQLite.Simple (
@@ -265,6 +266,27 @@ matchesFor conn u =
                 ]
             )
             (U.session u, U.userId u, U.userId u)
+
+{- | Everyone in the session in the order they joined, each with the
+restaurants they have decided on
+-}
+sessionMembers :: Connection -> U.SessionId -> IO [(U.UserId, Set.Set RestaurantId)]
+sessionMembers conn s = do
+    rows <-
+        query
+            conn
+            ( mconcat
+                [ "SELECT users.userId, decisions.restaurantId FROM users "
+                , "LEFT JOIN decisions ON decisions.userId = users.userId "
+                , "WHERE users.session = ? ORDER BY users.joined, users.rowid"
+                ]
+            )
+            (Only s)
+    -- Rows come grouped by user, in joining order
+    pure (foldr add [] rows)
+  where
+    add (u, r) ((u', rs) : rest) | u == u' = (u, maybe rs (`Set.insert` rs) r) : rest
+    add (u, r) acc = (u, maybe Set.empty Set.singleton r) : acc
 
 -- | Whether more than one person in the session has liked the restaurant
 isMatch :: Connection -> U.SessionId -> RestaurantId -> IO Bool

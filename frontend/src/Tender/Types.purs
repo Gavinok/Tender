@@ -2,6 +2,8 @@ module Tender.Types
   ( ErrorMessage
   , Author
   , Loc
+  , Person
+  , Status(..)
   , Photo
   , Restaurant
   , photoUrl
@@ -14,7 +16,8 @@ module Tender.Types
 import Prelude
 
 import Data.Maybe (Maybe(..))
-import Yoga.JSON (class ReadForeign, class WriteForeign)
+import Foreign (ForeignError(..), fail)
+import Yoga.JSON (class ReadForeign, class WriteForeign, readImpl)
 
 newtype UserId = UserId String
 
@@ -75,3 +78,24 @@ photoUrl p = case p.url, p.name of
 
 -- | Location of the current user
 type Loc = { latitude :: Number, longitude :: Number }
+
+-- | What someone in the session is up to, as of their last heartbeat
+data Status = Swiping | Done | Away
+
+derive instance Eq Status
+
+instance Show Status where
+  show = case _ of
+    Swiping -> "Swiping"
+    Done -> "Done"
+    Away -> "Away"
+
+instance ReadForeign Status where
+  readImpl f = readImpl f >>= case _ of
+    "swiping" -> pure Swiping
+    "done" -> pure Done
+    "away" -> pure Away
+    other -> fail (ForeignError ("Unknown status: " <> other))
+
+-- | Someone in the session. `left` is Nothing until their first search is back.
+type Person = { you :: Boolean, status :: Status, swiped :: Int, left :: Maybe Int }
