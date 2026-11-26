@@ -17,7 +17,7 @@ import Tender.View.Layout (page)
 import Tender.View.Presence (presenceStrip)
 import Tender.View.Lobby (lobby)
 import Tender.View.Match (celebration, matchesSheet)
-import Tender.View.States (cardSkeleton, outOfRestaurants, problem, setting)
+import Tender.View.States (cardSkeleton, needLocation, outOfRestaurants, problem, setting)
 
 -- | Metres as whole kilometres, e.g. "10 km"
 km :: Number -> String
@@ -40,6 +40,8 @@ locationWarning =
 -- | `view` updates the app markup whenever the model is updated
 view :: Model -> Html Message
 view (ServerError e) = page { matches: Nothing, newSession: Just NewSession } [ problem e Retry ]
+
+view (NeedLocation { message }) = page { matches: Nothing, newSession: Just NewSession } [ needLocation message RetryLocation ]
 
 view Loading = page { matches: Nothing, newSession: Nothing } [ setting ]
 
