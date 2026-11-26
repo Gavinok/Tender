@@ -21,12 +21,12 @@ import Effect.Class (liftEffect)
 import Data.Tuple (Tuple)
 import Data.Tuple.Nested ((/\))
 import Flame (Update)
-import Tender.Api (ApiError(..), createSession, decide, getMatches, getRestaurants, getVibe, joinSession, setVibe)
+import Tender.Api (ApiError(..), createSession, decide, getRestaurants, getVibe, heartbeat, joinSession, setVibe)
 import Tender.Vibe (Vibe)
 import Tender.Swipe (flyOut)
 import Tender.Swipe as Swipe
 import Tender.Browser (Shared(..), existingSession, geolocation, reload, rememberSession, rememberUser, rememberedUser, shareLink, shareOrCopy, startNewSession, tabHidden, vibrate)
-import Tender.Types (ErrorMessage, Loc, Restaurant, RestaurantId, SessionId, Url, UserId)
+import Tender.Types (ErrorMessage, Loc, Person, Restaurant, RestaurantId, SessionId, Url, UserId)
 
 -- | What we know once the user has joined a session
 type Swiper =
@@ -48,9 +48,8 @@ type Swiper =
   -- | Restaurants this person liked, newest first, to show when one becomes a match
   , liked :: Array Restaurant
   , matches :: Array Restaurant
-  -- | Counts visits to the out-of-cards screen. Each visit polls for matches,
-  -- | and polls from an earlier visit are ignored.
-  , polls :: Int
+  -- | Everyone in the session, as of the last heartbeat
+  , people :: Array Person
   -- | Whether the list of matches is open
   , showMatches :: Boolean
   -- | The session's vibe chips
@@ -117,9 +116,11 @@ data Message
   -- | The decision on this restaurant is saved. Brings the session's matches
   -- | this person is part of, including ones others completed since.
   | Decided { id :: RestaurantId, liked :: Boolean, matches :: Array RestaurantId, othersLiked :: Array RestaurantId }
-  -- | Time to check for new matches while out of cards, on the numbered visit
-  | PollMatches Int
-  | MatchesPolled Int (Array RestaurantId)
+  -- | Time to tell the server the user is still here
+  | Heartbeat
+  -- | Who is in the session and the user's matches, or Nothing if the
+  -- | heartbeat failed
+  | HeardBack (Maybe { people :: Array Person, matches :: Array RestaurantId })
   | FailedToLoad ErrorMessage
   -- | Start again from the session in the url
   | Retry
@@ -145,17 +146,15 @@ orFail = either failed
 -- | Show the next restaurant, or say there are none left
 advance :: Swiper -> Tuple Model (Array (Aff (Maybe Message)))
 advance swiper = case uncons swiper.upcoming of
-  -- Someone else may still make a match, so check for one now and then
-  Nothing ->
-    let
-      next = swiper { polls = swiper.polls + 1 }
-    in
-      Active next NoneLeft /\ [ delay pollEvery $> Just (PollMatches next.polls) ]
+  Nothing -> Active swiper NoneLeft /\ []
   Just { head, tail } -> Active swiper { upcoming = tail, photo = 0, summaryOpen = false } (Swiping head) /\ []
 
--- | How often to check for matches while out of cards
-pollEvery :: Milliseconds
-pollEvery = Milliseconds 5000.0
+-- | How long until the next heartbeat. More often while out of cards, where
+-- | someone is waiting to hear about matches.
+heartbeatEvery :: Screen -> Milliseconds
+heartbeatEvery = case _ of
+  NoneLeft -> Milliseconds 5000.0
+  _ -> Milliseconds 10000.0
 
 -- | Restaurants the user liked that are in the matches and weren't before,
 -- | newest first, with them added to the user's matches
@@ -236,8 +235,12 @@ update model = case model, _ of
       -- Only reached when nobody else in the session has a location either
       noLocation why e = FailedToLoad $ "Could not get your location (" <> why <> "). " <> errorText e
     in
-      Active { user, loc, radius: 0.0, maxRadius: 0.0, upcoming: [], photo: 0, summaryOpen: false, othersLiked: [], liked: [], matches: [], polls: 0, showMatches: false, vibe: [] } Fetching
-        /\ [ Just <<< either (either noLocation (const failed) located) Loaded <$> getRestaurants user loc Nothing ]
+      Active { user, loc, radius: 0.0, maxRadius: 0.0, upcoming: [], photo: 0, summaryOpen: false, othersLiked: [], liked: [], matches: [], people: [], showMatches: false, vibe: [] } Fetching
+        /\
+          [ Just <<< either (either noLocation (const failed) located) Loaded <$> getRestaurants user loc Nothing
+          -- Soon after the search, so the server knows what the user was shown
+          , delay (Milliseconds 2000.0) $> Just Heartbeat
+          ]
   Active swiper Fetching, Loaded found ->
     advance swiper
       { upcoming = likedFirst found.othersLiked found.restaurants
@@ -280,20 +283,28 @@ update model = case model, _ of
 
   Active swiper (Matched _), Continue -> advance swiper
 
-  -- Skipped while the page is hidden, and a failed check just waits for the next
-  Active swiper NoneLeft, PollMatches n | n == swiper.polls -> model /\
+  -- One loop for the whole session, started with it. Skipped while the page
+  -- is hidden, so a phone in a pocket shows as away; a failed heartbeat just
+  -- waits for the next.
+  Active swiper screen, Heartbeat -> model /\
     [ do
         hidden <- liftEffect tabHidden
-        if hidden then delay pollEvery $> Just (PollMatches n)
-        else Just <<< MatchesPolled n <<< either (const []) _.matches <$> getMatches swiper.user
+        if hidden then delay (heartbeatEvery screen) $> Just Heartbeat
+        else Just <<< HeardBack <<< either (const Nothing) Just <$> heartbeat swiper.user
     ]
-  Active swiper NoneLeft, MatchesPolled n ids | n == swiper.polls ->
+  -- Out of cards, new matches are celebrated here; while swiping, each
+  -- decision brings them instead
+  Active swiper screen, HeardBack heard ->
     let
-      { new, swiper: next } = newMatches ids swiper
+      withPeople = maybe swiper (\h -> swiper { people = h.people }) heard
+      { new, swiper: next } = case screen, heard of
+        NoneLeft, Just h -> newMatches h.matches withPeople
+        _, _ -> { new: [], swiper: withPeople }
+      again = delay (heartbeatEvery screen) $> Just Heartbeat
     in
       case head new of
-        Just m -> Active next (Matched m) /\ [ liftEffect vibrate $> Nothing ]
-        Nothing -> Active next NoneLeft /\ [ delay pollEvery $> Just (PollMatches n) ]
+        Just m -> Active next (Matched m) /\ [ liftEffect vibrate $> Nothing, again ]
+        Nothing -> Active next screen /\ [ again ]
 
   Active swiper screen, ToggleMatches ->
     Active swiper { showMatches = not swiper.showMatches } screen /\ []
