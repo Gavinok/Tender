@@ -1,8 +1,9 @@
 module App (server, application, Env (..), Limits, newLimitsWith) where
 
-import Control.Concurrent (forkIO, threadDelay)
+import Control.Concurrent (threadDelay)
+import Control.Concurrent.Async (async, link)
 import Control.Exception (SomeException, try)
-import Control.Monad (forever, unless, void)
+import Control.Monad (forever, unless)
 import Control.Monad.IO.Class (liftIO)
 import Data.Maybe (fromMaybe)
 import Data.Text qualified as T
@@ -211,14 +212,18 @@ server = do
         app (Env pool providers placesKey static limits logAt presence (findPlaces <$> placesKey))
 
 {- | Delete sessions older than a day, every hour, so the database (in
-memory on Cloud Run) doesn't grow for as long as the server runs
+memory on Cloud Run) doesn't grow for as long as the server runs. Should
+the thread die anyway, the server goes down with it rather than carrying
+on without pruning.
 -}
 pruneHourly :: Logger -> DbPool -> Presence -> IO ()
-pruneHourly logAt pool presence = void . forkIO . forever $ do
-    threadDelay (60 * 60 * 1000000)
-    pruneStale (60 * 60) presence
-    result <- try (withConn pool (`pruneOlderThan` (24 * 60 * 60)))
-    either (\e -> logAt Error ("Pruning failed: " ++ show (e :: SomeException))) pure result
+pruneHourly logAt pool presence = link =<< async (forever prune)
+  where
+    prune = do
+        threadDelay (60 * 60 * 1000000)
+        pruneStale (60 * 60) presence
+        result <- try (withConn pool (`pruneOlderThan` (24 * 60 * 60)))
+        either (\e -> logAt Error ("Pruning failed: " ++ show (e :: SomeException))) pure result
 
 {- | A number from the environment, or the default when it isn't set.
 Anything else stops the server, saying which setting is wrong.
