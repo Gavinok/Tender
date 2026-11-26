@@ -66,6 +66,10 @@ Only devices on your tailnet can reach it. =SHARE_PORT= changes the port.
 
 =make watch= in either directory rebuilds on change (needs [[https://github.com/eradman/entr][entr]]).
 
+=make format= formats the backend with fourmolu and the frontend with
+purs-tidy, at the versions CI checks with (fourmolu from =mise.toml=,
+purs-tidy from =frontend/package.json=).
+
 ** Deploying to Google Cloud Run
 The app runs for free within Cloud Run's free tier at low traffic, as a
 single container: the backend serves the built frontend, with the API

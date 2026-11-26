@@ -78,5 +78,6 @@ jobs:
             frontend/.spago
             frontend/output
           key: spago-${{ hashFiles('frontend/spago.lock') }}
+      - run: npx purs-tidy check "src/**/*.purs" "test/**/*.purs"
       - run: npx spago test
       - run: npx spago bundle

@@ -75,8 +75,8 @@ photoBars count showing
   | otherwise =
       HE.div [ HA.class' "absolute inset-x-3 top-2 flex gap-1", HA.createAttribute "aria-label" ("Photo " <> show (showing + 1) <> " of " <> show count) ]
         (map bar (range 0 (count - 1)))
-  where
-  bar i = HE.span [ HA.class' ("h-1 flex-1 rounded-full " <> if i == showing then "bg-white" else "bg-white/40") ] []
+      where
+      bar i = HE.span [ HA.class' ("h-1 flex-1 rounded-full " <> if i == showing then "bg-white" else "bg-white/40") ] []
 
 -- | The restaurant's photo with its details over the bottom of it, and a
 -- | badge when someone else in the group already liked it. Keyed on the
