@@ -52,7 +52,7 @@ bare :: String -> Restaurant
 bare id = (restaurant id) { url = Nothing, rating = Nothing, photos = [], summary = Nothing, reviews = [], confirmed = [] }
 
 swiper :: Swiper
-swiper = { user: UserId "u", loc: Just here, radius: 5000.0, maxRadius: 50000.0, upcoming: [], photo: 0, summaryOpen: false, othersLiked: [], liked: [], matches: [], people: [], heartbeatIn: 10, showMatches: false, warningDismissed: false, vibe: [] }
+swiper = { user: UserId "u", loc: Just here, radius: 5000.0, maxRadius: 50000.0, widening: false, upcoming: [], photo: 0, summaryOpen: false, othersLiked: [], liked: [], matches: [], people: [], heartbeatIn: 10, showMatches: false, warningDismissed: false, vibe: [] }
 
 here :: { latitude :: Number, longitude :: Number }
 here = { latitude: 1.0, longitude: 2.0 }
@@ -271,6 +271,14 @@ main = runSpecAndExitProcess [ consoleReporter ] do
     it "searches further from the out of restaurants screen" do
       step (Active swiper NoneLeft) SearchFurther `shouldEqual` Tuple (Active swiper Fetching) 1
 
+    it "searches further without leaving the card being swiped" do
+      step (Active swiper (Swiping (restaurant "a"))) SearchFurther
+        `shouldEqual` Tuple (Active swiper { widening = true } (Swiping (restaurant "a"))) 1
+
+    it "adds the new ring after the cards still to come" do
+      step (Active swiper { widening = true, upcoming = [ restaurant "b" ] } (Swiping (restaurant "a"))) (Widened { restaurants: [ restaurant "z" ], othersLiked: [], vibe: [], radius: 10000.0, maxRadius: 50000.0 })
+        `shouldEqual` Tuple (Active swiper { radius = 10000.0, upcoming = [ restaurant "b", restaurant "z" ] } (Swiping (restaurant "a"))) 0
+
     it "doesn't search further than the furthest Google goes" do
       step (Active swiper { radius = 50000.0 } NoneLeft) SearchFurther `shouldEqual` Tuple (Active swiper { radius = 50000.0 } NoneLeft) 0
 
@@ -342,6 +350,9 @@ main = runSpecAndExitProcess [ consoleReporter ] do
       html `shouldSatisfy` (not <<< contains (Pattern "get your location"))
     it "shows the rating and price of each match in the list" do
       renders (Active swiper { showMatches = true, matches = [ (restaurant "a") { price = Just "$$" } ] } (Swiping (restaurant "b"))) "Rated 4.0 out of 5\">★ 4.0</span><span>$$"
+    it "says how far the search reached and offers to widen it while swiping" do
+      renders (Active swiper (Swiping (restaurant "a"))) "Within 5 km"
+      renders (Active swiper (Swiping (restaurant "a"))) "Search further (up to 10 km)"
     it "shows vibe chips in the lobby, marking the chosen ones" do
       renders (QR lobbyAt { vibe = { chips: [ "patio" ], choices: [ patio, veggie ], locked: false, place: Nothing } }) "aria-pressed=\"true\">☀️ Patio<"
       renders (QR lobbyAt { vibe = { chips: [ "patio" ], choices: [ patio, veggie ], locked: true, place: Nothing } }) "Locked in"

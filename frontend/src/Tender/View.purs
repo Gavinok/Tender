@@ -8,7 +8,7 @@ import Data.Maybe (Maybe(..), isNothing, maybe)
 import Flame (Html)
 import Flame.Html.Attribute as HA
 import Flame.Html.Element as HE
-import Tender.App (Message(..), Model(..), Screen(..))
+import Tender.App (Message(..), Model(..), Screen(..), Swiper)
 import Tender.Types (Found, photoUrl)
 import Tender.Vibe (Chip)
 import Tender.View.Card (actionBar, restaurantCard)
@@ -23,6 +23,17 @@ import Tender.View.States (cardSkeleton, needLocation, outOfRestaurants, problem
 -- | Metres as whole kilometres, e.g. "10 km"
 km :: Number -> String
 km m = show (round (m / 1000.0)) <> " km"
+
+-- | How far the search reached, with a way to widen it while there are still cards
+reach :: Swiper -> Html Message
+reach swiper =
+  HE.p [ HA.class' "-mt-4 flex items-center gap-2 text-sm text-ink/70" ]
+    ( [ HE.span_ [ HE.text ("Within " <> km swiper.radius) ] ]
+        <>
+          if swiper.radius < swiper.maxRadius && not swiper.widening then
+            [ HE.button [ HA.type' "button", HA.class' "font-bold underline", HA.onClick SearchFurther ] [ HE.text ("Search further (up to " <> km (min swiper.maxRadius (swiper.radius * 2.0)) <> ")") ] ]
+          else []
+    )
 
 -- | The session's vibe above the cards, when it has one
 vibeLine :: forall a. Array Chip -> Html a
@@ -83,6 +94,7 @@ view (Active swiper screen) =
                 -- The card is keyed so each restaurant gets a fresh element. Flame
                 -- needs keyed elements kept apart from unkeyed siblings.
                 [ vibeLine swiper.vibe
+                , reach swiper
                 , HE.div [ HA.class' "flex flex-1 flex-col" ] [ restaurantCard { likedByOthers: elem r.id swiper.othersLiked, vibe: swiper.vibe, photo: swiper.photo, summaryOpen: swiper.summaryOpen, toggleSummary: ToggleSummary } r ]
                 , actionBar { nope: Dislike, like: Like }
                 -- Start loading the next photo so it's there when this card goes

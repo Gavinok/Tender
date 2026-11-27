@@ -41,6 +41,8 @@ type Swiper =
   -- | How far the session searches, in metres, and how far it can go
   , radius :: Number
   , maxRadius :: Number
+  -- | Whether a wider search is already on its way
+  , widening :: Boolean
   -- | Restaurants still to show, fetched once when swiping starts
   , upcoming :: Array Restaurant
   -- | Which of the current card's photos is showing
@@ -138,6 +140,8 @@ data Message
   | KeyPressed String
   -- | Skip past the current match and keep swiping
   | Continue
+  -- | The restaurants in the new ring after searching further while swiping
+  | Widened { restaurants :: Array Restaurant, othersLiked :: Array RestaurantId, vibe :: Array Chip, radius :: Number, maxRadius :: Number }
   | Loaded { restaurants :: Array Restaurant, othersLiked :: Array RestaurantId, vibe :: Array Chip, radius :: Number, maxRadius :: Number }
   | SearchFurther
   | NextPhoto
@@ -303,7 +307,7 @@ update model = case model, _ of
       -- Only reached when nobody else in the session has a location either
       noLocation problem e = LocationFailed session user problem (errorText e)
     in
-      Active { user, loc, radius: 0.0, maxRadius: 0.0, upcoming: [], photo: 0, summaryOpen: false, othersLiked: [], liked: [], matches: [], people: [], heartbeatIn: 10, showMatches: false, warningDismissed: false, vibe: [] } Fetching
+      Active { user, loc, radius: 0.0, maxRadius: 0.0, widening: false, upcoming: [], photo: 0, summaryOpen: false, othersLiked: [], liked: [], matches: [], people: [], heartbeatIn: 10, showMatches: false, warningDismissed: false, vibe: [] } Fetching
         /\
           [ Just <<< either (either noLocation (const failed) located) Loaded <$> getRestaurants user loc Nothing
           -- Soon after the search, so the server knows what the user was shown
@@ -350,6 +354,21 @@ update model = case model, _ of
       , radius = found.radius
       , maxRadius = found.maxRadius
       }
+  Active swiper screen, Widened found ->
+    let
+      grown = swiper
+        { upcoming = swiper.upcoming <> likedFirst found.othersLiked found.restaurants
+        , othersLiked = found.othersLiked <> swiper.othersLiked
+        , radius = found.radius
+        , maxRadius = found.maxRadius
+        , widening = false
+        }
+    in
+      case screen of
+        NoneLeft -> advance grown
+        _ -> Active grown screen /\ []
+  Active swiper (Swiping r), SearchFurther | swiper.radius < swiper.maxRadius && not swiper.widening ->
+    Active swiper { widening = true } (Swiping r) /\ [ Just <<< orFail Widened <$> getRestaurants swiper.user swiper.loc (Just swiper.radius) ]
   Active swiper NoneLeft, SearchFurther | swiper.radius < swiper.maxRadius ->
     Active swiper Fetching /\ [ Just <<< orFail Loaded <$> getRestaurants swiper.user swiper.loc (Just swiper.radius) ]
 
