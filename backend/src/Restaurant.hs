@@ -5,6 +5,7 @@
 -- | stored, since Google's and Yelp's terms only allow keeping ids.
 module Restaurant (Restaurant (..), Source (..), Photo (..), PhotoSource (..), Author (..), Summary (..), Review (..), Loc (..), metres, RestaurantId (..), Price (..), priceFromSymbol, maxMoreCategories) where
 
+import Control.Applicative ((<|>))
 import Data.Aeson (FromJSON (parseJSON), ToJSON (toJSON), object, withObject, (.:), (.=))
 import Data.Text (Text)
 import Database.SQLite.Simple.FromField (FromField)
@@ -122,6 +123,8 @@ data Restaurant = Restaurant
     , rating :: Maybe Double
     , price :: Maybe Price
     -- ^ \$ to $$$$
+    , priceRange :: Maybe Text
+    -- ^ What a meal costs, e.g. "$20–30", shown instead of the price when known
     , category :: Maybe Text
     , moreCategories :: [Text]
     -- ^ Other kinds of place it is, e.g. "Bar" for a pub that's mostly a restaurant
@@ -152,7 +155,7 @@ instance ToJSON Restaurant where
             , "name" .= name r
             , "url" .= url r
             , "rating" .= rating r
-            , "price" .= price r
+            , "price" .= (priceRange r <|> priceSymbol <$> price r)
             , "category" .= category r
             , "moreCategories" .= moreCategories r
             , "address" .= address r
