@@ -2,7 +2,7 @@ module Tender.View.Layout (page, centred) where
 
 import Prelude
 
-import Data.Maybe (Maybe, maybe)
+import Data.Maybe (Maybe, isJust, maybe)
 import Flame (Html)
 import Flame.Html.Attribute as HA
 import Flame.Html.Element as HE
@@ -19,7 +19,7 @@ wordmark =
 matchBadge :: forall a. Int -> a -> Html a
 matchBadge n open =
   HE.button
-    [ HA.class' "flex items-center gap-1 rounded-lg border-2 border-ink bg-white px-3 py-1 font-bold text-brand-600 shadow-pop transition active:translate-y-0.5 active:shadow-none focus:outline-none focus-visible:ring-4 focus-visible:ring-star"
+    [ HA.class' "flex min-h-[2.75rem] items-center gap-1 rounded-lg border-2 border-ink bg-white px-3 font-bold text-brand-600 shadow-pop transition active:translate-y-0.5 active:shadow-none focus:outline-none focus-visible:ring-4 focus-visible:ring-star"
     , HA.onClick open
     , HA.createAttribute "aria-label" (show n <> if n == 1 then " match" else " matches")
     ]
@@ -29,27 +29,31 @@ matchBadge n open =
 newSessionButton :: forall a. a -> Html a
 newSessionButton start =
   HE.button
-    [ HA.class' "flex items-center gap-1 rounded-lg border-2 border-ink bg-white px-3 py-1 font-bold text-ink shadow-pop transition active:translate-y-0.5 active:shadow-none focus:outline-none focus-visible:ring-4 focus-visible:ring-star"
+    [ HA.class' "flex min-h-[2.75rem] items-center gap-1 rounded-lg border-2 border-ink bg-white px-3 font-bold text-ink shadow-pop transition active:translate-y-0.5 active:shadow-none focus:outline-none focus-visible:ring-4 focus-visible:ring-star"
     , HA.onClick start
     , HA.title "Start a new session"
     , HA.createAttribute "aria-label" "Start a new session"
     ]
     [ icon Plus "w-4 h-4", HE.text "New" ]
 
--- | Full height page with the wordmark at the top, a button for a new
--- | session, and the match count once the user is swiping
-page :: forall a. { matches :: Maybe { count :: Int, open :: a }, newSession :: Maybe a } -> Array (Html a) -> Html a
-page { matches, newSession } content =
-  HE.main [ HA.id "main", HA.class' "mx-auto flex min-h-[100dvh] max-w-md flex-col px-4" ]
-    [ HE.header [ HA.class' "flex items-center justify-between py-4" ]
+-- | Full height page with the wordmark at the top, and either a button for
+-- | a new session or, once swiping, who's here and the match count. While
+-- | swiping it's exactly the screen's height, so the card fills what's left.
+page :: forall a. { matches :: Maybe { count :: Int, open :: a }, newSession :: Maybe a, session :: Maybe (Html a) } -> Array (Html a) -> Html a
+page { matches, newSession, session } content =
+  HE.main [ HA.id "main", HA.class' ("mx-auto flex max-w-md flex-col px-4 " <> if fill then "h-[100dvh]" else "min-h-[100dvh]") ]
+    [ HE.header [ HA.class' "flex items-center justify-between gap-2 py-3" ]
         [ wordmark
         , HE.div [ HA.class' "flex items-center gap-2" ]
             ( maybe [] (pure <<< newSessionButton) newSession
+                <> maybe [] pure session
                 <> maybe [] (\{ count, open } -> [ matchBadge count open ]) matches
             )
         ]
-    , HE.div [ HA.class' "flex flex-1 flex-col pb-6" ] content
+    , HE.div [ HA.class' ("flex flex-1 flex-col " <> if fill then "min-h-0 pb-3" else "pb-6") ] content
     ]
+  where
+  fill = isJust session
 
 -- | Content centred in the remaining space
 centred :: forall a. Array (Html a) -> Html a

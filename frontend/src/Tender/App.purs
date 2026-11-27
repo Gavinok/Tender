@@ -35,7 +35,8 @@ import Tender.Types (ErrorMessage, Found, Loc, Person, Place, Restaurant, Restau
 
 -- | What we know once the user has joined a session
 type Swiper =
-  { user :: UserId
+  { session :: SessionId
+  , user :: UserId
   -- | Nothing when the browser couldn't find the user, who then gets the
   -- | session's location
   , loc :: Maybe Loc
@@ -61,6 +62,10 @@ type Swiper =
   , heartbeatIn :: Int
   -- | Whether the list of matches is open
   , showMatches :: Boolean
+  -- | Whether the sheet with who's here, the vibe and the invite is open
+  , showSession :: Boolean
+  -- | Show that the invite link was just copied
+  , copied :: Boolean
   -- | Whether they closed the warning that their location wasn't found
   , warningDismissed :: Boolean
   -- | A match after the first, mentioned over the cards until the next swipe
@@ -180,6 +185,7 @@ data Message
   -- | Leave this session for a new one
   | NewSession
   | ToggleMatches
+  | ToggleSession
   | DismissWarning
   | ShareInvite
   | LinkCopied
@@ -194,6 +200,10 @@ swipeFailed d = case _ of
 -- | Wait a few seconds, then send the unsent swipes again
 retryLater :: Aff (Maybe Message)
 retryLater = delay (Milliseconds 5000.0) $> Just RetryUnsent
+
+-- | Whether a sheet is covering the cards
+sheetOpen :: Swiper -> Boolean
+sheetOpen swiper = swiper.showMatches || swiper.showSession
 
 -- | Show a failed request to the user
 failed :: ApiError -> Message
@@ -323,6 +333,15 @@ update model = case model, _ of
   QR lobby, LinkCopied ->
     QR lobby { copied = true } /\ [ delay (Milliseconds 2000.0) $> Just HideCopied ]
   QR lobby, HideCopied -> QR lobby { copied = false } /\ []
+  -- Inviting more people from the session sheet once swiping
+  Active { session } _, ShareInvite -> model /\
+    [ attempt (liftEffect (shareLink session) >>= shareOrCopy) <#> case _ of
+        Right Copied -> Just LinkCopied
+        _ -> Nothing
+    ]
+  Active swiper screen, LinkCopied ->
+    Active swiper { copied = true } screen /\ [ delay (Milliseconds 2000.0) $> Just HideCopied ]
+  Active swiper screen, HideCopied -> Active swiper { copied = false } screen /\ []
 
   -- Without a location the user can still join, and gets the session's
   -- With a place chosen, nobody needs their location
@@ -341,7 +360,7 @@ update model = case model, _ of
       -- Only reached when nobody else in the session has a location either
       noLocation problem e = LocationFailed session user problem (errorText e)
     in
-      Active { user, loc, radius: 0.0, maxRadius: 0.0, widening: false, upcoming: [], photo: 0, summaryOpen: false, othersLiked: [], liked: [], matches: [], people: [], heartbeatIn: 10, showMatches: false, toast: Nothing, unsent: [], warningDismissed: false, vibe: [] } Fetching
+      Active { session, user, loc, radius: 0.0, maxRadius: 0.0, widening: false, upcoming: [], photo: 0, summaryOpen: false, othersLiked: [], liked: [], matches: [], people: [], heartbeatIn: 10, showMatches: false, showSession: false, copied: false, toast: Nothing, unsent: [], warningDismissed: false, vibe: [] } Fetching
         /\
           [ Just <<< either (either noLocation (const failed) located) Loaded <$> getRestaurants user loc Nothing
           -- Soon after the search, so the server knows what the user was shown
@@ -459,9 +478,11 @@ update model = case model, _ of
   -- Escape closes whichever dialog is on top
   Active _ (Matched _), KeyPressed "Escape" -> update model Continue
   Active swiper _, KeyPressed "Escape" | swiper.showMatches -> update model ToggleMatches
+  Active swiper _, KeyPressed "Escape" | swiper.showSession -> update model ToggleSession
   Active swiper (Swiping _), KeyPressed "Escape" | swiper.summaryOpen -> update model ToggleSummary
-  Active _ (Swiping _), KeyPressed "ArrowRight" -> update model Like
-  Active _ (Swiping _), KeyPressed "ArrowLeft" -> update model Dislike
+  -- Arrow keys swipe, but not from behind an open sheet
+  Active swiper (Swiping _), KeyPressed "ArrowRight" | not (sheetOpen swiper) -> update model Like
+  Active swiper (Swiping _), KeyPressed "ArrowLeft" | not (sheetOpen swiper) -> update model Dislike
 
   Active swiper (Matched _), Continue -> advance swiper
 
@@ -489,6 +510,8 @@ update model = case model, _ of
         Just m -> Active next (Matched m) /\ [ liftEffect vibrate $> Nothing, again ]
         Nothing -> Active next screen /\ [ again ]
 
+  Active swiper screen, ToggleSession ->
+    Active swiper { showSession = not swiper.showSession } screen /\ []
   Active swiper screen, DismissWarning ->
     Active swiper { warningDismissed = true } screen /\ []
 

@@ -52,7 +52,7 @@ bare :: String -> Restaurant
 bare id = (restaurant id) { url = Nothing, rating = Nothing, photos = [], summary = Nothing, reviews = [], confirmed = [] }
 
 swiper :: Swiper
-swiper = { user: UserId "u", loc: Just here, radius: 5000.0, maxRadius: 50000.0, widening: false, upcoming: [], photo: 0, summaryOpen: false, othersLiked: [], liked: [], matches: [], people: [], heartbeatIn: 10, showMatches: false, toast: Nothing, unsent: [], warningDismissed: false, vibe: [] }
+swiper = { session: SessionId "s", user: UserId "u", loc: Just here, radius: 5000.0, maxRadius: 50000.0, widening: false, upcoming: [], photo: 0, summaryOpen: false, othersLiked: [], liked: [], matches: [], people: [], heartbeatIn: 10, showMatches: false, showSession: false, copied: false, toast: Nothing, unsent: [], warningDismissed: false, vibe: [] }
 
 here :: { latitude :: Number, longitude :: Number }
 here = { latitude: 1.0, longitude: 2.0 }
@@ -175,6 +175,24 @@ main = runSpecAndExitProcess [ consoleReporter ] do
         `shouldEqual` Active swiper (Swiping (restaurant "a"))
       fst (step (Active swiper { summaryOpen = true } (Swiping (restaurant "a"))) (KeyPressed "Escape"))
         `shouldEqual` Active swiper (Swiping (restaurant "a"))
+      fst (step (Active swiper { showSession = true } (Swiping (restaurant "a"))) (KeyPressed "Escape"))
+        `shouldEqual` Active swiper (Swiping (restaurant "a"))
+
+    it "opens and closes the session sheet" do
+      step (Active swiper (Swiping (restaurant "a"))) ToggleSession
+        `shouldEqual` Tuple (Active swiper { showSession = true } (Swiping (restaurant "a"))) 0
+      step (Active swiper { showSession = true } (Swiping (restaurant "a"))) ToggleSession
+        `shouldEqual` Tuple (Active swiper (Swiping (restaurant "a"))) 0
+
+    it "doesn't swipe with the arrow keys from behind a sheet" do
+      step (Active swiper { showSession = true } (Swiping (restaurant "a"))) (KeyPressed "ArrowRight")
+        `shouldEqual` Tuple (Active swiper { showSession = true } (Swiping (restaurant "a"))) 0
+      step (Active swiper { showMatches = true } (Swiping (restaurant "a"))) (KeyPressed "ArrowLeft")
+        `shouldEqual` Tuple (Active swiper { showMatches = true } (Swiping (restaurant "a"))) 0
+
+    it "shows the invite link was copied from the session sheet" do
+      step (Active swiper (Swiping (restaurant "a"))) LinkCopied
+        `shouldEqual` Tuple (Active swiper { copied = true } (Swiping (restaurant "a"))) 1
 
     it "stops showing the location warning once dismissed" do
       step (Active swiper { loc = Nothing } (Swiping (restaurant "a"))) DismissWarning
@@ -361,9 +379,20 @@ main = runSpecAndExitProcess [ consoleReporter ] do
     it "opens matches in a modal sheet with a close button" do
       renders (Active swiper { showMatches = true } (Swiping (restaurant "a"))) "role=\"dialog\" aria-modal=\"true\" aria-label=\"0 matches\""
       renders (Active swiper { showMatches = true } (Swiping (restaurant "a"))) "h-11 w-11 place-items-center rounded-lg text-ink/60 hover:bg-ink/5\" aria-label=\"Close\""
-    it "says how far the search reached and offers to widen it while swiping" do
-      renders (Active swiper (Swiping (restaurant "a"))) "Within 5 km"
-      renders (Active swiper (Swiping (restaurant "a"))) "Search further (up to 10 km)"
+    it "says how far the search reached and offers to widen it in the session sheet" do
+      renders (Active swiper { showSession = true } (Swiping (restaurant "a"))) "Within 5 km"
+      renders (Active swiper { showSession = true } (Swiping (restaurant "a"))) "Search further (up to 10 km)"
+      rendersNot (Active swiper (Swiping (restaurant "a"))) "Within 5 km"
+    it "shows who's here in the header, even before anyone else joins" do
+      renders (Active swiper (Swiping (restaurant "a"))) "aria-label=\"Session: 1 here\""
+      renders (Active swiper { people = [ me, { you: false, status: Status.Swiping, swiped: 3, left: Just 12 } ] } (Swiping (restaurant "a"))) ">F1<"
+    it "shows one notice at a time, unsent swipes before the location warning" do
+      renders (Active swiper { loc = Nothing, unsent = [ { id: RestaurantId "a", liked: true } ] } (Swiping (restaurant "b"))) "Your swipes are saved"
+      rendersNot (Active swiper { loc = Nothing, unsent = [ { id: RestaurantId "a", liked: true } ] } (Swiping (restaurant "b"))) "get your location"
+    it "offers the invite and a new session in the session sheet" do
+      renders (Active swiper { showSession = true } (Swiping (restaurant "a"))) ">Share invite<"
+      renders (Active swiper { showSession = true, copied = true } (Swiping (restaurant "a"))) ">Link copied!<"
+      renders (Active swiper { showSession = true } (Swiping (restaurant "a"))) ">Start a new session<"
     it "shows a toast for a later match over the cards" do
       renders (Active swiper { toast = Just (restaurant "a") } (Swiping (restaurant "b"))) "It&#39;s a match: "
 
@@ -384,7 +413,6 @@ main = runSpecAndExitProcess [ consoleReporter ] do
     it "shows the restaurant while swiping" do
       renders (Active swiper (Swiping (restaurant "Pho Real"))) "Pho Real"
       renders (Active swiper (Swiping (restaurant "Pho Real"))) "aria-label=\"0 matches\""
-      renders (Active swiper (Swiping (restaurant "Pho Real"))) "aria-label=\"Start a new session\""
       renders (QR lobbyAt) "aria-label=\"Start a new session\""
     it "marks restaurants someone else liked" do
       renders (Active swiper { othersLiked = [ RestaurantId "a" ] } (Swiping (restaurant "a"))) "Someone&#39;s keen"
@@ -448,11 +476,11 @@ main = runSpecAndExitProcess [ consoleReporter ] do
       renders (QR lobbyAt { picker = Just blankPicker { results = Just [ kelowna ] } }) "Where are you eating?"
       renders (QR lobbyAt { picker = Just blankPicker { results = Just [ kelowna ] } }) "Kelowna, BC, Canada"
       renders (QR lobbyAt { picker = Just blankPicker { results = Just [] } }) "Nothing matched"
-      renders (Active swiper { people = [ me, friend, { you: false, status: Status.Away, swiped: 0, left: Nothing } ] } NoneLeft) "2 here · 1 done"
-      renders (Active swiper { people = [ me, { you: false, status: Status.Away, swiped: 0, left: Nothing } ] } NoneLeft) "border-dashed"
-      renders (Active swiper { people = [ me, friend ] } NoneLeft) ">You<"
-      renders (Active swiper { people = [ me, friend ] } NoneLeft) ">Friend 1<"
-      renders (Active swiper { people = [ me, friend ] } NoneLeft) ">12 left<"
-      renders (Active swiper { people = [ me, friend ] } NoneLeft) "width: 20%"
+      renders (Active swiper { showSession = true, people = [ me, friend, { you: false, status: Status.Away, swiped: 0, left: Nothing } ] } NoneLeft) "2 here · 1 done"
+      renders (Active swiper { showSession = true, people = [ me, { you: false, status: Status.Away, swiped: 0, left: Nothing } ] } NoneLeft) "border-dashed"
+      renders (Active swiper { showSession = true, people = [ me, friend ] } NoneLeft) ">You<"
+      renders (Active swiper { showSession = true, people = [ me, friend ] } NoneLeft) ">Friend 1<"
+      renders (Active swiper { showSession = true, people = [ me, friend ] } NoneLeft) ">12 left<"
+      renders (Active swiper { showSession = true, people = [ me, friend ] } NoneLeft) "width: 20%"
       renders (Active swiper { loc = Nothing } (Swiping (restaurant "a"))) "Showing places near where your group started"
       renders (Active swiper NoneLeft) "Start a new session<"

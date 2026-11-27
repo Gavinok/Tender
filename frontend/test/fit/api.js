@@ -1,6 +1,6 @@
 // A stand-in for the backend, with the most content each screen has to fit:
-// three people, a long name, every kind of chip, and both notices (no
-// location, and a swipe that can't be sent).
+// three people, a long name, every kind of chip, and a notice (a swipe that
+// can't be sent).
 
 /** @typedef {import("@playwright/test").Page} Page */
 /** @typedef {import("@playwright/test").Route} Route */

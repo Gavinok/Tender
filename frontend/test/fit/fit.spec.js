@@ -53,13 +53,14 @@ for (const phone of PHONES) {
       await fitsAndTaps(start);
     });
 
-    test("swiping's Like and Nope fit, with every notice showing", async ({ page }) => {
+    test("swiping's Like and Nope fit, with a notice showing", async ({ page }) => {
       await page.getByRole("button", { name: "Start swiping" }).click();
       const nope = page.getByRole("button", { name: "Nope" });
       await nope.click();
-      // The failed swipe brings up the offline notice beside the location warning
+      // Everyone's avatar is in the header, and the failed swipe brings up
+      // the offline notice, the longest one
+      await page.getByRole("button", { name: "Session: 3 here" }).waitFor();
       await page.getByText("Can't reach the server").waitFor();
-      await page.getByText("Couldn't get your location").waitFor();
       test.info().annotations.push({ type: "overflow", description: `${String(await overflow(page))}px` });
       await fitsAndTaps(nope);
       await fitsAndTaps(page.getByRole("button", { name: "Like" }));

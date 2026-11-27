@@ -132,7 +132,7 @@ restaurantCard { likedByOthers, vibe, photo, summaryOpen, toggleSummary } r =
   HE.article
     [ HA.key (show r.id)
     , HA.createAttribute "data-swipe" ""
-    , HA.class' "relative min-h-[22rem] w-full flex-1 animate-card-in cursor-grab touch-none select-none overflow-hidden rounded-[2rem] border-[3px] border-ink bg-brand-200 shadow-card active:cursor-grabbing"
+    , HA.class' "relative min-h-0 w-full flex-1 animate-card-in cursor-grab touch-none select-none overflow-hidden rounded-[2rem] border-[3px] border-ink bg-brand-200 shadow-card active:cursor-grabbing"
     ]
     [ restaurantPhoto r photo "pointer-events-none absolute inset-0 h-full w-full"
     , photoBars (length r.photos) photo
