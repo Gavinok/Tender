@@ -1,1 +1,3 @@
 .proxyrc.json
+test-results/
+playwright-report/
