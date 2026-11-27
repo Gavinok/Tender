@@ -92,8 +92,8 @@ vibeChips vibe toggle =
     in
       HE.button
         -- 36px to look at, with a 44px tap area that just meets the next row's
-        [ HA.class' $ "relative h-9 shrink-0 whitespace-nowrap rounded-full border-[1.5px] border-ink px-3 text-sm font-bold transition before:absolute before:-inset-y-1 before:inset-x-0 before:content-[''] disabled:opacity-60 "
-            <> if on then "bg-brand-500 text-white" else "bg-white text-ink hover:bg-brand-50"
+        [ HA.class' $ "relative h-9 shrink-0 whitespace-nowrap rounded-lg border-2 border-ink px-3 text-sm font-bold transition before:absolute before:-inset-y-1 before:inset-x-0 before:content-[''] disabled:opacity-60 "
+            <> if on then "bg-brand-500 text-white shadow-pop" else "bg-white text-ink hover:bg-brand-50"
         , HA.onClick (toggle c.id)
         , HA.disabled vibe.locked
         , HA.createAttribute "aria-pressed" (if on then "true" else "false")
