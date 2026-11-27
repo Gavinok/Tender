@@ -8,6 +8,10 @@ watch:
 	find app src -name "*.hs" | entr -r make all
 test:
 	cabal test
+# The tests with coverage, failing under coverage-minimum as CI does
+coverage:
+	cabal test --enable-coverage
+	../scripts/check-coverage
 # fourmolu from mise.toml, the version CI checks with
 format:
 	mise exec -- fourmolu --mode inplace src app test

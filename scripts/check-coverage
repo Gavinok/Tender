@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# Fails when the backend's tests cover less of its library than the minimum.
+# Run from backend/ after `cabal test --enable-coverage`, as CI does.
+#
+#   scripts/check-coverage [MINIMUM_PERCENT]   (default: backend/coverage-minimum)
+set -euo pipefail
+
+root=$(cd "$(dirname "$0")/.." && pwd)
+minimum=${1:-$(<"$root/backend/coverage-minimum")}
+
+tix=$(find dist-newstyle -name 'spec.tix' -path '*hpc*' | head -n 1)
+test -n "$tix" || { echo "No spec.tix; run cabal test --enable-coverage first" >&2; exit 1; }
+
+# The library's compiled module info, which hpc needs to read the counts
+mix=$(find dist-newstyle -type d -path '*vanilla/mix' -not -path '*/spec/*' | head -n 1)
+test -n "$mix" || { echo "No hpc mix directory found" >&2; exit 1; }
+
+report=$(hpc report "$tix" --hpcdir="$mix" --hpcdir=tender-0.1.0.0-inplace --srcdir=. \
+  --exclude=Spec --exclude=Contract --exclude=Endpoints --exclude=Fixtures --exclude=Properties --exclude=Main)
+echo "$report"
+
+percent=$(awk '/expressions used/ { sub("%", "", $1); print $1; exit }' <<<"$report")
+if (( percent < minimum )); then
+  echo "Coverage is ${percent}%, below the required ${minimum}%" >&2
+  exit 1
+fi
+echo "Coverage is ${percent}%, at least the required ${minimum}%"

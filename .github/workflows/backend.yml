@@ -7,12 +7,14 @@ on:
       - "backend/**"
       # The backend's tests decode the frontend's pinned requests
       - "frontend/.golden/**"
+      - "scripts/check-coverage"
       - ".github/workflows/backend.yml"
   pull_request:
     paths:
       - "backend/**"
       # The backend's tests decode the frontend's pinned requests
       - "frontend/.golden/**"
+      - "scripts/check-coverage"
       - ".github/workflows/backend.yml"
 
 # Only the latest push to a branch needs checking
@@ -53,7 +55,9 @@ jobs:
           key: cabal-${{ hashFiles('backend/dist-newstyle/cache/plan.json') }}
           restore-keys: cabal-
       - run: cabal build all -w "${{ steps.setup.outputs.ghc-exe }}"
-      - run: cabal test -w "${{ steps.setup.outputs.ghc-exe }}"
+      - run: cabal test --enable-coverage -w "${{ steps.setup.outputs.ghc-exe }}"
+      # Fails when the tests cover less than backend/coverage-minimum
+      - run: ../scripts/check-coverage
 
   fourmolu:
     runs-on: ubuntu-latest
