@@ -464,8 +464,8 @@ main = runSpecAndExitProcess [ consoleReporter ] do
       rendersNot (Active swiper (Swiping (restaurant "a"))) "Rich broth, fast service."
       rendersNot (Active swiper { detailsOpen = true } (Swiping (bare "a") { summary = Just { text: "x", disclosure: Nothing } })) "What people said"
 
-    it "shows the summary with Google's disclosure in a card's details" do
-      rendersNot (Active swiper (Swiping (restaurant "a"))) "Bright noodle spot"
+    it "previews the summary on tall screens, and shows it with Google's disclosure in a card's details" do
+      renders (Active swiper (Swiping (restaurant "a"))) "tall:block\" tabIndex=\"-1\"><span class=\"line-clamp-2\">Bright noodle spot"
       renders (Active swiper { detailsOpen = true } (Swiping (restaurant "a"))) "Bright noodle spot"
       renders (Active swiper { detailsOpen = true } (Swiping (restaurant "a"))) "Summarized with Gemini"
     it "loads Yelp photos straight from their url" do
