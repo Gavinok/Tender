@@ -48,6 +48,7 @@ parseYelp = withObject "BusinessSearchResponse" $ \o ->
             <*> b .:? "url"
             <*> b .:? "rating"
             <*> ((>>= priceFromSymbol) <$> b .:? "price")
+            <*> pure Nothing
             <*> traverse (withObject "Category" (.: "title")) (listToMaybe categories)
             <*> traverse (withObject "Category" (.: "title")) (take maxMoreCategories (drop 1 categories))
             <*> (maybe [] (pure . urlPhoto) . nonEmpty <$> b .:? "image_url")
