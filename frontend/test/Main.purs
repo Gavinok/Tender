@@ -364,6 +364,8 @@ main = runSpecAndExitProcess [ consoleReporter ] do
       renders (Active swiper (Swiping (restaurant "a"))) "m9 18 6-6-6-6"
       html <- liftEffect $ render (view (Active swiper (Swiping (bare "a"))))
       html `shouldSatisfy` (not <<< contains (Pattern "m9 18 6-6-6-6"))
+    it "says who the group is waiting on when out of cards" do
+      renders (Active swiper { people = [ { you: true, status: Status.Swiping, swiped: 5, left: Just 0 }, { you: false, status: Status.Swiping, swiped: 3, left: Just 12 }, { you: false, status: Status.Done, swiped: 9, left: Just 0 } ] } NoneLeft) "Waiting on Friend 1 (12 left)"
     it "shows vibe chips in the lobby, marking the chosen ones" do
       renders (QR lobbyAt { vibe = { chips: [ "patio" ], choices: [ patio, veggie ], locked: false, place: Nothing } }) "aria-pressed=\"true\">☀️ Patio<"
       renders (QR lobbyAt { vibe = { chips: [ "patio" ], choices: [ patio, veggie ], locked: true, place: Nothing } }) "Locked in"
