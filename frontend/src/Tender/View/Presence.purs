@@ -1,12 +1,13 @@
 -- | Who else is in the session and how far through they are, so the group
 -- | can see each other deciding
-module Tender.View.Presence (presenceStrip) where
+module Tender.View.Presence (presenceStrip, waitingOn) where
 
 import Prelude
 
 import Data.Array (filter, foldl, length, snoc)
 import Data.Int (round, toNumber)
-import Data.Maybe (Maybe(..))
+import Data.Maybe (Maybe(..), maybe)
+import Data.String (joinWith)
 import Flame (Html)
 import Flame.Html.Attribute as HA
 import Flame.Html.Element as HE
@@ -21,6 +22,16 @@ presenceStrip everyone
         [ HE.p [ HA.class' "text-sm font-bold text-ink/70" ] [ HE.text (summary everyone) ]
         , HE.ul [ HA.class' "flex flex-wrap gap-2" ] (map chip (labelled everyone))
         ]
+
+-- | Who is still swiping, e.g. "Waiting on Friend 2 (12 left)", for when the
+-- | user is out of cards. Nothing when nobody is.
+waitingOn :: Array Person -> Maybe String
+waitingOn everyone = case still of
+  [] -> Nothing
+  _ -> Just ("Waiting on " <> joinWith ", " (map describe still))
+  where
+  still = filter (\{ person } -> not person.you && person.status == Swiping) (labelled everyone)
+  describe { label, person } = label <> maybe "" (\n -> " (" <> show n <> " left)") person.left
 
 -- | e.g. "3 here · 1 done"
 summary :: Array Person -> String

@@ -15,7 +15,7 @@ import Tender.View.Card (actionBar, restaurantCard)
 import Tender.View.Icon (Icon(..), icon)
 import Tender.View.Layout (page)
 import Tender.View.PlacePicker (placePicker)
-import Tender.View.Presence (presenceStrip)
+import Tender.View.Presence (presenceStrip, waitingOn)
 import Tender.View.Lobby (lobby)
 import Tender.View.Match (announcement, celebration, matchesSheet, toast)
 import Tender.View.States (cardSkeleton, needLocation, outOfRestaurants, problem, setting)
@@ -84,6 +84,7 @@ view (Active swiper screen) =
             NoneLeft ->
               outOfRestaurants swiper.matches
                 { startOver: NewSession
+                , waiting: waitingOn swiper.people
                 , further:
                     if swiper.radius < swiper.maxRadius then
                       Just { label: "Search further (up to " <> km (min swiper.maxRadius (swiper.radius * 2.0)) <> ")", search: SearchFurther }

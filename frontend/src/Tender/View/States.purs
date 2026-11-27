@@ -77,11 +77,12 @@ details r = case r.rating, r.price of
           <> maybe [] (\p -> [ HE.span_ [ HE.text p ] ]) r.price
       )
 
-outOfRestaurants :: forall a. Array Restaurant -> { startOver :: a, further :: Maybe { label :: String, search :: a } } -> Html a
-outOfRestaurants matches { startOver, further } =
+outOfRestaurants :: forall a. Array Restaurant -> { startOver :: a, waiting :: Maybe String, further :: Maybe { label :: String, search :: a } } -> Html a
+outOfRestaurants matches { startOver, waiting, further } =
   HE.div [ HA.class' "flex flex-1 flex-col items-center justify-center gap-5 text-center" ]
     [ badge Utensils "bg-brand-100 text-brand-500"
     , HE.h1 [ HA.class' "text-3xl font-display" ] [ HE.text "That's everything nearby" ]
+    , maybe (HE.text "") (\w -> HE.p [ HA.class' "font-bold", HA.createAttribute "role" "status" ] [ HE.text w ]) waiting
     , if null matches then
         HE.p [ HA.class' "text-lg text-ink/70" ] [ HE.text "No matches this time. Maybe someone's being picky?" ]
       else
