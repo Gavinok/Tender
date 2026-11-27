@@ -58,7 +58,7 @@ here :: { latitude :: Number, longitude :: Number }
 here = { latitude: 1.0, longitude: 2.0 }
 
 lobbyAt :: Lobby
-lobbyAt = { session: SessionId "s", link: "http://example.com/s", copied: false, vibe: { chips: [], choices: [ patio, veggie ], locked: false, place: Nothing }, picker: Nothing, bigQR: false }
+lobbyAt = { session: SessionId "s", link: "http://example.com/s", copied: false, vibe: { chips: [], choices: [ patio, veggie ], locked: false, place: Nothing }, picker: Nothing, bigQR: false, placeChanged: false }
 
 patio :: Chip
 patio = { id: "patio", label: "☀️ Patio" }
@@ -250,6 +250,19 @@ main = runSpecAndExitProcess [ consoleReporter ] do
       step (QR lobbyAt { picker = Just blankPicker }) (ChoosePlace kelowna)
         `shouldEqual` Tuple (QR lobbyAt { vibe { place = Just kelownaPlace } }) 1
       step (QR lobbyAt { vibe { place = Just kelownaPlace } }) ClearPlace `shouldEqual` Tuple (QR lobbyAt) 1
+      step (QR lobbyAt { vibe { place = Just kelownaPlace }, picker = Just blankPicker }) ClearPlace `shouldEqual` Tuple (QR lobbyAt) 1
+
+    it "points out a place someone else changed, then stops" do
+      step (QR lobbyAt) (VibePolled lobbyAt.vibe { place = Just kelownaPlace })
+        `shouldEqual` Tuple (QR lobbyAt { vibe { place = Just kelownaPlace }, placeChanged = true }) 2
+      step (QR lobbyAt { vibe { place = Just kelownaPlace } }) (VibePolled lobbyAt.vibe { place = Just kelownaPlace })
+        `shouldEqual` Tuple (QR lobbyAt { vibe { place = Just kelownaPlace } }) 1
+      step (QR lobbyAt { placeChanged = true }) PlaceSeen `shouldEqual` Tuple (QR lobbyAt) 0
+
+    it "doesn't point out the place the lobby's first check brings" do
+      let joining = lobbyAt { vibe { choices = [] } }
+      step (QR joining) (VibePolled lobbyAt.vibe { place = Just kelownaPlace })
+        `shouldEqual` Tuple (QR lobbyAt { vibe { place = Just kelownaPlace } }) 1
 
     it "starts from a chosen place when there's no location" do
       step (NeedLocation { session: SessionId "s", user: UserId "u", message: "x", picker: Nothing }) OpenPicker
@@ -503,10 +516,18 @@ main = runSpecAndExitProcess [ consoleReporter ] do
       renders (NeedLocation { session: SessionId "s", user: UserId "u", message: "Location is blocked for this site.", picker: Nothing }) "Location is blocked for this site."
       renders (NeedLocation { session: SessionId "s", user: UserId "u", message: "x", picker: Nothing }) ">Try again<"
       renders (NeedLocation { session: SessionId "s", user: UserId "u", message: "x", picker: Nothing }) "Tell us where you&#39;re eating"
-      renders (QR lobbyAt) "your location"
+      renders (QR lobbyAt) ">you all<"
       renders (QR lobbyAt) ">Somewhere else?<"
       renders (QR lobbyAt { vibe { place = Just kelownaPlace } }) ">Kelowna<"
-      renders (QR lobbyAt { vibe { place = Just kelownaPlace } }) ">Use our locations<"
+      renders (QR lobbyAt { vibe { place = Just kelownaPlace } }) ">Change<"
+      rendersNot (QR lobbyAt { vibe { place = Just kelownaPlace } }) "Use our locations"
+      renders (QR lobbyAt { vibe { place = Just kelownaPlace }, picker = Just blankPicker }) ">Use our locations<"
+      rendersNot (QR lobbyAt { picker = Just blankPicker }) "Use our locations"
+      rendersNot (QR lobbyAt { picker = Just blankPicker }) ">Cancel<"
+      renders (QR lobbyAt { vibe { locked = true } }) "· Locked in"
+      rendersNot (QR lobbyAt { vibe { locked = true } }) "Somewhere else?"
+      renders (QR lobbyAt { vibe { place = Just kelownaPlace }, placeChanged = true }) "Someone set the place to Kelowna"
+      renders (QR lobbyAt { placeChanged = true }) "Someone switched back to your own locations"
       renders (QR lobbyAt { picker = Just blankPicker { results = Just [ kelowna ] } }) "Where are you eating?"
       renders (QR lobbyAt { picker = Just blankPicker { results = Just [ kelowna ] } }) "Kelowna, BC, Canada"
       renders (QR lobbyAt { picker = Just blankPicker { results = Just [] } }) "Nothing matched"

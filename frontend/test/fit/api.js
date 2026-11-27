@@ -55,7 +55,7 @@ const PHOTO = '<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600">
 const answers = [
   ["/api/newsession", "00000000-0000-0000-0000-000000000001"],
   ["/api/addtosession", "00000000-0000-0000-0000-000000000002"],
-  ["/api/vibe", { chips: chosen.map((chip) => chip.id), choices: vibe, locked: false, place: null }],
+  ["/api/vibe", { chips: chosen.map((chip) => chip.id), choices: vibe, locked: false, place: { name: "Downtown Victoria", latitude: 48.43, longitude: -123.37 } }],
   ["/api/presence", {
     matches: [],
     next: AN_HOUR,

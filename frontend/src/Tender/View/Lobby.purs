@@ -2,7 +2,7 @@ module Tender.View.Lobby (lobby) where
 
 import Prelude
 
-import Data.Maybe (Maybe(..))
+import Data.Maybe (Maybe(..), isJust)
 import Flame (Html)
 import Flame.Html.Attribute as HA
 import Flame.Html.Element as HE
@@ -12,7 +12,7 @@ import Tender.Vibe (Vibe)
 import Tender.QR (qrDataUrl)
 import Tender.View.Button (Variant(..), button)
 import Tender.View.Icon (Icon(..))
-import Tender.View.PlacePicker (placePicker, searchingNear)
+import Tender.View.PlacePicker (placeSearch, searchingNear)
 import Tender.Types (Found, Url)
 import Tender.View.Sheet (sheet)
 
@@ -25,13 +25,13 @@ lobby
    . Lobby
   -> { share :: a, start :: a, toggle :: String -> a, bigQR :: a, picker :: { open :: a, clear :: a, query :: String -> a, find :: a, choose :: Found -> a, close :: a } }
   -> Html a
-lobby { link, copied, vibe, picker, bigQR } on =
+lobby { link, copied, vibe, picker, bigQR, placeChanged } on =
   HE.div [ HA.class' "flex min-h-0 flex-1 flex-col items-center gap-3 text-center" ]
     ( [ HE.div_
           [ HE.h1 [ HA.class' "font-display text-3xl leading-tight" ] [ HE.text "Where should we eat?" ]
           , HE.p [ HA.class' "text-ink/70" ] [ HE.text "Scan or share to invite your group" ]
           ]
-      , searchingNear vibe on.picker
+      , searchingNear { place: vibe.place, locked: vibe.locked, changed: placeChanged } on.picker
       , vibeChips vibe on.toggle
       -- Tapping it shows it full screen, easier to scan from across a table.
       -- With a mouse a short window can scroll, so it keeps a scannable size.
@@ -51,7 +51,13 @@ lobby { link, copied, vibe, picker, bigQR } on =
       ]
         <>
           ( case picker of
-              Just p | not vibe.locked -> [ sheet { title: "Where are you eating?", close: on.picker.close } [ placePicker p on.picker ] ]
+              Just p | not vibe.locked ->
+                [ sheet { title: "Where are you eating?", close: on.picker.close }
+                    -- Going back to everyone's locations lives here, so the lobby has one link
+                    ( [ placeSearch p on.picker ]
+                        <> if isJust vibe.place then [ HE.div [ HA.class' "mt-4 border-t-2 border-ink/10 pt-4" ] [ button Secondary (Just MapPin) "Use our locations" on.picker.clear ] ] else []
+                    )
+                ]
               _ -> []
           )
         <> if bigQR then [ bigCode link on.bigQR ] else []
