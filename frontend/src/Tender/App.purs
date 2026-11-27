@@ -190,6 +190,8 @@ data Message
   | NewSession
   | ToggleMatches
   | ToggleSession
+  -- | Stop mentioning this match over the cards, if it's still the one shown
+  | HideToast RestaurantId
   | ToggleQR
   | DismissWarning
   | ShareInvite
@@ -455,7 +457,7 @@ update model = case model, _ of
       case head new of
         Just m
           | null swiper.matches -> Active next (Matched m) /\ [ liftEffect vibrate $> Nothing ]
-          | otherwise -> withToast m (advance next) /\ [ liftEffect vibrate $> Nothing ]
+          | otherwise -> withToast m (advance next) /\ [ liftEffect vibrate $> Nothing, delay (Milliseconds 5000.0) $> Just (HideToast m.id) ]
         Nothing -> advance next
   -- The card has already flown off, so carry on with the next and keep trying
   -- quietly. Only a vanished session is worth stopping for.
@@ -519,6 +521,8 @@ update model = case model, _ of
         Just m -> Active next (Matched m) /\ [ liftEffect vibrate $> Nothing, again ]
         Nothing -> Active next screen /\ [ again ]
 
+  Active swiper screen, HideToast id | map _.id swiper.toast == Just id ->
+    Active swiper { toast = Nothing } screen /\ []
   Active swiper screen, ToggleSession ->
     Active swiper { showSession = not swiper.showSession } screen /\ []
   Active swiper screen, DismissWarning ->

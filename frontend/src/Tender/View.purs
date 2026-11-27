@@ -145,7 +145,7 @@ view (Active swiper screen) =
                 ]
             Matched r -> celebration r Continue
         ]
-      <> foldMap (\r -> [ toast r ToggleMatches ]) swiper.toast
+      <> foldMap (\r -> [ toast r { open: ToggleMatches, dismiss: HideToast r.id } ]) swiper.toast
       <> (if swiper.showMatches then [ matchesSheet swiper.matches ToggleMatches ] else [])
       <> (if swiper.showSession then [ sessionSheet swiper ] else [])
       <> case screen of
