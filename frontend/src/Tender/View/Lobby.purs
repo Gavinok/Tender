@@ -6,7 +6,7 @@ import Data.Maybe (Maybe(..))
 import Flame (Html)
 import Flame.Html.Attribute as HA
 import Flame.Html.Element as HE
-import Data.Array (elem)
+import Data.Array (elem, filter, length)
 import Tender.App (Lobby)
 import Tender.Vibe (Vibe)
 import Tender.QR (qrDataUrl)
@@ -33,9 +33,10 @@ lobby { link, copied, vibe, picker, bigQR } on =
           ]
       , searchingNear vibe on.picker
       , vibeChips vibe on.toggle
-      -- Tapping it shows it full screen, easier to scan from across a table
+      -- Tapping it shows it full screen, easier to scan from across a table.
+      -- With a mouse a short window can scroll, so it keeps a scannable size.
       , HE.button
-          [ HA.class' "flex min-h-0 flex-1 items-center justify-center pb-4"
+          [ HA.class' "flex min-h-0 flex-1 items-center justify-center pb-4 mouse:min-h-[14rem]"
           , HA.onClick on.bigQR
           , HA.createAttribute "aria-label" "Show the QR code bigger"
           ]
@@ -72,27 +73,33 @@ bigCode link close =
     ]
 
 -- | Chips anyone in the session can toggle until someone starts swiping,
--- | in a row that scrolls sideways to the screen's edges, so the cut-off
--- | chip shows there are more. Roomy screens show them all.
+-- | in a row that scrolls sideways to the screen's edges, so the chip the
+-- | edge cuts off shows there are more. It snaps to chips and hides its
+-- | scrollbar. Roomy screens, and mice, which can't swipe, show them all.
 vibeChips :: forall a. Vibe -> (String -> a) -> Html a
 vibeChips vibe toggle =
-  HE.section [ HA.class' "-mx-4 flex w-[calc(100%+2rem)] flex-col gap-1 roomy:mx-0 roomy:w-full", HA.createAttribute "aria-label" "Vibe" ]
-    [ HE.p [ HA.class' "text-sm text-ink/70" ]
+  HE.section [ HA.class' "-mx-4 flex w-[calc(100%+2rem)] flex-col gap-1 roomy:mx-0 roomy:w-full mouse:mx-0 mouse:w-full", HA.createAttribute "aria-label" "Vibe" ]
+    [ HE.p [ HA.class' "px-4 text-sm text-ink/70 roomy:px-0 mouse:px-0" ]
         [ HE.text
             if vibe.locked then "Locked in: someone has started swiping."
+            else if picked > 0 then show picked <> " picked. Everyone sees the same picks."
             else "Pick a vibe. Everyone sees the same picks."
         ]
-    -- Padded so the chips' taller tap areas aren't clipped by the scrolling row
-    , HE.div [ HA.class' "flex gap-2 overflow-x-auto px-4 py-1 roomy:flex-wrap roomy:justify-center roomy:overflow-visible roomy:px-0" ] (map chip vibe.choices)
+    -- Padded so the chips' taller tap areas and shadows aren't clipped by
+    -- the scrolling row
+    , HE.div
+        [ HA.class' "flex snap-x snap-mandatory scroll-px-4 gap-2 overflow-x-auto px-4 pb-2 pt-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden roomy:flex-wrap roomy:justify-center roomy:overflow-visible roomy:px-0 mouse:flex-wrap mouse:justify-center mouse:overflow-visible mouse:px-0" ]
+        (map chip vibe.choices)
     ]
   where
+  picked = length (filter (\c -> elem c.id vibe.chips) vibe.choices)
   chip c =
     let
       on = elem c.id vibe.chips
     in
       HE.button
         -- 36px to look at, with a 44px tap area that just meets the next row's
-        [ HA.class' $ "relative h-9 shrink-0 whitespace-nowrap rounded-lg border-2 border-ink px-3 text-sm font-bold transition before:absolute before:-inset-y-1 before:inset-x-0 before:content-[''] disabled:opacity-60 "
+        [ HA.class' $ "relative h-9 shrink-0 snap-start whitespace-nowrap rounded-lg border-2 border-ink px-3 text-sm font-bold transition before:absolute before:-inset-y-1 before:inset-x-0 before:content-[''] disabled:opacity-60 "
             <> if on then "bg-brand-500 text-white shadow-pop" else "bg-white text-ink hover:bg-brand-50"
         , HA.onClick (toggle c.id)
         , HA.disabled vibe.locked

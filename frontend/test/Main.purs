@@ -436,6 +436,8 @@ main = runSpecAndExitProcess [ consoleReporter ] do
     it "shows a local QR code in the lobby, without the unreadable link under it" do
       renders (QR lobbyAt) "src=\"data:image/svg+xml"
       renders (QR lobbyAt) "Share invite"
+    it "says how many vibe chips are picked, for ones scrolled out of view" do
+      renders (QR lobbyAt { vibe = { chips: [ "patio", "veggie" ], choices: [ patio, veggie ], locked: false, place: Nothing } }) ">2 picked. Everyone sees the same picks.<"
     it "shows every vibe chip in the lobby, with how to use them" do
       renders (QR lobbyAt) ">🥦 Veggie<"
       renders (QR lobbyAt) "Pick a vibe."
