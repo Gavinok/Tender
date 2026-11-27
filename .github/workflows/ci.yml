@@ -32,6 +32,7 @@ jobs:
           filters: |
             backend:
               - "backend/**"
+              - "scripts/check-coverage"
               # The backend's tests decode the frontend's pinned requests
               - "frontend/.golden/**"
               - "scripts/tool-version"
@@ -90,7 +91,9 @@ jobs:
           key: cabal-${{ hashFiles('backend/dist-newstyle/cache/plan.json') }}
           restore-keys: cabal-
       - run: cabal build all -w "${{ steps.setup.outputs.ghc-exe }}"
-      - run: cabal test -w "${{ steps.setup.outputs.ghc-exe }}"
+      - run: cabal test --enable-coverage -w "${{ steps.setup.outputs.ghc-exe }}"
+      # Fails when the tests cover less than backend/coverage-minimum
+      - run: ../scripts/check-coverage
 
   fourmolu:
     needs: changes
