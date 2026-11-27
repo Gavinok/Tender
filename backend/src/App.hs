@@ -463,11 +463,12 @@ app env = do
             Just _ | let RestaurantId t = r in T.length t > maxIdLength -> errorResponse status400 "Invalid restaurant"
             Just u -> do
                 spendWrite env
-                (matches, others) <- liftIO $ db $ \c -> do
+                (matches, others, members) <- liftIO $ db $ \c -> do
                     seenNow (envPresence env) (U.userId u)
                     recordDecision c (Decision (U.userId u) r l)
-                    (,) <$> matchesFor c u <*> othersLiked c u
-                json (DecisionResponse matches others)
+                    (,,) <$> matchesFor c u <*> othersLiked c u <*> sessionMembers c (U.session u)
+                (now, seenBy) <- liftIO $ lookupAll (envPresence env)
+                json (DecisionResponse matches others (people now (U.userId u) members seenBy))
 
     -- Anything else: the frontend's files, and its page for every other path
     -- (such as /<session>) so links work. Only when a frontend is configured.

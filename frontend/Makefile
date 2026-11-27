@@ -45,12 +45,17 @@ unshare:
 	tailscale serve --https=$(SHARE_PORT) off \
 	  || sudo tailscale serve --https=$(SHARE_PORT) off
 
-.PHONY: all build watch serve test lint format clean share unshare dist icons
+.PHONY: all build watch serve test lint format clean share unshare dist fit icons
 
 # Production build into dist/, as the Dockerfile does
 dist:
 	npx spago bundle
 	npx parcel build assets/index.html --dist-dir dist --public-url / --no-source-maps
+
+# Whether each screen fits on a phone (test/fit), against a fresh dist/.
+# Needs the browser once: npx playwright install chromium
+fit: dist
+	npx playwright test
 
 # The app's PNG icons, from the SVGs beside them. Needs rsvg-convert (librsvg).
 ICONS = assets/icons

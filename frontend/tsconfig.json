@@ -19,5 +19,5 @@
     "types": ["node"],
     "skipLibCheck": true
   },
-  "include": ["src/**/*.js", "test/**/*.js", "tailwind.config.js", "eslint.config.mjs"]
+  "include": ["src/**/*.js", "test/**/*.js", "tailwind.config.js", "eslint.config.mjs", "playwright.config.js"]
 }

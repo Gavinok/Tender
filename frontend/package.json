@@ -3,6 +3,7 @@
     "@eslint/js": "^10.0.1",
     "@parcel/packager-raw-url": "^2.10.3",
     "@parcel/transformer-webmanifest": "^2.10.3",
+    "@playwright/test": "1.65.1",
     "@types/node": "^22.20.7",
     "esbuild": "^0.19.12",
     "eslint": "^10.15.0",
@@ -12,6 +13,7 @@
     "parcel": "^2.9.3",
     "postcss": "^8.4.27",
     "purescript": "0.15.15",
+    "purescript-linter": "1.2.1",
     "purs-tidy": "0.11.0",
     "spago": "^1.0.5",
     "tailwindcss": "^3.3.3",
@@ -26,6 +28,6 @@
   "name": "tender",
   "private": true,
   "scripts": {
-    "lint": "eslint . && tsc -p ."
+    "lint": "eslint . && tsc -p . && purescript-linter"
   }
 }

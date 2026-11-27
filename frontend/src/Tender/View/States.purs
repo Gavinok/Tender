@@ -3,6 +3,8 @@ module Tender.View.States (cardSkeleton, setting, outOfRestaurants, problem, nee
 
 import Prelude
 
+import Data.Foldable (foldMap)
+
 import Data.Array (null)
 import Data.Maybe (Maybe(..), fromMaybe, maybe)
 import Flame (Html)
@@ -73,8 +75,8 @@ details r = case r.rating, r.price of
   Nothing, Nothing -> HE.text ""
   _, _ ->
     HE.span [ HA.class' "flex items-center gap-2 text-sm text-ink/70" ]
-      ( maybe [] (\n -> [ HE.span [ HA.createAttribute "aria-label" ("Rated " <> show n <> " out of 5") ] [ HE.text ("★ " <> show n) ] ]) r.rating
-          <> maybe [] (\p -> [ HE.span_ [ HE.text p ] ]) r.price
+      ( foldMap (\n -> [ HE.span [ HA.createAttribute "aria-label" ("Rated " <> show n <> " out of 5") ] [ HE.text ("★ " <> show n) ] ]) r.rating
+          <> foldMap (\p -> [ HE.span_ [ HE.text p ] ]) r.price
       )
 
 outOfRestaurants :: forall a. Array Restaurant -> { startOver :: a, waiting :: Maybe String, further :: Maybe { label :: String, search :: a } } -> Html a
@@ -91,7 +93,7 @@ outOfRestaurants matches { startOver, waiting, further } =
           , matchList matches
           ]
     , HE.div [ HA.class' "flex flex-col items-center gap-3" ]
-        ( maybe [] (\f -> [ button Primary (Just MapPin) f.label f.search ]) further
+        ( foldMap (\f -> [ button Primary (Just MapPin) f.label f.search ]) further
             <> [ button Secondary (Just Plus) "Start a new session" startOver ]
         )
     ]

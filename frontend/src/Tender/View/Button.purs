@@ -7,7 +7,9 @@ module Tender.View.Button
 
 import Prelude
 
-import Data.Maybe (Maybe, maybe)
+import Data.Foldable (foldMap)
+
+import Data.Maybe (Maybe)
 import Flame (Html)
 import Flame.Html.Attribute as HA
 import Flame.Html.Element as HE
@@ -31,7 +33,7 @@ variantClasses = case _ of
   OnColour -> "border-white bg-white/20 text-white hover:bg-white/30"
 
 content :: forall a. Maybe Icon -> String -> Array (Html a)
-content i label = maybe [] (\x -> [ icon x "w-5 h-5" ]) i <> [ HE.text label ]
+content i label = foldMap (\x -> [ icon x "w-5 h-5" ]) i <> [ HE.text label ]
 
 button :: forall a. Variant -> Maybe Icon -> String -> a -> Html a
 button v i label msg =

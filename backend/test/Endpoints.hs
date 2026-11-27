@@ -143,9 +143,9 @@ spec = do
                 a <- unquote . simpleBody <$> get path
                 b <- unquote . simpleBody <$> get path
                 let decide u r l = postJSON "/api/decision" (encode (object ["user" .= u, "restaurant" .= (r :: Text), "liked" .= l]))
-                decide a "p1" True `respondsWith` DecisionResponse [] []
-                decide b "p1" True `respondsWith` DecisionResponse [p1] []
-                decide a "p2" False `respondsWith` DecisionResponse [p1] []
+                decide a "p1" True `respondsWith` DecisionResponse [] [] [Person True Swiping 1 Nothing, Person False Away 0 Nothing]
+                decide b "p1" True `respondsWith` DecisionResponse [p1] [] [Person False Swiping 1 Nothing, Person True Swiping 1 Nothing]
+                decide a "p2" False `respondsWith` DecisionResponse [p1] [] [Person True Swiping 2 Nothing, Person False Swiping 1 Nothing]
 
         describe "where the group is eating" $ do
             let choose s place = postJSON ("/api/place/" <> encodeText s) (encode (object ["place" .= place]))
