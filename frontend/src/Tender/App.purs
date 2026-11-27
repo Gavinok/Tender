@@ -6,13 +6,14 @@ module Tender.App
   , Lobby
   , Picker
   , Swiper
+  , Decision
   , init
   , update
   ) where
 
 import Prelude
 
-import Data.Array (cons, elem, filter, head, length, null, snoc, uncons)
+import Data.Array (cons, drop, elem, filter, head, length, null, snoc, uncons)
 import Data.Bifunctor (lmap)
 import Data.String (trim)
 import Data.Either (Either(..), either)
@@ -64,9 +65,14 @@ type Swiper =
   , warningDismissed :: Boolean
   -- | A match after the first, mentioned over the cards until the next swipe
   , toast :: Maybe Restaurant
+  -- | Swipes the server hasn't heard yet, oldest first, sent again in the background
+  , unsent :: Array Decision
   -- | The session's vibe chips
   , vibe :: Array Chip
   }
+
+-- | A swipe
+type Decision = { id :: RestaurantId, liked :: Boolean }
 
 -- | What a user who has joined a session is looking at
 data Screen
@@ -138,6 +144,11 @@ data Message
   | ClearPlace
   | Like
   | Dislike
+  -- | A swipe couldn't be sent, so it's kept to try again
+  | NotSent Decision
+  | RetryUnsent
+  -- | The oldest unsent swipe got through
+  | Resent
   -- | A key pressed anywhere on the page
   | KeyPressed String
   -- | Skip past the current match and keep swiping
@@ -173,6 +184,16 @@ data Message
   | ShareInvite
   | LinkCopied
   | HideCopied
+
+-- | A swipe that didn't get through is kept, unless the session is gone
+swipeFailed :: Decision -> ApiError -> Message
+swipeFailed d = case _ of
+  Failed _ -> NotSent d
+  other -> failed other
+
+-- | Wait a few seconds, then send the unsent swipes again
+retryLater :: Aff (Maybe Message)
+retryLater = delay (Milliseconds 5000.0) $> Just RetryUnsent
 
 -- | Show a failed request to the user
 failed :: ApiError -> Message
@@ -315,7 +336,7 @@ update model = case model, _ of
       -- Only reached when nobody else in the session has a location either
       noLocation problem e = LocationFailed session user problem (errorText e)
     in
-      Active { user, loc, radius: 0.0, maxRadius: 0.0, widening: false, upcoming: [], photo: 0, summaryOpen: false, othersLiked: [], liked: [], matches: [], people: [], heartbeatIn: 10, showMatches: false, toast: Nothing, warningDismissed: false, vibe: [] } Fetching
+      Active { user, loc, radius: 0.0, maxRadius: 0.0, widening: false, upcoming: [], photo: 0, summaryOpen: false, othersLiked: [], liked: [], matches: [], people: [], heartbeatIn: 10, showMatches: false, toast: Nothing, unsent: [], warningDismissed: false, vibe: [] } Fetching
         /\
           [ Just <<< either (either noLocation (const failed) located) Loaded <$> getRestaurants user loc Nothing
           -- Soon after the search, so the server knows what the user was shown
@@ -383,12 +404,12 @@ update model = case model, _ of
   Active swiper (Swiping r), Like -> model /\
     [ do
         liftEffect $ flyOut Swipe.Right
-        decide swiper.user r.id true <#> Just <<< either failed \d -> Decided { id: r.id, liked: true, matches: d.matches, othersLiked: d.othersLiked }
+        decide swiper.user r.id true <#> Just <<< either (swipeFailed { id: r.id, liked: true }) \d -> Decided { id: r.id, liked: true, matches: d.matches, othersLiked: d.othersLiked }
     ]
   Active swiper (Swiping r), Dislike -> model /\
     [ do
         liftEffect $ flyOut Swipe.Left
-        decide swiper.user r.id false <#> Just <<< either failed \d -> Decided { id: r.id, liked: false, matches: d.matches, othersLiked: d.othersLiked }
+        decide swiper.user r.id false <#> Just <<< either (swipeFailed { id: r.id, liked: false }) \d -> Decided { id: r.id, liked: false, matches: d.matches, othersLiked: d.othersLiked }
     ]
   -- Ignored if it's late and the card has already gone, so a doubled response can't skip one
   Active swiper (Swiping r), Decided d | r.id == d.id ->
@@ -403,6 +424,27 @@ update model = case model, _ of
           | null swiper.matches -> Active next (Matched m) /\ [ liftEffect vibrate $> Nothing ]
           | otherwise -> withToast m (advance next) /\ [ liftEffect vibrate $> Nothing ]
         Nothing -> advance next
+  -- The card has already flown off, so carry on with the next and keep trying
+  -- quietly. Only a vanished session is worth stopping for.
+  Active swiper screen, NotSent d ->
+    let
+      queued = swiper { unsent = snoc swiper.unsent d }
+      retry = if null swiper.unsent then [ retryLater ] else []
+    in
+      case screen of
+        Swiping r | r.id == d.id ->
+          let
+            next = queued { liked = if d.liked then cons r queued.liked else queued.liked }
+            shown /\ effects = advance next
+          in
+            shown /\ (effects <> retry)
+        _ -> Active queued screen /\ retry
+  Active swiper _, RetryUnsent -> case head swiper.unsent of
+    Nothing -> model /\ []
+    Just d -> model /\
+      [ decide swiper.user d.id d.liked >>= either (const retryLater) (const (pure (Just Resent))) ]
+  Active swiper screen, Resent ->
+    Active swiper { unsent = drop 1 swiper.unsent } screen /\ if length swiper.unsent > 1 then [ pure (Just RetryUnsent) ] else []
   Active swiper (Swiping r), NextPhoto ->
     Active swiper { photo = min (swiper.photo + 1) (max 0 (length r.photos - 1)) } (Swiping r) /\ []
   Active swiper (Swiping r), ToggleSummary ->
