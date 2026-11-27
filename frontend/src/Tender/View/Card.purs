@@ -189,7 +189,7 @@ detailsSheet vibe close r =
 -- | Nope and like, sized for thumbs
 actionBar :: forall a. { nope :: a, like :: a } -> Html a
 actionBar { nope, like } =
-  HE.div [ HA.class' "flex items-center justify-center gap-8 py-2" ]
-    [ iconButton { label: "Nope", icon: Close, classes: "h-16 w-16 bg-white text-ink/50 hover:text-ink" } nope
-    , iconButton { label: "Like", icon: Heart, classes: "h-20 w-20 bg-brand-500 text-white [&_svg]:fill-current" } like
+  HE.div [ HA.class' "flex items-center justify-center gap-8" ]
+    [ iconButton { label: "Nope", icon: Close, classes: "h-14 w-14 bg-white text-ink/50 hover:text-ink" } nope
+    , iconButton { label: "Like", icon: Heart, classes: "h-16 w-16 bg-brand-500 text-white [&_svg]:fill-current" } like
     ]
