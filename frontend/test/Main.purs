@@ -375,6 +375,7 @@ main = runSpecAndExitProcess [ consoleReporter ] do
       renders (Active swiper (Swiping (bare "Mystery Diner"))) "Mystery Diner"
     it "celebrates a match" do
       renders (Active swiper (Matched (restaurant "a"))) "a match!"
+      renders (Active swiper (Matched (restaurant "a"))) "motion-reduce:hidden"
     it "offers to try again after an error" do
       renders (ServerError "Could not reach the server") "Try again"
     it "offers to search further, saying how far" do

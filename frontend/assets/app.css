@@ -19,6 +19,7 @@
   }
 }
 
+/* !important so this also beats the inline transition the card fly-out sets in Swipe.js */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

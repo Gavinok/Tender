@@ -15,9 +15,11 @@ import Tender.View.States (matchList)
 
 -- | Pieces of confetti falling across the screen. Positions are spread with
 -- | a fixed step rather than randomly so the view stays a pure function.
+-- | Left out for people who ask for reduced motion: shortening the animation
+-- | would leave the pieces sitting still while they wait for their delay.
 confetti :: forall a. Html a
 confetti =
-  HE.div [ HA.class' "pointer-events-none fixed inset-0 overflow-hidden", HA.createAttribute "aria-hidden" "true" ]
+  HE.div [ HA.class' "pointer-events-none fixed inset-0 overflow-hidden motion-reduce:hidden", HA.createAttribute "aria-hidden" "true" ]
     (map piece (range 0 27))
   where
   piece i =
