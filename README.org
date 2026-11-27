@@ -34,7 +34,7 @@ The backend reads the key from =GOOGLE_PLACES_KEY=, or from
 =pass show GOOGLE_PLACES_KEY= if that isn't set. From the top of the repository run
 
 #+begin_src sh
-  make        # backend on http://localhost:5001, app on http://localhost:1234
+  make        # backend on http://localhost:5001, app on http://localhost:1234 (BACKEND_PORT and FRONTEND_PORT in the root Makefile)
   make phone  # the same, also shared over https on your tailnet (see below)
   make test   # test both halves
 #+end_src
