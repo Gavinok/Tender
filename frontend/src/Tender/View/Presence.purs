@@ -4,9 +4,11 @@ module Tender.View.Presence (presenceStrip, sessionButton, waitingOn) where
 
 import Prelude
 
+import Data.Foldable (foldMap)
+
 import Data.Array (drop, filter, foldl, length, snoc, take)
 import Data.Int (round, toNumber)
-import Data.Maybe (Maybe(..), maybe)
+import Data.Maybe (Maybe(..))
 import Data.String (joinWith)
 import Flame (Html)
 import Flame.Html.Attribute as HA
@@ -68,7 +70,7 @@ waitingOn everyone = case still of
   _ -> Just ("Waiting on " <> joinWith ", " (map describe still))
   where
   still = filter (\{ person } -> not person.you && person.status == Swiping) (labelled everyone)
-  describe { label, person } = label <> maybe "" (\n -> " (" <> show n <> " left)") person.left
+  describe { label, person } = label <> foldMap (\n -> " (" <> show n <> " left)") person.left
 
 -- | e.g. "3 here · 1 done"
 summary :: Array Person -> String

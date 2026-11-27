@@ -13,6 +13,8 @@ module Tender.App
 
 import Prelude
 
+import Data.Monoid (guard)
+
 import Data.Array (cons, drop, elem, filter, head, length, null, snoc, uncons)
 import Data.Bifunctor (lmap)
 import Data.String (trim)
@@ -465,7 +467,7 @@ update model = case model, _ of
   Active swiper screen, NotSent d ->
     let
       queued = swiper { unsent = snoc swiper.unsent d }
-      retry = if null swiper.unsent then [ retryLater ] else []
+      retry = guard (null swiper.unsent) [ retryLater ]
     in
       case screen of
         Swiping r | r.id == d.id ->
