@@ -32,7 +32,6 @@ lobby { link, copied, vibe, picker } { share, start, toggle, picker: on } =
         _ -> searchingNear vibe on
     , HE.figure [ HA.class' "-rotate-2 rounded-3xl border-[3px] border-ink bg-white p-4 shadow-card" ]
         [ HE.img [ HA.src (qrDataUrl link), HA.alt "QR code to join this session", HA.class' "block h-44 w-44" ]
-        , HE.p [ HA.class' "w-44 truncate pt-2 font-mono text-xs text-ink/70", HA.title link ] [ HE.text link ]
         ]
     , vibeChips vibe toggle
     , HE.div [ HA.class' "flex flex-col items-center gap-3" ]
