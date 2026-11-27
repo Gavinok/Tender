@@ -44,10 +44,14 @@ spec = describe "contract with the backend" do
       _ -> fail "expected a session id and a user id"
     decodes "restaurants-response" \(r :: RestaurantsResponse) -> do
       map _.id r.restaurants `shouldEqual` [ RestaurantId "ChIJ1", RestaurantId "osm:node/1" ]
-      map _.price r.restaurants `shouldEqual` [ Just "$$", Nothing ]
-    decodes "decision-response" \(r :: DecisionResponse) -> do
-      r.matches `shouldEqual` [ RestaurantId "ChIJ1" ]
-      map _.status r.people `shouldEqual` [ Status.Swiping, Status.Done, Status.Away ]
+      map _.price r.restaurants `shouldEqual` [ Just "$20–30", Nothing ]
+    decodes "decision-response" \(r :: DecisionResponse) ->
+      r.matches
+        `shouldEqual` [ RestaurantId "ChIJ1" ]
+          map
+          _.status
+          r.people
+        `shouldEqual` [ Status.Swiping, Status.Done, Status.Away ]
     -- The backend samples every status, so a new one fails to decode here
     decodes "presence-response" \(r :: PresenceResponse) -> do
       map _.status r.people `shouldEqual` [ Status.Swiping, Status.Done, Status.Away ]

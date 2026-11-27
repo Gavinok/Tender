@@ -2,7 +2,7 @@
 
 module Main (main) where
 
-import Data.Aeson (Value (Array, Null), eitherDecode, object, toJSON)
+import Data.Aeson (Value (Array, Null, String), eitherDecode, object, toJSON)
 import Data.Aeson.KeyMap qualified as KM
 import Data.Aeson.Types (Parser, Value (Object), parseEither)
 import Data.ByteString.Lazy.Char8 qualified as L8
@@ -62,6 +62,7 @@ searchResponse =
         , "  {\"id\": \"ChIJ1\", \"displayName\": {\"text\": \"Pho Real\", \"languageCode\": \"en\"},"
         , "   \"location\": {\"latitude\": 48.43, \"longitude\": -123.35},"
         , "   \"rating\": 4.5, \"priceLevel\": \"PRICE_LEVEL_MODERATE\","
+        , "   \"priceRange\": {\"startPrice\": {\"currencyCode\": \"CAD\", \"units\": \"20\"}, \"endPrice\": {\"currencyCode\": \"CAD\", \"units\": \"30\"}},"
         , "   \"googleMapsUri\": \"https://maps.google.com/?cid=1\","
         , "   \"shortFormattedAddress\": \"1 Pho St\", \"currentOpeningHours\": {\"openNow\": true},"
         , "   \"primaryTypeDisplayName\": {\"text\": \"Vietnamese Restaurant\", \"languageCode\": \"en\"},"
@@ -114,6 +115,7 @@ main = hspec $ do
                         (Just "https://maps.google.com/?cid=1")
                         (Just 4.5)
                         (Just Moderate)
+                        (Just "$20–30")
                         (Just "Vietnamese Restaurant")
                         ["Bar", "Noodle shop"]
                         [Photo (GooglePhoto "places/ChIJ1/photos/AbC-1_x") (Just (Author "Sam" (Just "https://maps.google.com/maps/contrib/1")))]
@@ -139,6 +141,15 @@ main = hspec $ do
         it "uses the editorial summary when there is no AI one" $ do
             let body = "{\"places\": [{\"id\": \"P\", \"displayName\": {\"text\": \"Cafe\"}, \"location\": {\"latitude\": 1, \"longitude\": 2}, \"editorialSummary\": {\"text\": \"Cosy cafe.\"}}]}"
             map summary <$> parse body `shouldBe` Right [Just (Summary "Cosy cafe." Nothing)]
+        it "reads Google's price range, open-ended when there's no top end" $ do
+            let body = "{\"places\": [{\"id\": \"P\", \"displayName\": {\"text\": \"Steak\"}, \"location\": {\"latitude\": 1, \"longitude\": 2}, \"priceRange\": {\"startPrice\": {\"currencyCode\": \"EUR\", \"units\": \"100\"}}}]}"
+            map priceRange <$> parse body `shouldBe` Right [Just "€100+"]
+        it "sends the price range as the price, or the level without one" $ do
+            let price' r = case toJSON r of
+                    Object o -> KM.lookup "price" o
+                    _ -> Nothing
+            price' pho `shouldBe` Just (String "$20–30")
+            price' pho{priceRange = Nothing} `shouldBe` Just (String "$$")
         it "treats a response with no places as an empty list" $
             parse "{}" `shouldBe` Right []
 
@@ -147,7 +158,7 @@ main = hspec $ do
             parseWith
                 parseYelp
                 "{\"businesses\": [{\"id\": \"y1\", \"name\": \"Jam Cafe\", \"url\": \"https://www.yelp.com/biz/jam\", \"image_url\": \"\", \"rating\": 4.5, \"price\": \"$$\", \"categories\": [{\"alias\": \"breakfast\", \"title\": \"Breakfast & Brunch\"}], \"coordinates\": {\"latitude\": 48.42, \"longitude\": -123.36}}]}"
-                `shouldBe` Right [Restaurant Yelp "y1" "Jam Cafe" (Just "https://www.yelp.com/biz/jam") (Just 4.5) (Just Moderate) (Just "Breakfast & Brunch") [] [] Nothing [] [] (Loc 48.42 (-123.36)) Nothing Nothing Nothing]
+                `shouldBe` Right [Restaurant Yelp "y1" "Jam Cafe" (Just "https://www.yelp.com/biz/jam") (Just 4.5) (Just Moderate) Nothing (Just "Breakfast & Brunch") [] [] Nothing [] [] (Loc 48.42 (-123.36)) Nothing Nothing Nothing]
 
     describe "rankFor" $ do
         let with ts name = (plain Google name (Loc 0 0)){traits = ts}
@@ -176,8 +187,8 @@ main = hspec $ do
                     ]
                 )
                 `shouldBe` Right
-                    [ Restaurant OpenStreetMap "osm:node/1" "Pho Real" (Just "https://www.openstreetmap.org/node/1") Nothing Nothing (Just "Vietnamese") [] [] Nothing [] [] (Loc 48.43 (-123.35)) Nothing Nothing Nothing
-                    , Restaurant OpenStreetMap "osm:way/2" "Fish Store" (Just "https://www.openstreetmap.org/way/2") Nothing Nothing (Just "Fish and chips") [] [] Nothing [] [] (Loc 48.44 (-123.36)) Nothing Nothing Nothing
+                    [ Restaurant OpenStreetMap "osm:node/1" "Pho Real" (Just "https://www.openstreetmap.org/node/1") Nothing Nothing Nothing (Just "Vietnamese") [] [] Nothing [] [] (Loc 48.43 (-123.35)) Nothing Nothing Nothing
+                    , Restaurant OpenStreetMap "osm:way/2" "Fish Store" (Just "https://www.openstreetmap.org/way/2") Nothing Nothing Nothing (Just "Fish and chips") [] [] Nothing [] [] (Loc 48.44 (-123.36)) Nothing Nothing Nothing
                     ]
         it "puts the nearest first" $
             map restaurantId (nearest (Loc 0 0) 2 [plain OpenStreetMap "far" (Loc 0.03 0), plain OpenStreetMap "near" (Loc 0.001 0), plain OpenStreetMap "mid" (Loc 0 0.01)])
