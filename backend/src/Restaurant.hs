@@ -124,6 +124,10 @@ data Restaurant = Restaurant
     , summary :: Maybe Summary
     , reviews :: [Review]
     -- ^ A few, which the summary was drawn from
+    , traits :: [(Text, Bool)]
+    {- ^ What the source says about the chips, by chip id: true when the place
+    has it, false when the source says it doesn't. Left out when it's silent.
+    -}
     , location :: Loc
     }
     deriving stock (Eq, Show)
@@ -141,6 +145,7 @@ instance ToJSON Restaurant where
             , "photos" .= map photoJSON (photos r)
             , "summary" .= fmap (\s -> object ["text" .= summaryText s, "disclosure" .= summaryDisclosure s]) (summary r)
             , "reviews" .= map reviewJSON (reviews r)
+            , "confirmed" .= [chip | (chip, True) <- traits r]
             ]
       where
         sourceName :: Source -> Text

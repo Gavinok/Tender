@@ -72,6 +72,8 @@ type Restaurant =
   , summary :: Maybe { text :: String, disclosure :: Maybe String }
   -- | A few of the reviews the summary was drawn from
   , reviews :: Array Review
+  -- | Ids of the chips Google confirms the place has
+  , confirmed :: Array String
   }
 
 -- | Where to load the photo from. Google photos go through the backend, which

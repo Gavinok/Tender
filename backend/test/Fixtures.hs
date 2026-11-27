@@ -7,7 +7,7 @@ import Restaurant
 
 -- | A restaurant with only the given name and position
 plain :: Source -> Text -> Loc -> Restaurant
-plain src n = Restaurant src (RestaurantId n) n Nothing Nothing Nothing Nothing [] Nothing []
+plain src n = Restaurant src (RestaurantId n) n Nothing Nothing Nothing Nothing [] Nothing [] []
 
 -- | Every field filled in
 pho :: Restaurant
@@ -27,6 +27,7 @@ pho =
         [ Review (Author "Kai" (Just "https://maps.google.com/contrib/2")) (Just 5) "Rich broth, fast service." (Just "a month ago")
         , Review (Author "Rae" Nothing) Nothing "Cash only." Nothing
         ]
+        [("patio", True), ("veggie", False)]
         (Loc 48.43 (-123.35))
 
 -- | A bare restaurant, from a source with nothing to say about it

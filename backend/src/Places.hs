@@ -7,6 +7,7 @@ module Places (
     searchText,
     ringCircles,
     inRing,
+    rankFor,
     photoUri,
     parsePlaces,
     isPhotoName,
@@ -17,16 +18,18 @@ module Places (
 import Control.Applicative ((<|>))
 import Control.Concurrent.Async (mapConcurrently)
 import Data.Aeson (Value, object, withObject, (.!=), (.:), (.:?), (.=))
+import Data.Aeson.Key qualified as Key
 import Data.Aeson.Types qualified as AT
 import Data.ByteString qualified as BS
 import Data.Char (isAlphaNum)
 import Data.Either (partitionEithers)
-import Data.List (nubBy, transpose)
+import Data.List (nubBy, sortOn, transpose)
 import Data.Maybe (catMaybes, listToMaybe)
 import Data.Set qualified as Set
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.Encoding qualified as TE
+import Data.Traversable (for)
 import Fetch (FetchError, fetchJSON)
 import Network.HTTP.Client (redactHeaders)
 import Network.HTTP.Simple (
@@ -40,7 +43,7 @@ import Network.HTTP.Simple (
  )
 import Provider (Provider (..))
 import Restaurant (Author (..), Loc (..), Photo (..), PhotoSource (..), Price (..), Restaurant (..), Review (..), Source (..), Summary (..), metres)
-import Vibe (Chip, Found (..), Place (..), Search (..), priceLevels, queryTerms, wantsOpenNow)
+import Vibe (Chip, Found (..), Place (..), Search (..), allChips, chipFields, chipId, priceLevels, queryTerms, wantsOpenNow)
 
 newtype PlacesKey = PlacesKey BS.ByteString
 
@@ -48,9 +51,22 @@ newtype PlacesKey = PlacesKey BS.ByteString
 googlePlaces :: PlacesKey -> Provider
 googlePlaces key = Provider "Google Places" $ \(Search l chips radius inner) ->
     let search centre r = if null chips then searchNearby key centre r else searchText key centre chips r
-     in if inner <= 0
-            then search l radius
-            else ringSearch l inner radius search
+     in fmap (rankFor chips)
+            <$> if inner <= 0
+                then search l radius
+                else ringSearch l inner radius search
+
+{- | Places Google confirms have every chosen chip first, and ones it says
+lack one last. A place Google is silent about stays in between, since it
+often leaves these out. Otherwise the order is kept.
+-}
+rankFor :: [Chip] -> [Restaurant] -> [Restaurant]
+rankFor chips = sortOn rank
+  where
+    wanted = [chipId c | c <- chips, not (null (chipFields c))]
+    rank r =
+        let said = [v | (c, v) <- traits r, c `elem` wanted]
+         in if any not said then 2 else if length (filter id said) == length wanted then 0 else 1 :: Int
 
 {- | Search the ring between two radii around a location. Searching the
 whole wider circle would return mostly the same popular places as the
@@ -93,7 +109,11 @@ maxPhotos = 5
 field asked for, and rating and priceLevel put this in the Enterprise SKU.
 -}
 fieldMask :: BS.ByteString
-fieldMask = "places.id,places.displayName,places.location,places.rating,places.priceLevel,places.googleMapsUri,places.primaryTypeDisplayName,places.photos,places.generativeSummary,places.editorialSummary,places.reviews"
+fieldMask = "places.id,places.displayName,places.location,places.rating,places.priceLevel,places.googleMapsUri,places.primaryTypeDisplayName,places.photos,places.generativeSummary,places.editorialSummary,places.reviews," <> attributeFields
+
+-- | The attributes the chips can be confirmed by, in the same billing tier as the summaries
+attributeFields :: BS.ByteString
+attributeFields = BS.intercalate "," [TE.encodeUtf8 ("places." <> f) | f <- concatMap chipFields allChips]
 
 {- | The key goes in a header rather than the url so it can't end up in
 logs. http-client only hides Authorization when it shows a request (as
@@ -214,7 +234,15 @@ parsePlaces = withObject "SearchNearbyResponse" $ \o ->
             <*> traverse parsePhoto (take maxPhotos found)
             <*> parseSummary p
             <*> (p .:? "reviews" .!= [] >>= fmap catMaybes . traverse parseReview)
+            <*> parseTraits p
             <*> p .: "location"
+    -- A chip holds when any of its attributes is true, and fails when Google
+    -- gave some and none were
+    parseTraits p = fmap catMaybes . for allChips $ \c -> do
+        said <- traverse (\f -> p .:? Key.fromText f) (chipFields c) :: AT.Parser [Maybe Bool]
+        pure $ case catMaybes said of
+            [] -> Nothing
+            vs -> Just (chipId c, or vs)
     -- Google's AI summary where there is one, otherwise its editorial summary
     parseSummary p = do
         generated <- p .:? "generativeSummary"

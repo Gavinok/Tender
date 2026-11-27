@@ -1,5 +1,5 @@
 -- | Vibe chips a group picks in the lobby, and what each means for the search
-module Vibe (Chip (..), Search (..), Place (..), Found (..), defaultRadius, maxRadius, allChips, chipId, chipLabel, chipFromId, queryTerms, priceLevels, wantsOpenNow) where
+module Vibe (Chip (..), Search (..), Place (..), Found (..), defaultRadius, maxRadius, allChips, chipId, chipLabel, chipFromId, queryTerms, chipFields, priceLevels, wantsOpenNow) where
 
 import Data.Aeson (FromJSON (parseJSON), ToJSON (toJSON), object, withObject, (.:), (.=))
 import Data.List (nub)
@@ -125,6 +125,16 @@ queryTerms chips = T.unwords (mapMaybe term chips <> ["restaurant"])
         Brunch -> Just "brunch"
         LateNight -> Just "late night"
         _ -> Nothing
+
+-- | The attributes Google can confirm for a chip, as it names them in a place
+chipFields :: Chip -> [Text]
+chipFields = \case
+    Patio -> ["outdoorSeating"]
+    BigGroup -> ["goodForGroups"]
+    Veggie -> ["servesVegetarianFood"]
+    Drinks -> ["servesCocktails", "servesBeer", "servesWine"]
+    Brunch -> ["servesBrunch"]
+    _ -> []
 
 -- | Google price levels the chips allow; empty means any
 priceLevels :: [Chip] -> [Text]

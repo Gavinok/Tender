@@ -116,12 +116,16 @@ main = hspec $ do
                         [Photo (GooglePhoto "places/ChIJ1/photos/AbC-1_x") (Just (Author "Sam" (Just "https://maps.google.com/maps/contrib/1")))]
                         (Just (Summary "Bright noodle spot known for its broth." (Just "Summarized with Gemini")))
                         [Review (Author "Kai" (Just "https://maps.google.com/maps/contrib/2")) (Just 5) "Rich broth." (Just "a month ago")]
+                        []
                         (Loc 48.43 (-123.35))
                     , (plain Google "ChIJ2" (Loc 48.44 (-123.36))){name = "New Spot"}
                     ]
         it "leaves out reviews with no words" $ do
             let body = "{\"places\": [{\"id\": \"P\", \"displayName\": {\"text\": \"Cafe\"}, \"location\": {\"latitude\": 1, \"longitude\": 2}, \"reviews\": [{\"rating\": 4, \"authorAttribution\": {\"displayName\": \"A\"}}, {\"rating\": 4, \"text\": {\"text\": \"  \"}, \"authorAttribution\": {\"displayName\": \"B\"}}]}]}"
             map reviews <$> parse body `shouldBe` Right [[]]
+        it "reads what Google confirms about the chips, skipping what it leaves out" $ do
+            let body = "{\"places\": [{\"id\": \"P\", \"displayName\": {\"text\": \"Cafe\"}, \"location\": {\"latitude\": 1, \"longitude\": 2}, \"outdoorSeating\": true, \"goodForGroups\": false, \"servesCocktails\": false, \"servesWine\": true}]}"
+            map traits <$> parse body `shouldBe` Right [[("patio", True), ("big-group", False), ("drinks", True)]]
         it "keeps at most five photos" $ do
             let ph i = "{\"name\": \"places/P/photos/" <> L8.pack (show (i :: Int)) <> "\"}"
                 body = "{\"places\": [{\"id\": \"P\", \"displayName\": {\"text\": \"Busy\"}, \"location\": {\"latitude\": 1, \"longitude\": 2}, \"photos\": [" <> L8.intercalate "," (map ph [1 .. 10]) <> "]}]}"
@@ -137,7 +141,16 @@ main = hspec $ do
             parseWith
                 parseYelp
                 "{\"businesses\": [{\"id\": \"y1\", \"name\": \"Jam Cafe\", \"url\": \"https://www.yelp.com/biz/jam\", \"image_url\": \"\", \"rating\": 4.5, \"price\": \"$$\", \"categories\": [{\"alias\": \"breakfast\", \"title\": \"Breakfast & Brunch\"}], \"coordinates\": {\"latitude\": 48.42, \"longitude\": -123.36}}]}"
-                `shouldBe` Right [Restaurant Yelp "y1" "Jam Cafe" (Just "https://www.yelp.com/biz/jam") (Just 4.5) (Just Moderate) (Just "Breakfast & Brunch") [] Nothing [] (Loc 48.42 (-123.36))]
+                `shouldBe` Right [Restaurant Yelp "y1" "Jam Cafe" (Just "https://www.yelp.com/biz/jam") (Just 4.5) (Just Moderate) (Just "Breakfast & Brunch") [] Nothing [] [] (Loc 48.42 (-123.36))]
+
+    describe "rankFor" $ do
+        let with ts name = (plain Google name (Loc 0 0)){traits = ts}
+            order chips = map name . rankFor chips
+        it "puts places confirmed on every chip first, and ones that fail one last" $
+            order [Patio, Veggie] [with [("patio", False)] "fails", with [] "silent", with [("patio", True), ("veggie", True)] "both", with [("patio", True)] "one"]
+                `shouldBe` ["both", "silent", "one", "fails"]
+        it "ignores chips Google has no attribute for, and keeps the order when none apply" $
+            order [Cheap] [with [("patio", False)] "a", with [] "b"] `shouldBe` ["a", "b"]
 
     describe "parseOverpass" $ do
         it "reads nodes and ways, skipping places without a name" $
@@ -152,8 +165,8 @@ main = hspec $ do
                     ]
                 )
                 `shouldBe` Right
-                    [ Restaurant OpenStreetMap "osm:node/1" "Pho Real" (Just "https://www.openstreetmap.org/node/1") Nothing Nothing (Just "Vietnamese") [] Nothing [] (Loc 48.43 (-123.35))
-                    , Restaurant OpenStreetMap "osm:way/2" "Fish Store" (Just "https://www.openstreetmap.org/way/2") Nothing Nothing (Just "Fish and chips") [] Nothing [] (Loc 48.44 (-123.36))
+                    [ Restaurant OpenStreetMap "osm:node/1" "Pho Real" (Just "https://www.openstreetmap.org/node/1") Nothing Nothing (Just "Vietnamese") [] Nothing [] [] (Loc 48.43 (-123.35))
+                    , Restaurant OpenStreetMap "osm:way/2" "Fish Store" (Just "https://www.openstreetmap.org/way/2") Nothing Nothing (Just "Fish and chips") [] Nothing [] [] (Loc 48.44 (-123.36))
                     ]
         it "puts the nearest first" $
             map restaurantId (nearest (Loc 0 0) 2 [plain OpenStreetMap "far" (Loc 0.03 0), plain OpenStreetMap "near" (Loc 0.001 0), plain OpenStreetMap "mid" (Loc 0 0.01)])

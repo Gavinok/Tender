@@ -40,11 +40,12 @@ restaurant id =
       [ { author: { name: "Kai", uri: Just "https://maps.google.com/contrib/2" }, rating: Just 5.0, text: "Rich broth, fast service.", when: Just "a month ago" }
       , { author: { name: "Rae", uri: Nothing }, rating: Nothing, text: "Cash only.", when: Nothing }
       ]
+  , confirmed: [ "patio" ]
   }
 
 -- | A place with nothing but a name, as Google sometimes returns
 bare :: String -> Restaurant
-bare id = (restaurant id) { url = Nothing, rating = Nothing, photos = [], summary = Nothing, reviews = [] }
+bare id = (restaurant id) { url = Nothing, rating = Nothing, photos = [], summary = Nothing, reviews = [], confirmed = [] }
 
 swiper :: Swiper
 swiper = { user: UserId "u", loc: Just here, radius: 5000.0, maxRadius: 50000.0, upcoming: [], photo: 0, summaryOpen: false, othersLiked: [], liked: [], matches: [], people: [], heartbeatIn: 10, showMatches: false, vibe: [] }
@@ -338,6 +339,13 @@ main = runSpecAndExitProcess [ consoleReporter ] do
       renders (Active swiper { photo = 1 } (Swiping (restaurant "a"))) "src=\"/api/photo?name=places/a/photos/p2\""
       renders (Active swiper { photo = 1 } (Swiping (restaurant "a"))) "Photo: Kai"
       renders (Active swiper { photo = 1 } (Swiping (restaurant "a"))) "aria-label=\"Photo 2 of 2\""
+    it "badges the chosen chips Google confirms, and only those" do
+      let
+        chips = [ { id: "patio", label: "Patio" }, { id: "veggie", label: "Veggie" } ]
+        shown = Active swiper { vibe = chips } (Swiping (restaurant "a"))
+      renders shown "backdrop-blur\">Patio"
+      rendersNot shown "backdrop-blur\">Veggie"
+      rendersNot (Active swiper (Swiping (restaurant "a"))) "backdrop-blur\">Patio"
     it "links each card to a search for its menu" do
       renders (Active swiper (Swiping (restaurant "a"))) "search?q=a%20menu"
     it "shows the reviews under the summary when it's opened, crediting their authors" do
