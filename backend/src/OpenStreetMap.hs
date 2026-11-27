@@ -74,6 +74,7 @@ parseOverpass = withObject "OverpassResponse" $ \o ->
                     , url = Just ("https://www.openstreetmap.org/" <> path)
                     , rating = Nothing
                     , price = Nothing
+                    , priceRange = Nothing
                     , category = cuisine >>= cuisineName
                     , moreCategories = []
                     , photos = []
