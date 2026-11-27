@@ -19,6 +19,7 @@ import Data.UUID qualified as UUID
 import Test.Hspec
 import Test.Hspec.Golden (Golden, defaultGolden)
 
+import Fixtures
 import Presence (Activity (..), Person (..))
 import Restaurant
 import User (SessionId (..), UserId (..))
@@ -65,21 +66,3 @@ spec = do
         Swiping -> Just 12
         Done -> Just 0
         Away -> Nothing
-    pho =
-        Restaurant
-            Google
-            (RestaurantId "ChIJ1")
-            "Pho Real"
-            (Just "https://maps.google.com/?cid=1")
-            (Just 4.5)
-            (Just Moderate)
-            (Just "Vietnamese Restaurant")
-            [ Photo (GooglePhoto "places/ChIJ1/photos/p1") (Just (Author "Sam" (Just "https://maps.google.com/contrib/1")))
-            , Photo (PhotoUrl "https://example.com/pho.jpg") Nothing
-            ]
-            (Just (Summary "Big bowls of pho." (Just "Summarized with Gemini")))
-            [ Review (Author "Kai" (Just "https://maps.google.com/contrib/2")) (Just 5) "Rich broth, fast service." (Just "a month ago")
-            , Review (Author "Rae" Nothing) Nothing "Cash only." Nothing
-            ]
-            (Loc 48.43 (-123.35))
-    fishStore = Restaurant OpenStreetMap (RestaurantId "osm:node/1") "Fish Store" Nothing Nothing Nothing Nothing [] Nothing [] (Loc 48.44 (-123.36))

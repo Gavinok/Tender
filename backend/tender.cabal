@@ -48,7 +48,7 @@ test-suite spec
     type:             exitcode-stdio-1.0
     hs-source-dirs:   test
     main-is:          Spec.hs
-    other-modules:    Contract, Endpoints, Properties
+    other-modules:    Contract, Endpoints, Fixtures, Properties
     build-depends:    tender
                     , uuid
                     , QuickCheck

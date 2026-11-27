@@ -21,6 +21,7 @@ import Data.Set qualified as Set
 import Db hiding (restaurantId)
 import Endpoints qualified
 import Fetch (FetchError (..))
+import Fixtures
 import OpenStreetMap (nearest, parseOverpass)
 import Places
 import Properties qualified
@@ -92,10 +93,6 @@ foundResponse =
         , "]}"
         ]
 
--- | A restaurant with only the given name and position
-plain :: Source -> Text -> Loc -> Restaurant
-plain src n = Restaurant src (RestaurantId n) n Nothing Nothing Nothing Nothing [] Nothing []
-
 provider :: Text -> Either FetchError [Restaurant] -> Provider
 provider n result = Provider n (const (pure result))
 
@@ -120,7 +117,7 @@ main = hspec $ do
                         (Just (Summary "Bright noodle spot known for its broth." (Just "Summarized with Gemini")))
                         [Review (Author "Kai" (Just "https://maps.google.com/maps/contrib/2")) (Just 5) "Rich broth." (Just "a month ago")]
                         (Loc 48.43 (-123.35))
-                    , Restaurant Google "ChIJ2" "New Spot" Nothing Nothing Nothing Nothing [] Nothing [] (Loc 48.44 (-123.36))
+                    , (plain Google "ChIJ2" (Loc 48.44 (-123.36))){name = "New Spot"}
                     ]
         it "leaves out reviews with no words" $ do
             let body = "{\"places\": [{\"id\": \"P\", \"displayName\": {\"text\": \"Cafe\"}, \"location\": {\"latitude\": 1, \"longitude\": 2}, \"reviews\": [{\"rating\": 4, \"authorAttribution\": {\"displayName\": \"A\"}}, {\"rating\": 4, \"text\": {\"text\": \"  \"}, \"authorAttribution\": {\"displayName\": \"B\"}}]}]}"
@@ -257,7 +254,7 @@ main = hspec $ do
     -- Its full shape is pinned with the other responses, in Contract
     describe "Restaurant JSON" $ do
         it "sends null for missing details" $
-            case toJSON (Restaurant Google "ChIJ2" "New Spot" Nothing Nothing Nothing Nothing [] Nothing [] (Loc 1 2)) of
+            case toJSON ((plain Google "ChIJ2" (Loc 1 2)){name = "New Spot"}) of
                 Object o -> (KM.lookup "photos" o, KM.lookup "rating" o) `shouldBe` (Just (Array mempty), Just Null)
                 v -> expectationFailure ("not an object: " ++ show v)
 

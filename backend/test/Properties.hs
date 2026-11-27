@@ -12,6 +12,7 @@ import Test.QuickCheck
 
 import Data.Set qualified as Set
 import Data.UUID qualified as UUID
+import Fixtures
 import Limits (Limit (..), Usage, spend)
 import Places (inRing, isPhotoName)
 import Presence (Activity (..), Person (..), Seen (..), activity, awayAfter, cardsLeft, dealt, nextHeartbeat, nextHeartbeatFor, seen)
@@ -103,7 +104,7 @@ spec = do
     placeAt i d a =
         let Loc lat lon = centre
             l = Loc (lat + d * cos a / 111320) (lon + d * sin a / (111320 * cos (lat * pi / 180)))
-         in Restaurant Google (RestaurantId i) i Nothing Nothing Nothing Nothing [] Nothing [] l
+         in plain Google i l
     safeChars = ['a' .. 'z'] <> ['A' .. 'Z'] <> ['0' .. '9'] <> "-_"
     safeSegment = T.pack <$> listOf1 (elements safeChars)
     unsafeSegment = do
