@@ -94,8 +94,6 @@ type Lobby =
   , vibe :: Vibe
   -- | Open while someone is choosing where the group is eating
   , picker :: Maybe Picker
-  -- | Whether the sheet for the vibe and where they're eating is open
-  , setup :: Boolean
   -- | Whether the QR code is shown full screen, for scanning across a table
   , bigQR :: Boolean
   }
@@ -190,7 +188,6 @@ data Message
   | NewSession
   | ToggleMatches
   | ToggleSession
-  | ToggleSetup
   | ToggleQR
   | DismissWarning
   | ShareInvite
@@ -320,7 +317,7 @@ update model = case model, _ of
             JoinSession s <$> shareLink s
     ]
   _, JoinSession session link ->
-    QR { session, link, copied: false, vibe: { chips: [], choices: [], locked: false, place: Nothing }, picker: Nothing, setup: false, bigQR: false } /\ [ pollVibe session ]
+    QR { session, link, copied: false, vibe: { chips: [], choices: [], locked: false, place: Nothing }, picker: Nothing, bigQR: false } /\ [ pollVibe session ]
   -- Keeps checking while in the lobby so everyone sees the same chips; stops once swiping
   QR lobby, VibePolled v -> QR lobby { vibe = v } /\ [ delay (Milliseconds 3000.0) $> Just PollVibe ]
   QR { session }, PollVibe -> model /\ [ pollVibe session ]
@@ -339,12 +336,10 @@ update model = case model, _ of
   QR lobby, LinkCopied ->
     QR lobby { copied = true } /\ [ delay (Milliseconds 2000.0) $> Just HideCopied ]
   QR lobby, HideCopied -> QR lobby { copied = false } /\ []
-  QR lobby, ToggleSetup -> QR lobby { setup = not lobby.setup, picker = Nothing } /\ []
   QR lobby, ToggleQR -> QR lobby { bigQR = not lobby.bigQR } /\ []
-  -- Escape closes whatever is on top: the big QR code, the place lookup, then the sheet
+  -- Escape closes whatever is on top: the big QR code, then the place lookup
   QR lobby, KeyPressed "Escape" | lobby.bigQR -> update model ToggleQR
   QR lobby, KeyPressed "Escape" | isJust lobby.picker -> update model ClosePicker
-  QR lobby, KeyPressed "Escape" | lobby.setup -> update model ToggleSetup
   -- Inviting more people from the session sheet once swiping
   Active { session } _, ShareInvite -> model /\
     [ attempt (liftEffect (shareLink session) >>= shareOrCopy) <#> case _ of
