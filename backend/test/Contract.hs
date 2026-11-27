@@ -78,5 +78,8 @@ spec = do
             , Photo (PhotoUrl "https://example.com/pho.jpg") Nothing
             ]
             (Just (Summary "Big bowls of pho." (Just "Summarized with Gemini")))
+            [ Review (Author "Kai" (Just "https://maps.google.com/contrib/2")) (Just 5) "Rich broth, fast service." (Just "a month ago")
+            , Review (Author "Rae" Nothing) Nothing "Cash only." Nothing
+            ]
             (Loc 48.43 (-123.35))
-    fishStore = Restaurant OpenStreetMap (RestaurantId "osm:node/1") "Fish Store" Nothing Nothing Nothing Nothing [] Nothing (Loc 48.44 (-123.36))
+    fishStore = Restaurant OpenStreetMap (RestaurantId "osm:node/1") "Fish Store" Nothing Nothing Nothing Nothing [] Nothing [] (Loc 48.44 (-123.36))

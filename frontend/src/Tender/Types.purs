@@ -1,6 +1,7 @@
 module Tender.Types
   ( ErrorMessage
   , Author
+  , Review
   , Loc
   , Place
   , Found
@@ -45,11 +46,14 @@ type ErrorMessage = String
 
 type Url = String
 
--- | Who took a photo. Google requires showing this with the photo.
+-- | Who took a photo or wrote a review. Google requires showing this with it.
 type Author = { name :: String, uri :: Maybe Url }
 
 -- | A Google photo's resource name, or the url of a public image
 type Photo = { name :: Maybe String, url :: Maybe Url, author :: Maybe Author }
+
+-- | What a visitor wrote, as Google words its age ("a month ago")
+type Review = { author :: Author, rating :: Maybe Number, text :: String, when :: Maybe String }
 
 -- | From Google Places, Yelp or OpenStreetMap, as given by `source`. Kept
 -- | only for the session, as Google's and Yelp's terms require.
@@ -66,6 +70,8 @@ type Restaurant =
   , photos :: Array Photo
   -- | A few sentences about the place, with Google's disclosure for AI summaries
   , summary :: Maybe { text :: String, disclosure :: Maybe String }
+  -- | A few of the reviews the summary was drawn from
+  , reviews :: Array Review
   }
 
 -- | Where to load the photo from. Google photos go through the backend, which

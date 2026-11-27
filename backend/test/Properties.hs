@@ -103,7 +103,7 @@ spec = do
     placeAt i d a =
         let Loc lat lon = centre
             l = Loc (lat + d * cos a / 111320) (lon + d * sin a / (111320 * cos (lat * pi / 180)))
-         in Restaurant Google (RestaurantId i) i Nothing Nothing Nothing Nothing [] Nothing l
+         in Restaurant Google (RestaurantId i) i Nothing Nothing Nothing Nothing [] Nothing [] l
     safeChars = ['a' .. 'z'] <> ['A' .. 'Z'] <> ['0' .. '9'] <> "-_"
     safeSegment = T.pack <$> listOf1 (elements safeChars)
     unsafeSegment = do

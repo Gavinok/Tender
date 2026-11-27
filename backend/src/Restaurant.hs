@@ -3,7 +3,7 @@
 -- | Restaurants as sent to the frontend. They come fresh from a source
 -- | (Google Places, Yelp or OpenStreetMap) for each search and are not
 -- | stored, since Google's and Yelp's terms only allow keeping ids.
-module Restaurant (Restaurant (..), Source (..), Photo (..), PhotoSource (..), Author (..), Summary (..), Loc (..), metres, RestaurantId (..), Price (..), priceFromSymbol) where
+module Restaurant (Restaurant (..), Source (..), Photo (..), PhotoSource (..), Author (..), Summary (..), Review (..), Loc (..), metres, RestaurantId (..), Price (..), priceFromSymbol) where
 
 import Data.Aeson (FromJSON (parseJSON), ToJSON (toJSON), object, withObject, (.:), (.=))
 import Data.Text (Text)
@@ -99,6 +99,16 @@ data Summary = Summary
     }
     deriving stock (Eq, Show)
 
+-- | What a visitor wrote about the place
+data Review = Review
+    { reviewAuthor :: Author
+    , reviewRating :: Maybe Double
+    , reviewText :: Text
+    , reviewWhen :: Maybe Text
+    -- ^ As Google words it, e.g. "a month ago"
+    }
+    deriving stock (Eq, Show)
+
 data Restaurant = Restaurant
     { source :: Source
     , restaurantId :: RestaurantId
@@ -112,6 +122,8 @@ data Restaurant = Restaurant
     , photos :: [Photo]
     -- ^ The first is shown on the card first
     , summary :: Maybe Summary
+    , reviews :: [Review]
+    -- ^ A few, which the summary was drawn from
     , location :: Loc
     }
     deriving stock (Eq, Show)
@@ -128,6 +140,7 @@ instance ToJSON Restaurant where
             , "category" .= category r
             , "photos" .= map photoJSON (photos r)
             , "summary" .= fmap (\s -> object ["text" .= summaryText s, "disclosure" .= summaryDisclosure s]) (summary r)
+            , "reviews" .= map reviewJSON (reviews r)
             ]
       where
         sourceName :: Source -> Text
@@ -140,4 +153,11 @@ instance ToJSON Restaurant where
                 ("author" .= fmap authorJSON (photoAuthor p)) : case photoSource p of
                     GooglePhoto n -> ["name" .= n]
                     PhotoUrl u -> ["url" .= u]
+        reviewJSON v =
+            object
+                [ "author" .= authorJSON (reviewAuthor v)
+                , "rating" .= reviewRating v
+                , "text" .= reviewText v
+                , "when" .= reviewWhen v
+                ]
         authorJSON a = object ["name" .= authorName a, "uri" .= authorUri a]

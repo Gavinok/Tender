@@ -8,7 +8,7 @@ import Data.Maybe (Maybe(..), maybe)
 import Flame (Html)
 import Flame.Html.Attribute as HA
 import Flame.Html.Element as HE
-import Tender.Types (Restaurant)
+import Tender.Types (Restaurant, Review)
 import Tender.View.Button (iconButton)
 import Tender.View.Icon (Icon(..), icon)
 import Tender.View.Photo (mapsLink, menuLink, photoCredit, restaurantPhoto)
@@ -50,8 +50,8 @@ stamp text classes opacity =
 
 -- | The whole summary over the lower part of the card. Dragging inside it
 -- | doesn't swipe the card (see Swipe.js).
-summaryBox :: forall a. { text :: String, disclosure :: Maybe String } -> a -> Html a
-summaryBox s close =
+summaryBox :: forall a. { text :: String, disclosure :: Maybe String } -> Array Review -> a -> Html a
+summaryBox s reviews close =
   HE.section
     [ HA.createAttribute "data-no-swipe" ""
     , HA.class' "absolute inset-x-0 bottom-0 flex max-h-[70%] animate-card-in flex-col gap-3 overflow-y-auto rounded-t-2xl border-t-[3px] border-ink bg-surface p-5 text-left text-ink touch-pan-y"
@@ -65,7 +65,30 @@ summaryBox s close =
     , case s.disclosure of
         Just d -> HE.p [ HA.class' "text-xs italic text-ink/50" ] [ HE.text d ]
         Nothing -> HE.text ""
+    , reviewList reviews
     ]
+
+-- | What people wrote, with who wrote it as Google requires
+reviewList :: forall a. Array Review -> Html a
+reviewList [] = HE.text ""
+reviewList reviews =
+  HE.div [ HA.class' "flex flex-col gap-3 border-t-2 border-ink/10 pt-3" ]
+    ( [ HE.h4 [ HA.class' "font-display text-lg" ] [ HE.text "What people said" ] ]
+        <> map review reviews
+    )
+  where
+  review r =
+    HE.figure [ HA.class' "flex flex-col gap-1" ]
+      [ HE.blockquote [ HA.class' "text-sm leading-relaxed" ] [ HE.text r.text ]
+      , HE.p [ HA.class' "text-xs text-ink/60" ]
+          ( [ case r.author.uri of
+                Just uri -> HE.a [ HA.href uri, HA.target "_blank", HA.rel "noopener", HA.class' "font-bold underline" ] [ HE.text r.author.name ]
+                Nothing -> HE.span [ HA.class' "font-bold" ] [ HE.text r.author.name ]
+            ]
+              <> maybe [] (\n -> [ HE.text (" · " <> show n <> " out of 5") ]) r.rating
+              <> maybe [] (\w -> [ HE.text (" · " <> w) ]) r.when
+          )
+      ]
 
 -- | A bar per photo across the top of the card, the one showing filled in.
 -- | Tapping the left or right of the card moves between them (see Swipe.js).
@@ -117,7 +140,7 @@ restaurantCard { likedByOthers, photo, summaryOpen, toggleSummary } r =
         , photoCredit r photo "text-white/70"
         ]
     , case r.summary of
-        Just s | summaryOpen -> summaryBox s toggleSummary
+        Just s | summaryOpen -> summaryBox s r.reviews toggleSummary
         _ -> HE.text ""
     ]
 

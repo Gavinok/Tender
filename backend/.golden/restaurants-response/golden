@@ -24,6 +24,26 @@
             ],
             "price": "$$",
             "rating": 4.5,
+            "reviews": [
+                {
+                    "author": {
+                        "name": "Kai",
+                        "uri": "https://maps.google.com/contrib/2"
+                    },
+                    "rating": 5,
+                    "text": "Rich broth, fast service.",
+                    "when": "a month ago"
+                },
+                {
+                    "author": {
+                        "name": "Rae",
+                        "uri": null
+                    },
+                    "rating": null,
+                    "text": "Cash only.",
+                    "when": null
+                }
+            ],
             "source": "google",
             "summary": {
                 "disclosure": "Summarized with Gemini",
@@ -38,6 +58,7 @@
             "photos": [],
             "price": null,
             "rating": null,
+            "reviews": [],
             "source": "openstreetmap",
             "summary": null,
             "url": null
