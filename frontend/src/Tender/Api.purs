@@ -61,7 +61,8 @@ type RestaurantsResponse =
   , maxRadius :: Number
   }
 
-type DecisionResponse = { matches :: Array RestaurantId, othersLiked :: Array RestaurantId }
+-- | `people`: everyone in the session, so progress shows on each swipe
+type DecisionResponse = { matches :: Array RestaurantId, othersLiked :: Array RestaurantId, people :: Array Person }
 
 -- | `next`: seconds until the next heartbeat
 type PresenceResponse = { people :: Array Person, matches :: Array RestaurantId, next :: Int }

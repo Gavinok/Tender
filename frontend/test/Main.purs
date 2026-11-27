@@ -84,11 +84,16 @@ friend = { you: false, status: Status.Done, swiped: 20, left: Just 0 }
 
 -- | A decision saved, with what others liked and no matches
 decided :: String -> Boolean -> Array String -> Message
-decided id liked others = Decided { id: RestaurantId id, liked, matches: [], othersLiked: map RestaurantId others }
+decided id liked others = Decided { id: RestaurantId id, liked, matches: [], othersLiked: map RestaurantId others, people: [] }
 
 -- | A like saved, with the session's matches this person is part of
 likedWithMatches :: String -> Array String -> Message
-likedWithMatches id matches = Decided { id: RestaurantId id, liked: true, matches: map RestaurantId matches, othersLiked: [] }
+likedWithMatches id matches = Decided { id: RestaurantId id, liked: true, matches: map RestaurantId matches, othersLiked: [], people: [] }
+
+withPeople :: Array Person -> Message -> Message
+withPeople people = case _ of
+  Decided d -> Decided d { people = people }
+  other -> other
 
 withMatches :: Array String -> Message -> Message
 withMatches ids = case _ of
@@ -252,6 +257,12 @@ main = runSpecAndExitProcess [ consoleReporter ] do
       step (Active swiper (Swiping (restaurant "a"))) ToggleSummary `shouldEqual` Tuple (Active swiper { summaryOpen = true } (Swiping (restaurant "a"))) 0
       step (Active swiper { summaryOpen = true, upcoming = [ restaurant "b" ] } (Swiping (restaurant "a"))) (decided "a" false [])
         `shouldEqual` Tuple (Active swiper (Swiping (restaurant "b"))) 0
+
+    it "shows everyone's progress as each swipe is saved, not at the next heartbeat" do
+      step (Active swiper { upcoming = [ restaurant "b" ] } (Swiping (restaurant "a"))) (withPeople [ me, friend ] (decided "a" false []))
+        `shouldEqual` Tuple (Active swiper { people = [ me, friend ] } (Swiping (restaurant "b"))) 0
+      step (Active swiper (Swiping (restaurant "b"))) (withPeople [ me, friend ] (decided "a" false []))
+        `shouldEqual` Tuple (Active swiper { people = [ me, friend ] } (Swiping (restaurant "b"))) 0
 
     it "starts each new card on its first photo" do
       step (Active swiper { photo = 1, upcoming = [ restaurant "b" ] } (Swiping (restaurant "a"))) (decided "a" false [])
