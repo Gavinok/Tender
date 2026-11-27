@@ -4,6 +4,14 @@ module.exports = {
   content: ["./assets/**/*.{html,js}"],
   theme: {
     extend: {
+      // Phones with room to spare, by height rather than width: tall ones
+      // preview the summary on the card, roomy ones show every vibe chip.
+      // Mice can't swipe a row sideways, so they get every chip too.
+      screens: {
+        tall: { raw: "(min-height: 700px)" },
+        roomy: { raw: "(min-height: 800px)" },
+        mouse: { raw: "(hover: hover) and (pointer: fine)" },
+      },
       colors: {
         brand: {
           50: "#eef2ff",
@@ -36,6 +44,18 @@ module.exports = {
           from: { opacity: "0", transform: "translateY(24px) scale(0.96)" },
           to: { opacity: "1", transform: "none" },
         },
+        "sheet-up": {
+          from: { transform: "translateY(100%)" },
+          to: { transform: "none" },
+        },
+        "toast-in": {
+          from: { transform: "translateY(-150%)" },
+          to: { transform: "none" },
+        },
+        "toast-out": {
+          from: { transform: "none", opacity: "1" },
+          to: { transform: "translateY(-150%)", opacity: "0" },
+        },
         pop: {
           "0%": { transform: "scale(0.6) rotate(-8deg)", opacity: "0" },
           "60%": { transform: "scale(1.08) rotate(-3deg)", opacity: "1" },
@@ -52,6 +72,9 @@ module.exports = {
       },
       animation: {
         "card-in": "card-in 0.35s cubic-bezier(0.2, 0.9, 0.3, 1.2) both",
+        "sheet-up": "sheet-up 0.25s cubic-bezier(0.2, 0.9, 0.3, 1) both",
+        "toast-in": "toast-in 0.45s cubic-bezier(0.2, 0.9, 0.3, 1.25) both",
+        "toast-out": "toast-out 0.25s cubic-bezier(0.5, 0, 0.75, 0) both",
         pop: "pop 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.3) both",
         shimmer: "shimmer 1.6s linear infinite",
         confetti: "confetti 2.8s linear both",

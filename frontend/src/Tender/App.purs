@@ -7,6 +7,7 @@ module Tender.App
   , Picker
   , Swiper
   , Decision
+  , Toast
   , init
   , update
   ) where
@@ -19,7 +20,7 @@ import Data.String (trim)
 import Data.Either (Either(..), either)
 import Data.Generic.Rep (class Generic)
 import Data.Show.Generic (genericShow)
-import Data.Maybe (Maybe(..), maybe)
+import Data.Maybe (Maybe(..), isJust, maybe)
 import Effect.Aff (Aff, Milliseconds(..), attempt, delay)
 import Effect.Class (liftEffect)
 import Data.Tuple (Tuple)
@@ -35,7 +36,8 @@ import Tender.Types (ErrorMessage, Found, Loc, Person, Place, Restaurant, Restau
 
 -- | What we know once the user has joined a session
 type Swiper =
-  { user :: UserId
+  { session :: SessionId
+  , user :: UserId
   -- | Nothing when the browser couldn't find the user, who then gets the
   -- | session's location
   , loc :: Maybe Loc
@@ -48,8 +50,8 @@ type Swiper =
   , upcoming :: Array Restaurant
   -- | Which of the current card's photos is showing
   , photo :: Int
-  -- | Whether the current card's summary is expanded
-  , summaryOpen :: Boolean
+  -- | Whether the current card's details sheet is open
+  , detailsOpen :: Boolean
   -- | Restaurants someone else in the session liked, shown first and badged
   , othersLiked :: Array RestaurantId
   -- | Restaurants this person liked, newest first, to show when one becomes a match
@@ -61,15 +63,22 @@ type Swiper =
   , heartbeatIn :: Int
   -- | Whether the list of matches is open
   , showMatches :: Boolean
+  -- | Whether the sheet with who's here, the vibe and the invite is open
+  , showSession :: Boolean
+  -- | Show that the invite link was just copied
+  , copied :: Boolean
   -- | Whether they closed the warning that their location wasn't found
   , warningDismissed :: Boolean
   -- | A match after the first, mentioned over the cards until the next swipe
-  , toast :: Maybe Restaurant
+  , toast :: Maybe Toast
   -- | Swipes the server hasn't heard yet, oldest first, sent again in the background
   , unsent :: Array Decision
   -- | The session's vibe chips
   , vibe :: Array Chip
   }
+
+-- | A match mentioned over the cards. `leaving` while it slides away.
+type Toast = { match :: Restaurant, leaving :: Boolean }
 
 -- | A swipe
 type Decision = { id :: RestaurantId, liked :: Boolean }
@@ -89,6 +98,8 @@ type Lobby =
   , vibe :: Vibe
   -- | Open while someone is choosing where the group is eating
   , picker :: Maybe Picker
+  -- | Whether the QR code is shown full screen, for scanning across a table
+  , bigQR :: Boolean
   }
 
 -- | Looking up where the group is eating. `results` is Nothing until the
@@ -159,7 +170,7 @@ data Message
   | SearchFurther
   | NextPhoto
   | PreviousPhoto
-  | ToggleSummary
+  | ToggleDetails
   | ToggleChip String
   -- | The vibe as saved after this person changed it
   | VibeSaved Vibe
@@ -180,6 +191,12 @@ data Message
   -- | Leave this session for a new one
   | NewSession
   | ToggleMatches
+  | ToggleSession
+  -- | Stop mentioning this match over the cards, if it's still the one shown
+  | HideToast RestaurantId
+  -- | The toast has slid away
+  | ToastGone RestaurantId
+  | ToggleQR
   | DismissWarning
   | ShareInvite
   | LinkCopied
@@ -194,6 +211,10 @@ swipeFailed d = case _ of
 -- | Wait a few seconds, then send the unsent swipes again
 retryLater :: Aff (Maybe Message)
 retryLater = delay (Milliseconds 5000.0) $> Just RetryUnsent
+
+-- | Whether a sheet is covering the cards
+sheetOpen :: Swiper -> Boolean
+sheetOpen swiper = swiper.showMatches || swiper.showSession || swiper.detailsOpen
 
 -- | Show a failed request to the user
 failed :: ApiError -> Message
@@ -243,12 +264,12 @@ orFail = either failed
 advance :: Swiper -> Tuple Model (Array (Aff (Maybe Message)))
 advance swiper = case uncons swiper.upcoming of
   Nothing -> Active swiper NoneLeft /\ []
-  Just { head, tail } -> Active swiper { upcoming = tail, photo = 0, summaryOpen = false } (Swiping head) /\ []
+  Just { head, tail } -> Active swiper { upcoming = tail, photo = 0, detailsOpen = false } (Swiping head) /\ []
 
 -- | Mention a match over whatever screen follows
 withToast :: Restaurant -> Tuple Model (Array (Aff (Maybe Message))) -> Model
 withToast m (shown /\ _) = case shown of
-  Active s screen -> Active s { toast = Just m } screen
+  Active s screen -> Active s { toast = Just { match: m, leaving: false } } screen
   other -> other
 
 -- | How long until the next heartbeat. More often while out of cards, where
@@ -304,7 +325,7 @@ update model = case model, _ of
             JoinSession s <$> shareLink s
     ]
   _, JoinSession session link ->
-    QR { session, link, copied: false, vibe: { chips: [], choices: [], locked: false, place: Nothing }, picker: Nothing } /\ [ pollVibe session ]
+    QR { session, link, copied: false, vibe: { chips: [], choices: [], locked: false, place: Nothing }, picker: Nothing, bigQR: false } /\ [ pollVibe session ]
   -- Keeps checking while in the lobby so everyone sees the same chips; stops once swiping
   QR lobby, VibePolled v -> QR lobby { vibe = v } /\ [ delay (Milliseconds 3000.0) $> Just PollVibe ]
   QR { session }, PollVibe -> model /\ [ pollVibe session ]
@@ -323,6 +344,19 @@ update model = case model, _ of
   QR lobby, LinkCopied ->
     QR lobby { copied = true } /\ [ delay (Milliseconds 2000.0) $> Just HideCopied ]
   QR lobby, HideCopied -> QR lobby { copied = false } /\ []
+  QR lobby, ToggleQR -> QR lobby { bigQR = not lobby.bigQR } /\ []
+  -- Escape closes whatever is on top: the big QR code, then the place lookup
+  QR lobby, KeyPressed "Escape" | lobby.bigQR -> update model ToggleQR
+  QR lobby, KeyPressed "Escape" | isJust lobby.picker -> update model ClosePicker
+  -- Inviting more people from the session sheet once swiping
+  Active { session } _, ShareInvite -> model /\
+    [ attempt (liftEffect (shareLink session) >>= shareOrCopy) <#> case _ of
+        Right Copied -> Just LinkCopied
+        _ -> Nothing
+    ]
+  Active swiper screen, LinkCopied ->
+    Active swiper { copied = true } screen /\ [ delay (Milliseconds 2000.0) $> Just HideCopied ]
+  Active swiper screen, HideCopied -> Active swiper { copied = false } screen /\ []
 
   -- Without a location the user can still join, and gets the session's
   -- With a place chosen, nobody needs their location
@@ -341,7 +375,7 @@ update model = case model, _ of
       -- Only reached when nobody else in the session has a location either
       noLocation problem e = LocationFailed session user problem (errorText e)
     in
-      Active { user, loc, radius: 0.0, maxRadius: 0.0, widening: false, upcoming: [], photo: 0, summaryOpen: false, othersLiked: [], liked: [], matches: [], people: [], heartbeatIn: 10, showMatches: false, toast: Nothing, unsent: [], warningDismissed: false, vibe: [] } Fetching
+      Active { session, user, loc, radius: 0.0, maxRadius: 0.0, widening: false, upcoming: [], photo: 0, detailsOpen: false, othersLiked: [], liked: [], matches: [], people: [], heartbeatIn: 10, showMatches: false, showSession: false, copied: false, toast: Nothing, unsent: [], warningDismissed: false, vibe: [] } Fetching
         /\
           [ Just <<< either (either noLocation (const failed) located) Loaded <$> getRestaurants user loc Nothing
           -- Soon after the search, so the server knows what the user was shown
@@ -420,14 +454,14 @@ update model = case model, _ of
   Active swiper (Swiping r), Decided d | r.id == d.id ->
     let
       liked = if d.liked then cons r swiper.liked else swiper.liked
-      { new, swiper: next } = newMatches d.matches swiper { upcoming = likedFirst d.othersLiked swiper.upcoming, othersLiked = d.othersLiked, liked = liked, toast = Nothing }
+      { new, swiper: next } = newMatches d.matches swiper { upcoming = likedFirst d.othersLiked swiper.upcoming, othersLiked = d.othersLiked, liked = liked }
     in
       -- Celebrate the first match, newest first; later ones get a toast so
       -- swiping isn't interrupted. Any others are in the list of matches.
       case head new of
         Just m
           | null swiper.matches -> Active next (Matched m) /\ [ liftEffect vibrate $> Nothing ]
-          | otherwise -> withToast m (advance next) /\ [ liftEffect vibrate $> Nothing ]
+          | otherwise -> withToast m (advance next) /\ [ liftEffect vibrate $> Nothing, delay (Milliseconds 5000.0) $> Just (HideToast m.id) ]
         Nothing -> advance next
   -- The card has already flown off, so carry on with the next and keep trying
   -- quietly. Only a vanished session is worth stopping for.
@@ -452,16 +486,18 @@ update model = case model, _ of
     Active swiper { unsent = drop 1 swiper.unsent } screen /\ if length swiper.unsent > 1 then [ pure (Just RetryUnsent) ] else []
   Active swiper (Swiping r), NextPhoto ->
     Active swiper { photo = min (swiper.photo + 1) (max 0 (length r.photos - 1)) } (Swiping r) /\ []
-  Active swiper (Swiping r), ToggleSummary ->
-    Active swiper { summaryOpen = not swiper.summaryOpen } (Swiping r) /\ []
+  Active swiper (Swiping r), ToggleDetails ->
+    Active swiper { detailsOpen = not swiper.detailsOpen } (Swiping r) /\ []
   Active swiper (Swiping r), PreviousPhoto ->
     Active swiper { photo = max 0 (swiper.photo - 1) } (Swiping r) /\ []
   -- Escape closes whichever dialog is on top
   Active _ (Matched _), KeyPressed "Escape" -> update model Continue
   Active swiper _, KeyPressed "Escape" | swiper.showMatches -> update model ToggleMatches
-  Active swiper (Swiping _), KeyPressed "Escape" | swiper.summaryOpen -> update model ToggleSummary
-  Active _ (Swiping _), KeyPressed "ArrowRight" -> update model Like
-  Active _ (Swiping _), KeyPressed "ArrowLeft" -> update model Dislike
+  Active swiper _, KeyPressed "Escape" | swiper.showSession -> update model ToggleSession
+  Active swiper (Swiping _), KeyPressed "Escape" | swiper.detailsOpen -> update model ToggleDetails
+  -- Arrow keys swipe, but not from behind an open sheet
+  Active swiper (Swiping _), KeyPressed "ArrowRight" | not (sheetOpen swiper) -> update model Like
+  Active swiper (Swiping _), KeyPressed "ArrowLeft" | not (sheetOpen swiper) -> update model Dislike
 
   Active swiper (Matched _), Continue -> advance swiper
 
@@ -489,6 +525,13 @@ update model = case model, _ of
         Just m -> Active next (Matched m) /\ [ liftEffect vibrate $> Nothing, again ]
         Nothing -> Active next screen /\ [ again ]
 
+  -- Slides away first, then goes; a newer toast is left alone
+  Active swiper screen, HideToast id | map (\t -> t.match.id) swiper.toast == Just id ->
+    Active swiper { toast = map _ { leaving = true } swiper.toast } screen /\ [ delay (Milliseconds 250.0) $> Just (ToastGone id) ]
+  Active swiper screen, ToastGone id | map (\t -> t.match.id) swiper.toast == Just id ->
+    Active swiper { toast = Nothing } screen /\ []
+  Active swiper screen, ToggleSession ->
+    Active swiper { showSession = not swiper.showSession } screen /\ []
   Active swiper screen, DismissWarning ->
     Active swiper { warningDismissed = true } screen /\ []
 
