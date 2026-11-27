@@ -1,4 +1,4 @@
-module Tender.View.Match (celebration, matchesSheet) where
+module Tender.View.Match (announcement, celebration, matchesSheet) where
 
 import Prelude
 
@@ -39,6 +39,14 @@ confetti =
     2 -> "#ffa089"
     3 -> "#7dd3fc"
     _ -> "#86efac"
+
+-- | Read out by screen readers when a match comes up. The region has to be
+-- | on the page before its text changes, so it's always there and empty
+-- | until then.
+announcement :: forall a. Maybe Restaurant -> Html a
+announcement matched =
+  HE.p [ HA.class' "sr-only", HA.createAttribute "role" "status", HA.createAttribute "aria-live" "polite" ]
+    [ HE.text (maybe "" (\r -> "It's a match! Everyone's hungry for " <> r.name) matched) ]
 
 -- | Full screen "it's a match" over everything else
 celebration :: forall a. Restaurant -> a -> Html a

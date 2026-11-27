@@ -17,7 +17,7 @@ import Tender.View.Layout (page)
 import Tender.View.PlacePicker (placePicker)
 import Tender.View.Presence (presenceStrip)
 import Tender.View.Lobby (lobby)
-import Tender.View.Match (celebration, matchesSheet)
+import Tender.View.Match (announcement, celebration, matchesSheet)
 import Tender.View.States (cardSkeleton, needLocation, outOfRestaurants, problem, setting)
 
 -- | Metres as whole kilometres, e.g. "10 km"
@@ -58,7 +58,13 @@ view (QR l) = page { matches: Nothing, newSession: Just NewSession } [ lobby l {
 
 view (Active swiper screen) =
   page { matches: Just { count: length swiper.matches, open: ToggleMatches }, newSession: Just NewSession } $
-    [ presenceStrip swiper.people ]
+    [ announcement
+        ( case screen of
+            Matched r -> Just r
+            _ -> Nothing
+        )
+    , presenceStrip swiper.people
+    ]
       <> (if isNothing swiper.loc then [ locationWarning ] else [])
       <>
         [ case screen of
