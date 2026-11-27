@@ -2,7 +2,7 @@ module Tender.View (view) where
 
 import Prelude
 
-import Data.Array (elem, head, length)
+import Data.Array (elem, head, length, null)
 import Data.Int (round)
 import Data.Maybe (Maybe(..), isNothing, maybe)
 import Flame (Html)
@@ -50,6 +50,12 @@ locationWarning dismiss =
     , HE.button [ HA.class' "rounded-lg p-1 hover:bg-ink/10", HA.onClick dismiss, HA.createAttribute "aria-label" "Dismiss" ] [ icon Close "h-5 w-5" ]
     ]
 
+-- | Shown while swipes are waiting to be sent
+offlineNotice :: forall a. Html a
+offlineNotice =
+  HE.p [ HA.class' "mb-4 rounded-xl border-2 border-ink bg-star/30 px-3 py-2 text-sm font-bold", HA.createAttribute "role" "status" ]
+    [ HE.text "Can't reach the server. Your swipes are saved and will be sent once it's back." ]
+
 pickerMessages :: { open :: Message, clear :: Message, query :: String -> Message, find :: Message, choose :: Found -> Message, close :: Message }
 pickerMessages = { open: OpenPicker, clear: ClearPlace, query: PlaceQuery, find: FindPlaces, choose: ChoosePlace, close: ClosePicker }
 
@@ -77,6 +83,7 @@ view (Active swiper screen) =
         )
     , presenceStrip swiper.people
     ]
+      <> (if null swiper.unsent then [] else [ offlineNotice ])
       <> (if isNothing swiper.loc && not swiper.warningDismissed then [ locationWarning DismissWarning ] else [])
       <>
         [ case screen of
