@@ -2,13 +2,14 @@ module Tender.View.Card (restaurantCard, ratingStars, actionBar) where
 
 import Prelude
 
-import Data.Array (length, range)
+import Data.Array (elem, filter, length, range)
 import Data.Int (toNumber)
 import Data.Maybe (Maybe(..), maybe)
 import Flame (Html)
 import Flame.Html.Attribute as HA
 import Flame.Html.Element as HE
 import Tender.Types (Restaurant, Review)
+import Tender.Vibe (Chip)
 import Tender.View.Button (iconButton)
 import Tender.View.Icon (Icon(..), icon)
 import Tender.View.Photo (mapsLink, menuLink, photoCredit, restaurantPhoto)
@@ -104,8 +105,8 @@ photoBars count showing
 -- | The restaurant's photo with its details over the bottom of it, and a
 -- | badge when someone else in the group already liked it. Keyed on the
 -- | restaurant so each new one animates in.
-restaurantCard :: forall a. { likedByOthers :: Boolean, photo :: Int, summaryOpen :: Boolean, toggleSummary :: a } -> Restaurant -> Html a
-restaurantCard { likedByOthers, photo, summaryOpen, toggleSummary } r =
+restaurantCard :: forall a. { likedByOthers :: Boolean, vibe :: Array Chip, photo :: Int, summaryOpen :: Boolean, toggleSummary :: a } -> Restaurant -> Html a
+restaurantCard { likedByOthers, vibe, photo, summaryOpen, toggleSummary } r =
   HE.article
     [ HA.key (show r.id)
     , HA.createAttribute "data-swipe" ""
@@ -129,7 +130,8 @@ restaurantCard { likedByOthers, photo, summaryOpen, toggleSummary } r =
         [ HE.h2 [ HA.class' "font-display text-3xl leading-tight text-white drop-shadow" ] [ HE.text r.name ]
         , HE.div [ HA.class' "flex items-center gap-2" ]
             (maybe [] (pure <<< ratingStars) r.rating <> maybe [] (pure <<< chip) r.price)
-        , HE.div [ HA.class' "flex flex-wrap gap-2" ] (maybe [] (pure <<< chip) r.category)
+        , HE.div [ HA.class' "flex flex-wrap gap-2" ]
+            (maybe [] (pure <<< chip) r.category <> map (chip <<< _.label) (filter (\c -> elem c.id r.confirmed) vibe))
         , case r.summary of
             Just s | not summaryOpen ->
               HE.button [ HA.class' "text-left text-sm text-white/90", HA.onClick toggleSummary ]

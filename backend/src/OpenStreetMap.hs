@@ -78,6 +78,7 @@ parseOverpass = withObject "OverpassResponse" $ \o ->
                     , photos = []
                     , summary = Nothing
                     , reviews = []
+                    , traits = []
                     , location = pos
                     }
 
