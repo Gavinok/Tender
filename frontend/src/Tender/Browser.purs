@@ -12,6 +12,7 @@ module Tender.Browser
   , sessionFromPath
   , shareLink
   , shareOrCopy
+  , confirmLeave
   , startNewSession
   , tabHidden
   , encodeQuery
@@ -100,6 +101,9 @@ startNewSession = assign "/" =<< location =<< window
 -- | Whether the page is in a background tab or the phone's screen is off.
 -- | Not web-html's visibilityState, which reads readyState in 4.1.1 and so
 -- | is never hidden. Fixed in 4.1.2, once the package set has it.
+-- | Ask whether to leave the session, in the browser's own dialog
+foreign import confirmLeave :: Effect Boolean
+
 foreign import tabHidden :: Effect Boolean
 
 -- | Text made safe to put in a url's query string
