@@ -61,6 +61,8 @@ for (const phone of PHONES) {
       // the offline notice, the longest one
       await page.getByRole("button", { name: "Session: 3 here" }).waitFor();
       await page.getByText("Can't reach the server").waitFor();
+      // Phones don't hover, and a hovered button is scaled up
+      await page.mouse.move(0, 0);
       test.info().annotations.push({ type: "overflow", description: `${String(await overflow(page))}px` });
       await fitsAndTaps(nope);
       await fitsAndTaps(page.getByRole("button", { name: "Like" }));
