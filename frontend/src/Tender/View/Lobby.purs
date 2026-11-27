@@ -35,7 +35,7 @@ lobby { link, copied, vibe, picker, bigQR } on =
       , vibeChips vibe on.toggle
       -- Tapping it shows it full screen, easier to scan from across a table
       , HE.button
-          [ HA.class' "flex min-h-0 flex-1 items-center justify-center"
+          [ HA.class' "flex min-h-0 flex-1 items-center justify-center pb-4"
           , HA.onClick on.bigQR
           , HA.createAttribute "aria-label" "Show the QR code bigger"
           ]
