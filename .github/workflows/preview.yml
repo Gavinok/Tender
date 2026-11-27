@@ -15,10 +15,12 @@ jobs:
   preview:
     if: contains(github.event.pull_request.labels.*.name, 'preview') && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
-    # One deploy per branch at a time, never cancelled halfway
+    # One deploy per branch at a time. A newer push cancels an older one
+    # still going: it takes no live traffic, and only the latest is worth
+    # looking at. Production's deploy (ci.yml) waits instead.
     concurrency:
       group: preview-${{ github.head_ref }}
-      cancel-in-progress: false
+      cancel-in-progress: true
     permissions:
       contents: read
       # To sign in to Google Cloud as github-deployer
