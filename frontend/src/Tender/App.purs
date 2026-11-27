@@ -49,8 +49,8 @@ type Swiper =
   , upcoming :: Array Restaurant
   -- | Which of the current card's photos is showing
   , photo :: Int
-  -- | Whether the current card's summary is expanded
-  , summaryOpen :: Boolean
+  -- | Whether the current card's details sheet is open
+  , detailsOpen :: Boolean
   -- | Restaurants someone else in the session liked, shown first and badged
   , othersLiked :: Array RestaurantId
   -- | Restaurants this person liked, newest first, to show when one becomes a match
@@ -164,7 +164,7 @@ data Message
   | SearchFurther
   | NextPhoto
   | PreviousPhoto
-  | ToggleSummary
+  | ToggleDetails
   | ToggleChip String
   -- | The vibe as saved after this person changed it
   | VibeSaved Vibe
@@ -203,7 +203,7 @@ retryLater = delay (Milliseconds 5000.0) $> Just RetryUnsent
 
 -- | Whether a sheet is covering the cards
 sheetOpen :: Swiper -> Boolean
-sheetOpen swiper = swiper.showMatches || swiper.showSession
+sheetOpen swiper = swiper.showMatches || swiper.showSession || swiper.detailsOpen
 
 -- | Show a failed request to the user
 failed :: ApiError -> Message
@@ -253,7 +253,7 @@ orFail = either failed
 advance :: Swiper -> Tuple Model (Array (Aff (Maybe Message)))
 advance swiper = case uncons swiper.upcoming of
   Nothing -> Active swiper NoneLeft /\ []
-  Just { head, tail } -> Active swiper { upcoming = tail, photo = 0, summaryOpen = false } (Swiping head) /\ []
+  Just { head, tail } -> Active swiper { upcoming = tail, photo = 0, detailsOpen = false } (Swiping head) /\ []
 
 -- | Mention a match over whatever screen follows
 withToast :: Restaurant -> Tuple Model (Array (Aff (Maybe Message))) -> Model
@@ -360,7 +360,7 @@ update model = case model, _ of
       -- Only reached when nobody else in the session has a location either
       noLocation problem e = LocationFailed session user problem (errorText e)
     in
-      Active { session, user, loc, radius: 0.0, maxRadius: 0.0, widening: false, upcoming: [], photo: 0, summaryOpen: false, othersLiked: [], liked: [], matches: [], people: [], heartbeatIn: 10, showMatches: false, showSession: false, copied: false, toast: Nothing, unsent: [], warningDismissed: false, vibe: [] } Fetching
+      Active { session, user, loc, radius: 0.0, maxRadius: 0.0, widening: false, upcoming: [], photo: 0, detailsOpen: false, othersLiked: [], liked: [], matches: [], people: [], heartbeatIn: 10, showMatches: false, showSession: false, copied: false, toast: Nothing, unsent: [], warningDismissed: false, vibe: [] } Fetching
         /\
           [ Just <<< either (either noLocation (const failed) located) Loaded <$> getRestaurants user loc Nothing
           -- Soon after the search, so the server knows what the user was shown
@@ -471,15 +471,15 @@ update model = case model, _ of
     Active swiper { unsent = drop 1 swiper.unsent } screen /\ if length swiper.unsent > 1 then [ pure (Just RetryUnsent) ] else []
   Active swiper (Swiping r), NextPhoto ->
     Active swiper { photo = min (swiper.photo + 1) (max 0 (length r.photos - 1)) } (Swiping r) /\ []
-  Active swiper (Swiping r), ToggleSummary ->
-    Active swiper { summaryOpen = not swiper.summaryOpen } (Swiping r) /\ []
+  Active swiper (Swiping r), ToggleDetails ->
+    Active swiper { detailsOpen = not swiper.detailsOpen } (Swiping r) /\ []
   Active swiper (Swiping r), PreviousPhoto ->
     Active swiper { photo = max 0 (swiper.photo - 1) } (Swiping r) /\ []
   -- Escape closes whichever dialog is on top
   Active _ (Matched _), KeyPressed "Escape" -> update model Continue
   Active swiper _, KeyPressed "Escape" | swiper.showMatches -> update model ToggleMatches
   Active swiper _, KeyPressed "Escape" | swiper.showSession -> update model ToggleSession
-  Active swiper (Swiping _), KeyPressed "Escape" | swiper.summaryOpen -> update model ToggleSummary
+  Active swiper (Swiping _), KeyPressed "Escape" | swiper.detailsOpen -> update model ToggleDetails
   -- Arrow keys swipe, but not from behind an open sheet
   Active swiper (Swiping _), KeyPressed "ArrowRight" | not (sheetOpen swiper) -> update model Like
   Active swiper (Swiping _), KeyPressed "ArrowLeft" | not (sheetOpen swiper) -> update model Dislike

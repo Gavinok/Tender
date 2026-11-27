@@ -52,7 +52,7 @@ bare :: String -> Restaurant
 bare id = (restaurant id) { url = Nothing, rating = Nothing, photos = [], summary = Nothing, reviews = [], confirmed = [] }
 
 swiper :: Swiper
-swiper = { session: SessionId "s", user: UserId "u", loc: Just here, radius: 5000.0, maxRadius: 50000.0, widening: false, upcoming: [], photo: 0, summaryOpen: false, othersLiked: [], liked: [], matches: [], people: [], heartbeatIn: 10, showMatches: false, showSession: false, copied: false, toast: Nothing, unsent: [], warningDismissed: false, vibe: [] }
+swiper = { session: SessionId "s", user: UserId "u", loc: Just here, radius: 5000.0, maxRadius: 50000.0, widening: false, upcoming: [], photo: 0, detailsOpen: false, othersLiked: [], liked: [], matches: [], people: [], heartbeatIn: 10, showMatches: false, showSession: false, copied: false, toast: Nothing, unsent: [], warningDismissed: false, vibe: [] }
 
 here :: { latitude :: Number, longitude :: Number }
 here = { latitude: 1.0, longitude: 2.0 }
@@ -173,7 +173,7 @@ main = runSpecAndExitProcess [ consoleReporter ] do
         `shouldEqual` Active swiper { upcoming = [] } (Swiping (restaurant "b"))
       fst (step (Active swiper { showMatches = true } (Swiping (restaurant "a"))) (KeyPressed "Escape"))
         `shouldEqual` Active swiper (Swiping (restaurant "a"))
-      fst (step (Active swiper { summaryOpen = true } (Swiping (restaurant "a"))) (KeyPressed "Escape"))
+      fst (step (Active swiper { detailsOpen = true } (Swiping (restaurant "a"))) (KeyPressed "Escape"))
         `shouldEqual` Active swiper (Swiping (restaurant "a"))
       fst (step (Active swiper { showSession = true } (Swiping (restaurant "a"))) (KeyPressed "Escape"))
         `shouldEqual` Active swiper (Swiping (restaurant "a"))
@@ -266,9 +266,9 @@ main = runSpecAndExitProcess [ consoleReporter ] do
       step (Active swiper { photo = 1 } (Swiping (restaurant "a"))) NextPhoto `shouldEqual` Tuple (Active swiper { photo = 1 } (Swiping (restaurant "a"))) 0
       step (Active swiper (Swiping (restaurant "a"))) PreviousPhoto `shouldEqual` Tuple (Active swiper (Swiping (restaurant "a"))) 0
 
-    it "opens and closes the summary, closed again on the next card" do
-      step (Active swiper (Swiping (restaurant "a"))) ToggleSummary `shouldEqual` Tuple (Active swiper { summaryOpen = true } (Swiping (restaurant "a"))) 0
-      step (Active swiper { summaryOpen = true, upcoming = [ restaurant "b" ] } (Swiping (restaurant "a"))) (decided "a" false [])
+    it "opens and closes the details, closed again on the next card" do
+      step (Active swiper (Swiping (restaurant "a"))) ToggleDetails `shouldEqual` Tuple (Active swiper { detailsOpen = true } (Swiping (restaurant "a"))) 0
+      step (Active swiper { detailsOpen = true, upcoming = [ restaurant "b" ] } (Swiping (restaurant "a"))) (decided "a" false [])
         `shouldEqual` Tuple (Active swiper (Swiping (restaurant "b"))) 0
 
     it "starts each new card on its first photo" do
@@ -367,9 +367,14 @@ main = runSpecAndExitProcess [ consoleReporter ] do
         html `shouldSatisfy` (not <<< contains (Pattern text))
     it "shows the category and the other kinds of place on a card" do
       renders (Active swiper (Swiping (restaurant "a") { category = Just "Pub", moreCategories = [ "Bar", "Cafe" ] })) "Pub</span><span class=\"rounded-lg bg-white/20 px-3 py-1 text-sm font-bold text-white backdrop-blur\">Bar"
-    it "shows how far away a place is, whether it's open, and where" do
-      renders (Active swiper (Swiping (restaurant "a") { distance = Just 1440.0, openNow = Just true, address = Just "1 Main St" })) "1.4 km away · Open now · 1 Main St"
-      renders (Active swiper (Swiping (restaurant "a") { distance = Just 850.0, openNow = Just false })) "850 m away · Closed now"
+    it "shows the rating, distance and whether it's open on the card, and where in its details" do
+      renders (Active swiper (Swiping (restaurant "a") { distance = Just 850.0, openNow = Just false })) "★ 4.0 · 850 m · Closed now"
+      renders (Active swiper { detailsOpen = true } (Swiping (restaurant "a") { distance = Just 1440.0, openNow = Just true, address = Just "1 Main St" })) "1.4 km away · Open now · 1 Main St"
+      rendersNot (Active swiper (Swiping (restaurant "a") { address = Just "1 Main St" })) "1 Main St"
+    it "shows two chips on the card, confirmed vibes first, and all of them in its details" do
+      let card = (restaurant "a") { category = Just "Pub", moreCategories = [ "Bar", "Cafe" ], confirmed = [ "patio" ] }
+      renders (Active swiper { vibe = [ patio ] } (Swiping card)) "☀️ Patio</span><span class=\"rounded-lg bg-white/20 px-3 py-1 text-sm font-bold text-white backdrop-blur\">Pub</span></div>"
+      renders (Active swiper { vibe = [ patio ], detailsOpen = true } (Swiping card)) ">Cafe<"
     it "shows the location warning with a way to dismiss it, until it's dismissed" do
       renders (Active swiper { loc = Nothing } (Swiping (restaurant "a"))) "aria-label=\"Dismiss\""
       html <- liftEffect $ render (view (Active swiper { loc = Nothing, warningDismissed = true } (Swiping (restaurant "a"))))
@@ -434,20 +439,21 @@ main = runSpecAndExitProcess [ consoleReporter ] do
       renders shown "backdrop-blur\">Patio"
       rendersNot shown "backdrop-blur\">Veggie"
       rendersNot (Active swiper (Swiping (restaurant "a"))) "backdrop-blur\">Patio"
-    it "links each card to a search for its menu" do
-      renders (Active swiper (Swiping (restaurant "a"))) "search?q=a%20menu"
+    it "links to a search for the menu from a card's details" do
+      renders (Active swiper { detailsOpen = true } (Swiping (restaurant "a"))) "search?q=a%20menu"
     it "shows the reviews under the summary when it's opened, crediting their authors" do
-      let open = Active swiper { summaryOpen = true } (Swiping (restaurant "a"))
+      let open = Active swiper { detailsOpen = true } (Swiping (restaurant "a"))
       renders open "Rich broth, fast service."
       renders open "a month ago"
       renders open "https://maps.google.com/contrib/2"
       renders open "Cash only."
       rendersNot (Active swiper (Swiping (restaurant "a"))) "Rich broth, fast service."
-      rendersNot (Active swiper { summaryOpen = true } (Swiping (bare "a") { summary = Just { text: "x", disclosure: Nothing } })) "What people said"
+      rendersNot (Active swiper { detailsOpen = true } (Swiping (bare "a") { summary = Just { text: "x", disclosure: Nothing } })) "What people said"
 
-    it "previews the summary and shows it in full with Google's disclosure when opened" do
-      renders (Active swiper (Swiping (restaurant "a"))) "line-clamp-2\">Bright noodle spot"
-      renders (Active swiper { summaryOpen = true } (Swiping (restaurant "a"))) "Summarized with Gemini"
+    it "shows the summary with Google's disclosure in a card's details" do
+      rendersNot (Active swiper (Swiping (restaurant "a"))) "Bright noodle spot"
+      renders (Active swiper { detailsOpen = true } (Swiping (restaurant "a"))) "Bright noodle spot"
+      renders (Active swiper { detailsOpen = true } (Swiping (restaurant "a"))) "Summarized with Gemini"
     it "loads Yelp photos straight from their url" do
       renders (Active swiper (Swiping ((restaurant "a") { source = "yelp", photos = [ { name: Nothing, url: Just "https://s3-media1.fl.yelpcdn.com/a.jpg", author: Nothing } ] }))) "src=\"https://s3-media1.fl.yelpcdn.com/a.jpg\""
     it "copes with a place that has no photo, rating or link" do

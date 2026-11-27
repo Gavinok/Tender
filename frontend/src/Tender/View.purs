@@ -11,7 +11,7 @@ import Flame.Html.Element as HE
 import Tender.App (Message(..), Model(..), Screen(..), Swiper)
 import Tender.Types (Found, photoUrl)
 import Tender.Vibe (Chip)
-import Tender.View.Card (actionBar, restaurantCard)
+import Tender.View.Card (actionBar, detailsSheet, restaurantCard)
 import Tender.View.Icon (Icon(..), icon)
 import Tender.View.Layout (page)
 import Tender.View.PlacePicker (placePicker)
@@ -135,7 +135,7 @@ view (Active swiper screen) =
               HE.div [ HA.class' "flex max-h-[52rem] min-h-0 flex-1 flex-col gap-4" ]
                 -- The card is keyed so each restaurant gets a fresh element. Flame
                 -- needs keyed elements kept apart from unkeyed siblings.
-                [ HE.div [ HA.class' "flex min-h-0 flex-1 flex-col" ] [ restaurantCard { likedByOthers: elem r.id swiper.othersLiked, vibe: swiper.vibe, photo: swiper.photo, summaryOpen: swiper.summaryOpen, toggleSummary: ToggleSummary } r ]
+                [ HE.div [ HA.class' "flex min-h-0 flex-1 flex-col" ] [ restaurantCard { likedByOthers: elem r.id swiper.othersLiked, vibe: swiper.vibe, photo: swiper.photo, toggleDetails: ToggleDetails } r ]
                 , actionBar { nope: Dislike, like: Like }
                 -- Start loading the next photo so it's there when this card goes
                 , HE.div [ HA.class' "hidden" ]
@@ -145,4 +145,7 @@ view (Active swiper screen) =
         ]
       <> maybe [] (\r -> [ toast r ToggleMatches ]) swiper.toast
       <> (if swiper.showMatches then [ matchesSheet swiper.matches ToggleMatches ] else [])
-      <> if swiper.showSession then [ sessionSheet swiper ] else []
+      <> (if swiper.showSession then [ sessionSheet swiper ] else [])
+      <> case screen of
+        Swiping r | swiper.detailsOpen -> [ detailsSheet swiper.vibe ToggleDetails r ]
+        _ -> []
