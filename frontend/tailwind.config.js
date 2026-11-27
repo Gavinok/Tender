@@ -4,6 +4,12 @@ module.exports = {
   content: ["./assets/**/*.{html,js}"],
   theme: {
     extend: {
+      // Phones with room to spare, by height rather than width: tall ones
+      // preview the summary on the card, roomy ones show every vibe chip
+      screens: {
+        tall: { raw: "(min-height: 700px)" },
+        roomy: { raw: "(min-height: 800px)" },
+      },
       colors: {
         brand: {
           50: "#eef2ff",

@@ -36,7 +36,7 @@ sessionButton people open =
     , HA.onClick open
     , HA.createAttribute "aria-label" ("Session: " <> summary everyone)
     ]
-    ( [ HE.span [ HA.class' "flex -space-x-1.5", HA.createAttribute "aria-hidden" "true" ] (map avatar (take shown (labelled everyone))) ]
+    ( [ HE.span [ HA.class' "flex gap-1", HA.createAttribute "aria-hidden" "true" ] (map avatar (take shown (labelled everyone))) ]
         <> if length everyone > shown then [ HE.span [ HA.class' "pl-1 text-xs font-bold", HA.createAttribute "aria-hidden" "true" ] [ HE.text ("+" <> show (length (drop shown everyone))) ] ] else []
     )
   where
@@ -60,7 +60,7 @@ avatar { short, person } = case person.status of
     HE.span [ HA.class' (circle <> " p-[3px]"), HA.style1 "background" ("conic-gradient(#2a4bff " <> show (percent person) <> "%, #14122b26 0)") ]
       [ HE.span [ HA.class' "grid h-full w-full place-items-center rounded-full bg-white text-[0.65rem] font-bold" ] [ HE.text short ] ]
   where
-  circle = "grid h-8 w-8 place-items-center rounded-full ring-2 ring-white"
+  circle = "grid h-8 w-8 place-items-center rounded-full"
 
 -- | Who is still swiping, e.g. "Waiting on Friend 2 (12 left)", for when the
 -- | user is out of cards. Nothing when nobody is.

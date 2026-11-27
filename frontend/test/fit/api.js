@@ -1,5 +1,5 @@
 // A stand-in for the backend, with the most content each screen has to fit:
-// three people, a long name, every kind of chip, and a notice (a swipe that
+// four people, a long name, every kind of chip, and a notice (a swipe that
 // can't be sent).
 
 /** @typedef {import("@playwright/test").Page} Page */
@@ -11,11 +11,21 @@ const RESTAURANTS = 5;
 const AN_HOUR = 3600;
 const PHOTOS = 3;
 
+// Every chip the backend offers
 const vibe = [
+  { id: "cheap", label: "💸 Cheap eats" },
+  { id: "fancy", label: "✨ Treat yourself" },
   { id: "patio", label: "☀️ Patio" },
+  { id: "date-night", label: "🕯️ Date night" },
+  { id: "big-group", label: "👯 Big group" },
   { id: "veggie", label: "🥦 Veggie" },
   { id: "drinks", label: "🍸 Drinks" },
+  { id: "brunch", label: "🥞 Brunch" },
+  { id: "late-night", label: "🌙 Late night" },
+  { id: "open-now", label: "🕐 Open now" },
 ];
+
+const chosen = vibe.filter((chip) => ["patio", "veggie", "drinks"].includes(chip.id));
 
 /**
  * A restaurant with every detail filled in, and a long name
@@ -45,7 +55,7 @@ const PHOTO = '<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600">
 const answers = [
   ["/api/newsession", "00000000-0000-0000-0000-000000000001"],
   ["/api/addtosession", "00000000-0000-0000-0000-000000000002"],
-  ["/api/vibe", { chips: vibe.map((chip) => chip.id), choices: vibe, locked: false, place: null }],
+  ["/api/vibe", { chips: chosen.map((chip) => chip.id), choices: vibe, locked: false, place: null }],
   ["/api/presence", {
     matches: [],
     next: AN_HOUR,
@@ -53,12 +63,13 @@ const answers = [
       { you: true, status: "swiping", swiped: 3, left: 17 },
       { you: false, status: "swiping", swiped: 8, left: 12 },
       { you: false, status: "done", swiped: 20, left: 0 },
+      { you: false, status: "away", swiped: 2, left: 18 },
     ],
   }],
   ["/api/restaurants", {
     restaurants: Array.from({ length: RESTAURANTS }, (_, index) => restaurant(index)),
     othersLiked: [],
-    vibe,
+    vibe: chosen,
     radius: 5000,
     maxRadius: 50_000,
   }],

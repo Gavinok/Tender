@@ -149,6 +149,12 @@ restaurantCard { likedByOthers, vibe, photo, toggleDetails } r =
             "" -> HE.text ""
             line -> HE.p [ HA.class' "font-bold drop-shadow" ] [ HE.text line ]
         , HE.div [ HA.class' "flex gap-2 overflow-hidden" ] (map chip (take 2 (chips vibe r)))
+        -- A taste of the summary where there's room; all of it is in the details
+        , case r.summary of
+            Just { text } ->
+              HE.button [ HA.class' "hidden text-left text-sm text-white/90 tall:block", HA.onClick toggleDetails, HA.tabindex (-1) ]
+                [ HE.span [ HA.class' "line-clamp-2" ] [ HE.text text ] ]
+            Nothing -> HE.text ""
         , HE.div [ HA.class' "flex items-end justify-between gap-2" ]
             [ photoCredit r photo "text-white/90"
             , HE.button

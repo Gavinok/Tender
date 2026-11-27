@@ -15,6 +15,8 @@ const PHONES = [
 
 // The smallest comfortable tap target, in CSS pixels
 const SMALLEST_TARGET = 44;
+// The smallest QR code that scans easily from across a table
+const SMALLEST_QR = 180;
 
 /**
  * Fully on screen without scrolling, and big enough to tap
@@ -26,6 +28,15 @@ const fitsAndTaps = async (control) => {
   const box = await control.boundingBox();
   expect(box?.width).toBeGreaterThanOrEqual(SMALLEST_TARGET);
   expect(box?.height).toBeGreaterThanOrEqual(SMALLEST_TARGET);
+};
+
+/**
+ * Nothing runs off the side, such as a crowded header
+ * @param {Page} page
+ * @returns {Promise<void>}
+ */
+const noSideways = async (page) => {
+  expect(await page.evaluate(() => globalThis.document.documentElement.scrollWidth - globalThis.innerWidth)).toBe(0);
 };
 
 /**
@@ -45,12 +56,15 @@ for (const phone of PHONES) {
       await page.goto("/");
     });
 
-    test("the lobby's invite and start fit", async ({ page }) => {
+    test("the lobby's invite, start and QR code fit", async ({ page }) => {
       const start = page.getByRole("button", { name: "Start swiping" });
       await start.waitFor();
       test.info().annotations.push({ type: "overflow", description: `${String(await overflow(page))}px` });
       await fitsAndTaps(page.getByRole("button", { name: "Share invite" }));
       await fitsAndTaps(start);
+      await noSideways(page);
+      const qr = await page.getByRole("img", { name: "QR code to join this session" }).boundingBox();
+      expect(qr?.height).toBeGreaterThanOrEqual(SMALLEST_QR);
     });
 
     test("swiping's Like and Nope fit, with a notice showing", async ({ page }) => {
@@ -66,6 +80,7 @@ for (const phone of PHONES) {
       test.info().annotations.push({ type: "overflow", description: `${String(await overflow(page))}px` });
       await fitsAndTaps(nope);
       await fitsAndTaps(page.getByRole("button", { name: "Like" }));
+      await noSideways(page);
     });
   });
 }
