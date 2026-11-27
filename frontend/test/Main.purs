@@ -360,6 +360,10 @@ main = runSpecAndExitProcess [ consoleReporter ] do
     it "shows a toast for a later match over the cards" do
       renders (Active swiper { toast = Just (restaurant "a") } (Swiping (restaurant "b"))) "It&#39;s a match: "
 
+    it "points at the photo tap areas only when a card has more than one photo" do
+      renders (Active swiper (Swiping (restaurant "a"))) "m9 18 6-6-6-6"
+      html <- liftEffect $ render (view (Active swiper (Swiping (bare "a"))))
+      html `shouldSatisfy` (not <<< contains (Pattern "m9 18 6-6-6-6"))
     it "shows vibe chips in the lobby, marking the chosen ones" do
       renders (QR lobbyAt { vibe = { chips: [ "patio" ], choices: [ patio, veggie ], locked: false, place: Nothing } }) "aria-pressed=\"true\">☀️ Patio<"
       renders (QR lobbyAt { vibe = { chips: [ "patio" ], choices: [ patio, veggie ], locked: true, place: Nothing } }) "Locked in"

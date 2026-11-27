@@ -115,6 +115,15 @@ photoBars count showing
       where
       bar i = HE.span [ HA.class' ("h-1 flex-1 rounded-full " <> if i == showing then "bg-white" else "bg-white/40") ] []
 
+-- | Chevrons at the edges of the card where tapping changes photo. They only
+-- | show on a card with more than one photo, and brighten on hover.
+photoArrows :: forall a. Int -> Html a
+photoArrows count
+  | count < 2 = HE.text ""
+  | otherwise =
+      HE.div [ HA.class' "pointer-events-none absolute inset-x-1 top-1/3 flex justify-between text-white/60 transition hover:text-white", HA.createAttribute "aria-hidden" "true" ]
+        [ icon ChevronLeft "h-8 w-8 drop-shadow", icon ChevronRight "h-8 w-8 drop-shadow" ]
+
 -- | The restaurant's photo with its details over the bottom of it, and a
 -- | badge when someone else in the group already liked it. Keyed on the
 -- | restaurant so each new one animates in.
@@ -127,6 +136,7 @@ restaurantCard { likedByOthers, vibe, photo, summaryOpen, toggleSummary } r =
     ]
     [ restaurantPhoto r photo "pointer-events-none absolute inset-0 h-full w-full"
     , photoBars (length r.photos) photo
+    , photoArrows (length r.photos)
     , HE.div [ HA.class' "absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" ] []
     -- Fade in while dragging, see Swipe.js
     , stamp "YUM" "left-5 -rotate-12 border-star text-star" "var(--like, 0)"
