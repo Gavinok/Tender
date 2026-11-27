@@ -376,6 +376,10 @@ update model = case model, _ of
     Active swiper { summaryOpen = not swiper.summaryOpen } (Swiping r) /\ []
   Active swiper (Swiping r), PreviousPhoto ->
     Active swiper { photo = max 0 (swiper.photo - 1) } (Swiping r) /\ []
+  -- Escape closes whichever dialog is on top
+  Active _ (Matched _), KeyPressed "Escape" -> update model Continue
+  Active swiper _, KeyPressed "Escape" | swiper.showMatches -> update model ToggleMatches
+  Active swiper (Swiping _), KeyPressed "Escape" | swiper.summaryOpen -> update model ToggleSummary
   Active _ (Swiping _), KeyPressed "ArrowRight" -> update model Like
   Active _ (Swiping _), KeyPressed "ArrowLeft" -> update model Dislike
 

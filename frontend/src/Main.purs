@@ -7,6 +7,7 @@ import Flame as F
 import Flame.Subscription.Document as FSD
 import Flame.Subscription.Window as FSW
 import Tender.App (Message(..), init, update)
+import Tender.Dialog (watch)
 import Tender.Swipe (listen, onSwipe)
 import Tender.View (view)
 import Web.DOM.ParentNode (QuerySelector(..))
@@ -15,6 +16,7 @@ import Web.DOM.ParentNode (QuerySelector(..))
 main :: Effect Unit
 main = do
   listen
+  watch
   F.mount_ (QuerySelector "body")
     { model: init
     , subscribe: [ FSW.onLoad DetermineSession, FSD.onKeydown KeyPressed ] <> onSwipe { like: Like, nope: Dislike, previous: PreviousPhoto, next: NextPhoto }

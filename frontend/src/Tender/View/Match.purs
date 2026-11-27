@@ -54,6 +54,7 @@ celebration r continue =
   HE.div
     [ HA.class' "fixed inset-0 z-20 flex flex-col items-center justify-center gap-6 overflow-hidden bg-gradient-to-b from-brand-400 to-brand-600 px-6 text-center text-white"
     , HA.createAttribute "role" "dialog"
+    , HA.createAttribute "aria-modal" "true"
     , HA.createAttribute "aria-label" "It's a match"
     ]
     [ confetti
@@ -70,7 +71,7 @@ celebration r continue =
     , HE.div [ HA.class' "flex flex-col items-center gap-3" ]
         [ maybe (HE.text "") (linkButton Secondary (Just ExternalLink) "Let's go") r.url
         , linkButton OnColour (Just ExternalLink) "See the menu" (menuUrl r)
-        , button OnColour Nothing "Keep swiping" continue
+        , HE.div [ HA.class' "contents", HA.createAttribute "data-autofocus" "" ] [ button OnColour Nothing "Keep swiping" continue ]
         ]
     ]
 
@@ -87,11 +88,12 @@ matchesSheet matches close =
     , HE.section
         [ HA.class' "relative mx-auto max-h-[80dvh] w-full max-w-md animate-card-in overflow-y-auto rounded-t-[2rem] border-x-[3px] border-t-[3px] border-ink bg-surface p-5 pb-8 shadow-2xl"
         , HA.createAttribute "role" "dialog"
+        , HA.createAttribute "aria-modal" "true"
         , HA.createAttribute "aria-label" "Matches"
         ]
         [ HE.div [ HA.class' "mb-4 flex items-center justify-between" ]
             [ HE.h2 [ HA.class' "text-2xl font-display" ] [ HE.text (title (length matches)) ]
-            , HE.button [ HA.class' "rounded-lg p-2 text-ink/60 hover:bg-ink/5", HA.onClick close, HA.createAttribute "aria-label" "Close" ]
+            , HE.button [ HA.class' "rounded-lg p-2 text-ink/60 hover:bg-ink/5", HA.onClick close, HA.createAttribute "aria-label" "Close", HA.createAttribute "data-autofocus" "" ]
                 [ icon Close "h-6 w-6" ]
             ]
         , if length matches == 0 then

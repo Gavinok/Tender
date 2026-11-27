@@ -6,7 +6,7 @@ import Data.Array (length)
 import Data.Either (Either(..))
 import Data.Maybe (Maybe(..))
 import Data.String (Pattern(..), contains)
-import Data.Tuple (Tuple(..))
+import Data.Tuple (Tuple(..), fst)
 import Effect.Class (liftEffect)
 import Flame.Renderer.String (render)
 import Effect (Effect)
@@ -159,6 +159,14 @@ main = runSpecAndExitProcess [ consoleReporter ] do
     it "likes with the right arrow key" do
       step (Active swiper (Swiping (restaurant "a"))) (KeyPressed "ArrowRight")
         `shouldEqual` Tuple (Active swiper (Swiping (restaurant "a"))) 1
+
+    it "closes the open dialog with Escape, the celebration before the matches" do
+      fst (step (Active swiper { upcoming = [ restaurant "b" ] } (Matched (restaurant "a"))) (KeyPressed "Escape"))
+        `shouldEqual` Active swiper { upcoming = [] } (Swiping (restaurant "b"))
+      fst (step (Active swiper { showMatches = true } (Swiping (restaurant "a"))) (KeyPressed "Escape"))
+        `shouldEqual` Active swiper (Swiping (restaurant "a"))
+      fst (step (Active swiper { summaryOpen = true } (Swiping (restaurant "a"))) (KeyPressed "Escape"))
+        `shouldEqual` Active swiper (Swiping (restaurant "a"))
 
     it "ignores other keys" do
       step (Active swiper (Swiping (restaurant "a"))) (KeyPressed "x")
