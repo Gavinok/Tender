@@ -50,7 +50,8 @@ colours :: Status -> String
 colours = case _ of
   Swiping -> "bg-white"
   Done -> "bg-brand-100"
-  Away -> "bg-white/60 opacity-60"
+  -- Dashed rather than faded, which would drop the text below readable contrast
+  Away -> "border-dashed bg-transparent"
 
 state :: Person -> String
 state p = case p.status, p.left of

@@ -65,7 +65,7 @@ celebration r continue =
         [ HE.div [ HA.class' "w-64 animate-card-in rounded-3xl border-[3px] border-ink bg-white p-3 text-ink shadow-card" ]
             [ restaurantPhoto r 0 "aspect-square w-full rounded-2xl"
             , HE.p [ HA.class' "pt-3 text-2xl font-display" ] [ HE.text r.name ]
-            , photoCredit r 0 "text-ink/50"
+            , photoCredit r 0 "text-ink/70"
             ]
         ]
     , HE.div [ HA.class' "flex flex-col items-center gap-3" ]
