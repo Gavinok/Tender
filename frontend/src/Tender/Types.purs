@@ -68,6 +68,12 @@ type Restaurant =
   , category :: Maybe String
   -- | Other kinds of place it is, after `category`
   , moreCategories :: Array String
+  -- | Short, e.g. "123 Main St"
+  , address :: Maybe String
+  -- | Nothing when the source doesn't say
+  , openNow :: Maybe Boolean
+  -- | Metres from where the search was centred
+  , distance :: Maybe Number
   -- | The first is shown first
   , photos :: Array Photo
   -- | A few sentences about the place, with Google's disclosure for AI summaries

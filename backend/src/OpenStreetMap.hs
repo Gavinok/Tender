@@ -81,6 +81,9 @@ parseOverpass = withObject "OverpassResponse" $ \o ->
                     , reviews = []
                     , traits = []
                     , location = pos
+                    , address = Nothing
+                    , openNow = Nothing
+                    , distance = Nothing
                     }
 
 -- | "vietnamese;noodle" becomes "Vietnamese"

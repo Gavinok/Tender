@@ -32,6 +32,9 @@ restaurant id =
   , rating: Just 4.0
   , category: Nothing
   , moreCategories: []
+  , address: Nothing
+  , openNow: Nothing
+  , distance: Nothing
   , photos:
       [ { name: Just ("places/" <> id <> "/photos/p1"), url: Nothing, author: Just { name: "Sam", uri: Just "https://maps.google.com/contrib/1" } }
       , { name: Just ("places/" <> id <> "/photos/p2"), url: Nothing, author: Just { name: "Kai", uri: Nothing } }
@@ -318,6 +321,9 @@ main = runSpecAndExitProcess [ consoleReporter ] do
         html `shouldSatisfy` (not <<< contains (Pattern text))
     it "shows the category and the other kinds of place on a card" do
       renders (Active swiper (Swiping (restaurant "a") { category = Just "Pub", moreCategories = [ "Bar", "Cafe" ] })) "Pub</span><span class=\"rounded-lg bg-white/20 px-3 py-1 text-sm font-bold text-white backdrop-blur\">Bar"
+    it "shows how far away a place is, whether it's open, and where" do
+      renders (Active swiper (Swiping (restaurant "a") { distance = Just 1440.0, openNow = Just true, address = Just "1 Main St" })) "1.4 km away · Open now · 1 Main St"
+      renders (Active swiper (Swiping (restaurant "a") { distance = Just 850.0, openNow = Just false })) "850 m away · Closed now"
     it "shows vibe chips in the lobby, marking the chosen ones" do
       renders (QR lobbyAt { vibe = { chips: [ "patio" ], choices: [ patio, veggie ], locked: false, place: Nothing } }) "aria-pressed=\"true\">☀️ Patio<"
       renders (QR lobbyAt { vibe = { chips: [ "patio" ], choices: [ patio, veggie ], locked: true, place: Nothing } }) "Locked in"

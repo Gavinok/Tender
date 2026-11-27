@@ -135,6 +135,12 @@ data Restaurant = Restaurant
     has it, false when the source says it doesn't. Left out when it's silent.
     -}
     , location :: Loc
+    , address :: Maybe Text
+    -- ^ Short, e.g. "123 Main St"
+    , openNow :: Maybe Bool
+    -- ^ Nothing when the source doesn't say
+    , distance :: Maybe Double
+    -- ^ Metres from where the search was centred, filled in by the search
     }
     deriving stock (Eq, Show)
 
@@ -149,6 +155,9 @@ instance ToJSON Restaurant where
             , "price" .= price r
             , "category" .= category r
             , "moreCategories" .= moreCategories r
+            , "address" .= address r
+            , "openNow" .= openNow r
+            , "distance" .= fmap (round @Double @Int) (distance r)
             , "photos" .= map photoJSON (photos r)
             , "summary" .= fmap (\s -> object ["text" .= summaryText s, "disclosure" .= summaryDisclosure s]) (summary r)
             , "reviews" .= map reviewJSON (reviews r)

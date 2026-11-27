@@ -55,6 +55,9 @@ parseYelp = withObject "BusinessSearchResponse" $ \o ->
             <*> pure []
             <*> pure []
             <*> (Loc <$> coords .: "latitude" <*> coords .: "longitude")
+            <*> ((b .:? "location") >>= maybe (pure Nothing) (.:? "address1"))
+            <*> pure Nothing
+            <*> pure Nothing
     urlPhoto u = Photo (PhotoUrl u) Nothing
     -- Yelp sends "" for businesses without a photo
     nonEmpty :: Maybe Text -> Maybe Text
