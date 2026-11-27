@@ -109,7 +109,7 @@ maxPhotos = 5
 field asked for, and rating and priceLevel put this in the Enterprise SKU.
 -}
 fieldMask :: BS.ByteString
-fieldMask = "places.id,places.displayName,places.location,places.rating,places.priceLevel,places.googleMapsUri,places.primaryTypeDisplayName,places.types,places.photos,places.generativeSummary,places.editorialSummary,places.reviews," <> attributeFields
+fieldMask = "places.id,places.displayName,places.location,places.rating,places.priceLevel,places.googleMapsUri,places.shortFormattedAddress,places.currentOpeningHours.openNow,places.primaryTypeDisplayName,places.types,places.photos,places.generativeSummary,places.editorialSummary,places.reviews," <> attributeFields
 
 -- | The attributes the chips can be confirmed by, in the same billing tier as the summaries
 attributeFields :: BS.ByteString
@@ -257,6 +257,9 @@ parsePlaces = withObject "SearchNearbyResponse" $ \o ->
             <*> (p .:? "reviews" .!= [] >>= fmap catMaybes . traverse parseReview)
             <*> parseTraits p
             <*> p .: "location"
+            <*> p .:? "shortFormattedAddress"
+            <*> (p .:? "currentOpeningHours" >>= maybe (pure Nothing) (.:? "openNow"))
+            <*> pure Nothing
     -- A chip holds when any of its attributes is true, and fails when Google
     -- gave some and none were
     parseTraits p = fmap catMaybes . for allChips $ \c -> do

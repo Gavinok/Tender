@@ -63,6 +63,7 @@ searchResponse =
         , "   \"location\": {\"latitude\": 48.43, \"longitude\": -123.35},"
         , "   \"rating\": 4.5, \"priceLevel\": \"PRICE_LEVEL_MODERATE\","
         , "   \"googleMapsUri\": \"https://maps.google.com/?cid=1\","
+        , "   \"shortFormattedAddress\": \"1 Pho St\", \"currentOpeningHours\": {\"openNow\": true},"
         , "   \"primaryTypeDisplayName\": {\"text\": \"Vietnamese Restaurant\", \"languageCode\": \"en\"},"
         , "   \"types\": [\"vietnamese_restaurant\", \"bar\", \"noodle_shop\", \"cafe\", \"restaurant\", \"food\", \"point_of_interest\", \"establishment\"],"
         , "   \"photos\": [{\"name\": \"places/ChIJ1/photos/AbC-1_x\", \"widthPx\": 800, \"heightPx\": 600,"
@@ -120,6 +121,9 @@ main = hspec $ do
                         [Review (Author "Kai" (Just "https://maps.google.com/maps/contrib/2")) (Just 5) "Rich broth." (Just "a month ago")]
                         []
                         (Loc 48.43 (-123.35))
+                        (Just "1 Pho St")
+                        (Just True)
+                        Nothing
                     , (plain Google "ChIJ2" (Loc 48.44 (-123.36))){name = "New Spot"}
                     ]
         it "leaves out reviews with no words" $ do
@@ -143,7 +147,7 @@ main = hspec $ do
             parseWith
                 parseYelp
                 "{\"businesses\": [{\"id\": \"y1\", \"name\": \"Jam Cafe\", \"url\": \"https://www.yelp.com/biz/jam\", \"image_url\": \"\", \"rating\": 4.5, \"price\": \"$$\", \"categories\": [{\"alias\": \"breakfast\", \"title\": \"Breakfast & Brunch\"}], \"coordinates\": {\"latitude\": 48.42, \"longitude\": -123.36}}]}"
-                `shouldBe` Right [Restaurant Yelp "y1" "Jam Cafe" (Just "https://www.yelp.com/biz/jam") (Just 4.5) (Just Moderate) (Just "Breakfast & Brunch") [] [] Nothing [] [] (Loc 48.42 (-123.36))]
+                `shouldBe` Right [Restaurant Yelp "y1" "Jam Cafe" (Just "https://www.yelp.com/biz/jam") (Just 4.5) (Just Moderate) (Just "Breakfast & Brunch") [] [] Nothing [] [] (Loc 48.42 (-123.36)) Nothing Nothing Nothing]
 
     describe "rankFor" $ do
         let with ts name = (plain Google name (Loc 0 0)){traits = ts}
@@ -172,8 +176,8 @@ main = hspec $ do
                     ]
                 )
                 `shouldBe` Right
-                    [ Restaurant OpenStreetMap "osm:node/1" "Pho Real" (Just "https://www.openstreetmap.org/node/1") Nothing Nothing (Just "Vietnamese") [] [] Nothing [] [] (Loc 48.43 (-123.35))
-                    , Restaurant OpenStreetMap "osm:way/2" "Fish Store" (Just "https://www.openstreetmap.org/way/2") Nothing Nothing (Just "Fish and chips") [] [] Nothing [] [] (Loc 48.44 (-123.36))
+                    [ Restaurant OpenStreetMap "osm:node/1" "Pho Real" (Just "https://www.openstreetmap.org/node/1") Nothing Nothing (Just "Vietnamese") [] [] Nothing [] [] (Loc 48.43 (-123.35)) Nothing Nothing Nothing
+                    , Restaurant OpenStreetMap "osm:way/2" "Fish Store" (Just "https://www.openstreetmap.org/way/2") Nothing Nothing (Just "Fish and chips") [] [] Nothing [] [] (Loc 48.44 (-123.36)) Nothing Nothing Nothing
                     ]
         it "puts the nearest first" $
             map restaurantId (nearest (Loc 0 0) 2 [plain OpenStreetMap "far" (Loc 0.03 0), plain OpenStreetMap "near" (Loc 0.001 0), plain OpenStreetMap "mid" (Loc 0 0.01)])
@@ -185,7 +189,11 @@ main = hspec $ do
             search ps = searchWithFallback (const (pure ())) ps (Search here [] defaultRadius 0)
         it "uses the first source that finds something" $
             search [provider "down" (Left (ParseError "boom")), provider "empty" (Right []), provider "osm" (Right found)]
-                `shouldReturn` Just found
+                `shouldReturn` Just [r{distance = Just 0} | r <- found]
+        it "says how far each place is from the search" $ do
+            let there = Loc 48.44 (-123.35)
+            result <- searchWithFallback (const (pure ())) [provider "osm" (Right [plain OpenStreetMap "a" there])] (Search here [] defaultRadius 0)
+            fmap (map (fmap round . distance)) result `shouldBe` Just [Just (1113 :: Int)]
         it "says nothing was found when a source answered with nothing" $
             search [provider "down" (Left (ParseError "boom")), provider "empty" (Right [])] `shouldReturn` Just []
         it "fails when every source failed" $

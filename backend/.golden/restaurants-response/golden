@@ -6,15 +6,18 @@
     "radius": 5000,
     "restaurants": [
         {
+            "address": "123 Main St",
             "category": "Vietnamese Restaurant",
             "confirmed": [
                 "patio"
             ],
+            "distance": 850,
             "id": "ChIJ1",
             "moreCategories": [
                 "Bar"
             ],
             "name": "Pho Real",
+            "openNow": true,
             "photos": [
                 {
                     "author": {
@@ -58,11 +61,14 @@
             "url": "https://maps.google.com/?cid=1"
         },
         {
+            "address": null,
             "category": null,
             "confirmed": [],
+            "distance": null,
             "id": "osm:node/1",
             "moreCategories": [],
             "name": "Fish Store",
+            "openNow": null,
             "photos": [],
             "price": null,
             "rating": null,

@@ -7,7 +7,7 @@ import Restaurant
 
 -- | A restaurant with only the given name and position
 plain :: Source -> Text -> Loc -> Restaurant
-plain src n = Restaurant src (RestaurantId n) n Nothing Nothing Nothing Nothing [] [] Nothing [] []
+plain src n l = Restaurant src (RestaurantId n) n Nothing Nothing Nothing Nothing [] [] Nothing [] [] l Nothing Nothing Nothing
 
 -- | Every field filled in
 pho :: Restaurant
@@ -30,6 +30,9 @@ pho =
         ]
         [("patio", True), ("veggie", False)]
         (Loc 48.43 (-123.35))
+        (Just "123 Main St")
+        (Just True)
+        (Just 850)
 
 -- | A bare restaurant, from a source with nothing to say about it
 fishStore :: Restaurant

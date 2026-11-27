@@ -4,7 +4,7 @@ module Provider (Provider (..), searchWithFallback) where
 import Data.Text (Text)
 import Data.Text qualified as T
 import Fetch (FetchError)
-import Restaurant (Restaurant)
+import Restaurant (Restaurant (..), metres)
 import Vibe (Search (..))
 
 data Provider = Provider
@@ -20,11 +20,12 @@ opposed to Just [] when they answered but found nothing.
 searchWithFallback :: (String -> IO ()) -> [Provider] -> Search -> IO (Maybe [Restaurant])
 searchWithFallback warn providers l = go False providers
   where
+    withDistance centre r = r{distance = Just (metres centre (location r))}
     go answered [] = pure (if answered then Just [] else Nothing)
     go answered (p : rest) = do
         found <- searchNear p l
         case found of
-            Right rs@(_ : _) -> pure (Just rs)
+            Right rs@(_ : _) -> pure (Just (map (withDistance (searchLoc l)) rs))
             Right [] -> do
                 warn $ T.unpack (providerName p) ++ " found nothing near " ++ show l
                 go True rest

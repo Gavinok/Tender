@@ -2,9 +2,10 @@ module Tender.View.Card (restaurantCard, ratingStars, actionBar) where
 
 import Prelude
 
-import Data.Array (elem, filter, length, range)
-import Data.Int (toNumber)
+import Data.Array (catMaybes, elem, filter, length, range)
+import Data.Int (round, toNumber)
 import Data.Maybe (Maybe(..), maybe)
+import Data.String (joinWith)
 import Flame (Html)
 import Flame.Html.Attribute as HA
 import Flame.Html.Element as HE
@@ -34,6 +35,18 @@ ratingStars rating =
     | otherwise = empty
   filled classes = icon Star (classes <> " fill-star text-star")
   empty = icon Star "w-5 h-5 text-white/50"
+
+-- | "850 m" or "1.4 km"
+distanceText :: Number -> String
+distanceText m
+  | m < 1000.0 = show (round m) <> " m"
+  | otherwise = show (toNumber (round (m / 100.0)) / 10.0) <> " km"
+
+-- | How far away it is, whether it's open and where, as one line
+whereAndWhen :: forall a. Restaurant -> Html a
+whereAndWhen r = case catMaybes [ (_ <> " away") <<< distanceText <$> r.distance, (\open -> if open then "Open now" else "Closed now") <$> r.openNow, r.address ] of
+  [] -> HE.text ""
+  parts -> HE.p [ HA.class' "text-sm text-white/90" ] [ HE.text (joinWith " · " parts) ]
 
 chip :: forall a. String -> Html a
 chip text =
@@ -132,6 +145,7 @@ restaurantCard { likedByOthers, vibe, photo, summaryOpen, toggleSummary } r =
             (maybe [] (pure <<< ratingStars) r.rating <> maybe [] (pure <<< chip) r.price)
         , HE.div [ HA.class' "flex flex-wrap gap-2" ]
             (map chip (maybe [] pure r.category <> r.moreCategories) <> map (chip <<< _.label) (filter (\c -> elem c.id r.confirmed) vibe))
+        , whereAndWhen r
         , case r.summary of
             Just s | not summaryOpen ->
               HE.button [ HA.class' "text-left text-sm text-white/90", HA.onClick toggleSummary ]
