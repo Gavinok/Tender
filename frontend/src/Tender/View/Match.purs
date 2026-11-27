@@ -1,4 +1,4 @@
-module Tender.View.Match (announcement, celebration, matchesSheet) where
+module Tender.View.Match (announcement, toast, celebration, matchesSheet) where
 
 import Prelude
 
@@ -47,6 +47,18 @@ announcement :: forall a. Maybe Restaurant -> Html a
 announcement matched =
   HE.p [ HA.class' "sr-only", HA.createAttribute "role" "status", HA.createAttribute "aria-live" "polite" ]
     [ HE.text (maybe "" (\r -> "It's a match! Everyone's hungry for " <> r.name) matched) ]
+
+-- | A match after the first, over the cards so swiping carries on. Tapping it
+-- | opens the list of matches.
+toast :: forall a. Restaurant -> a -> Html a
+toast r open =
+  HE.button
+    [ HA.type' "button"
+    , HA.class' "fixed inset-x-4 top-4 z-10 mx-auto flex max-w-md items-center justify-center gap-2 rounded-xl border-2 border-ink bg-star px-4 py-3 font-bold shadow-pop"
+    , HA.createAttribute "role" "status"
+    , HA.onClick open
+    ]
+    [ HE.text ("It's a match: " <> r.name) ]
 
 -- | Full screen "it's a match" over everything else
 celebration :: forall a. Restaurant -> a -> Html a

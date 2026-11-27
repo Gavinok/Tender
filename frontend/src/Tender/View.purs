@@ -17,7 +17,7 @@ import Tender.View.Layout (page)
 import Tender.View.PlacePicker (placePicker)
 import Tender.View.Presence (presenceStrip)
 import Tender.View.Lobby (lobby)
-import Tender.View.Match (announcement, celebration, matchesSheet)
+import Tender.View.Match (announcement, celebration, matchesSheet, toast)
 import Tender.View.States (cardSkeleton, needLocation, outOfRestaurants, problem, setting)
 
 -- | Metres as whole kilometres, e.g. "10 km"
@@ -103,4 +103,5 @@ view (Active swiper screen) =
                 ]
             Matched r -> celebration r Continue
         ]
+      <> maybe [] (\r -> [ toast r ToggleMatches ]) swiper.toast
       <> if swiper.showMatches then [ matchesSheet swiper.matches ToggleMatches ] else []

@@ -52,7 +52,7 @@ bare :: String -> Restaurant
 bare id = (restaurant id) { url = Nothing, rating = Nothing, photos = [], summary = Nothing, reviews = [], confirmed = [] }
 
 swiper :: Swiper
-swiper = { user: UserId "u", loc: Just here, radius: 5000.0, maxRadius: 50000.0, widening: false, upcoming: [], photo: 0, summaryOpen: false, othersLiked: [], liked: [], matches: [], people: [], heartbeatIn: 10, showMatches: false, warningDismissed: false, vibe: [] }
+swiper = { user: UserId "u", loc: Just here, radius: 5000.0, maxRadius: 50000.0, widening: false, upcoming: [], photo: 0, summaryOpen: false, othersLiked: [], liked: [], matches: [], people: [], heartbeatIn: 10, showMatches: false, toast: Nothing, warningDismissed: false, vibe: [] }
 
 here :: { latitude :: Number, longitude :: Number }
 here = { latitude: 1.0, longitude: 2.0 }
@@ -135,6 +135,10 @@ main = runSpecAndExitProcess [ consoleReporter ] do
     it "records a match" do
       step (Active swiper (Swiping (restaurant "a"))) (likedWithMatches "a" [ "a" ])
         `shouldEqual` Tuple (Active swiper { liked = [ restaurant "a" ], matches = [ restaurant "a" ] } (Matched (restaurant "a"))) 1
+
+    it "only toasts a match after the first, so swiping isn't interrupted" do
+      step (Active swiper { upcoming = [ restaurant "b" ], matches = [ restaurant "z" ], liked = [ restaurant "z" ] } (Swiping (restaurant "a"))) (likedWithMatches "a" [ "a", "z" ])
+        `shouldEqual` Tuple (Active swiper { liked = [ restaurant "a", restaurant "z" ], matches = [ restaurant "a", restaurant "z" ], toast = Just (restaurant "a") } (Swiping (restaurant "b"))) 1
 
     it "remembers a like that isn't a match yet" do
       step (Active swiper { upcoming = [ restaurant "b" ] } (Swiping (restaurant "a"))) (likedWithMatches "a" [])
@@ -353,6 +357,9 @@ main = runSpecAndExitProcess [ consoleReporter ] do
     it "says how far the search reached and offers to widen it while swiping" do
       renders (Active swiper (Swiping (restaurant "a"))) "Within 5 km"
       renders (Active swiper (Swiping (restaurant "a"))) "Search further (up to 10 km)"
+    it "shows a toast for a later match over the cards" do
+      renders (Active swiper { toast = Just (restaurant "a") } (Swiping (restaurant "b"))) "It&#39;s a match: "
+
     it "shows vibe chips in the lobby, marking the chosen ones" do
       renders (QR lobbyAt { vibe = { chips: [ "patio" ], choices: [ patio, veggie ], locked: false, place: Nothing } }) "aria-pressed=\"true\">☀️ Patio<"
       renders (QR lobbyAt { vibe = { chips: [ "patio" ], choices: [ patio, veggie ], locked: true, place: Nothing } }) "Locked in"

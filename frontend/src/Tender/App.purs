@@ -12,7 +12,7 @@ module Tender.App
 
 import Prelude
 
-import Data.Array (cons, elem, filter, head, length, snoc, uncons)
+import Data.Array (cons, elem, filter, head, length, null, snoc, uncons)
 import Data.Bifunctor (lmap)
 import Data.String (trim)
 import Data.Either (Either(..), either)
@@ -62,6 +62,8 @@ type Swiper =
   , showMatches :: Boolean
   -- | Whether they closed the warning that their location wasn't found
   , warningDismissed :: Boolean
+  -- | A match after the first, mentioned over the cards until the next swipe
+  , toast :: Maybe Restaurant
   -- | The session's vibe chips
   , vibe :: Array Chip
   }
@@ -222,6 +224,12 @@ advance swiper = case uncons swiper.upcoming of
   Nothing -> Active swiper NoneLeft /\ []
   Just { head, tail } -> Active swiper { upcoming = tail, photo = 0, summaryOpen = false } (Swiping head) /\ []
 
+-- | Mention a match over whatever screen follows
+withToast :: Restaurant -> Tuple Model (Array (Aff (Maybe Message))) -> Model
+withToast m (shown /\ _) = case shown of
+  Active s screen -> Active s { toast = Just m } screen
+  other -> other
+
 -- | How long until the next heartbeat. More often while out of cards, where
 -- | someone is waiting to hear about matches.
 seconds :: Int -> Milliseconds
@@ -307,7 +315,7 @@ update model = case model, _ of
       -- Only reached when nobody else in the session has a location either
       noLocation problem e = LocationFailed session user problem (errorText e)
     in
-      Active { user, loc, radius: 0.0, maxRadius: 0.0, widening: false, upcoming: [], photo: 0, summaryOpen: false, othersLiked: [], liked: [], matches: [], people: [], heartbeatIn: 10, showMatches: false, warningDismissed: false, vibe: [] } Fetching
+      Active { user, loc, radius: 0.0, maxRadius: 0.0, widening: false, upcoming: [], photo: 0, summaryOpen: false, othersLiked: [], liked: [], matches: [], people: [], heartbeatIn: 10, showMatches: false, toast: Nothing, warningDismissed: false, vibe: [] } Fetching
         /\
           [ Just <<< either (either noLocation (const failed) located) Loaded <$> getRestaurants user loc Nothing
           -- Soon after the search, so the server knows what the user was shown
@@ -386,11 +394,14 @@ update model = case model, _ of
   Active swiper (Swiping r), Decided d | r.id == d.id ->
     let
       liked = if d.liked then cons r swiper.liked else swiper.liked
-      { new, swiper: next } = newMatches d.matches swiper { upcoming = likedFirst d.othersLiked swiper.upcoming, othersLiked = d.othersLiked, liked = liked }
+      { new, swiper: next } = newMatches d.matches swiper { upcoming = likedFirst d.othersLiked swiper.upcoming, othersLiked = d.othersLiked, liked = liked, toast = Nothing }
     in
-      -- Celebrate one, newest first; any others are in the list of matches
+      -- Celebrate the first match, newest first; later ones get a toast so
+      -- swiping isn't interrupted. Any others are in the list of matches.
       case head new of
-        Just m -> Active next (Matched m) /\ [ liftEffect vibrate $> Nothing ]
+        Just m
+          | null swiper.matches -> Active next (Matched m) /\ [ liftEffect vibrate $> Nothing ]
+          | otherwise -> withToast m (advance next) /\ [ liftEffect vibrate $> Nothing ]
         Nothing -> advance next
   Active swiper (Swiping r), NextPhoto ->
     Active swiper { photo = min (swiper.photo + 1) (max 0 (length r.photos - 1)) } (Swiping r) /\ []
