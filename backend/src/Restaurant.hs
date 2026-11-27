@@ -3,7 +3,7 @@
 -- | Restaurants as sent to the frontend. They come fresh from a source
 -- | (Google Places, Yelp or OpenStreetMap) for each search and are not
 -- | stored, since Google's and Yelp's terms only allow keeping ids.
-module Restaurant (Restaurant (..), Source (..), Photo (..), PhotoSource (..), Author (..), Summary (..), Review (..), Loc (..), metres, RestaurantId (..), Price (..), priceFromSymbol) where
+module Restaurant (Restaurant (..), Source (..), Photo (..), PhotoSource (..), Author (..), Summary (..), Review (..), Loc (..), metres, RestaurantId (..), Price (..), priceFromSymbol, maxMoreCategories) where
 
 import Data.Aeson (FromJSON (parseJSON), ToJSON (toJSON), object, withObject, (.:), (.=))
 import Data.Text (Text)
@@ -109,6 +109,10 @@ data Review = Review
     }
     deriving stock (Eq, Show)
 
+-- | How many categories to send after the main one, to keep cards uncluttered
+maxMoreCategories :: Int
+maxMoreCategories = 2
+
 data Restaurant = Restaurant
     { source :: Source
     , restaurantId :: RestaurantId
@@ -119,6 +123,8 @@ data Restaurant = Restaurant
     , price :: Maybe Price
     -- ^ \$ to $$$$
     , category :: Maybe Text
+    , moreCategories :: [Text]
+    -- ^ Other kinds of place it is, e.g. "Bar" for a pub that's mostly a restaurant
     , photos :: [Photo]
     -- ^ The first is shown on the card first
     , summary :: Maybe Summary
@@ -142,6 +148,7 @@ instance ToJSON Restaurant where
             , "rating" .= rating r
             , "price" .= price r
             , "category" .= category r
+            , "moreCategories" .= moreCategories r
             , "photos" .= map photoJSON (photos r)
             , "summary" .= fmap (\s -> object ["text" .= summaryText s, "disclosure" .= summaryDisclosure s]) (summary r)
             , "reviews" .= map reviewJSON (reviews r)

@@ -11,7 +11,7 @@ import Data.Text qualified as T
 import Fetch (FetchError, fetchJSON)
 import Network.HTTP.Simple (parseRequest_, setRequestHeaders, setRequestQueryString)
 import Provider (Provider (..))
-import Restaurant (Loc (..), Photo (..), PhotoSource (..), Restaurant (..), Source (..), priceFromSymbol)
+import Restaurant (Loc (..), Photo (..), PhotoSource (..), Restaurant (..), Source (..), maxMoreCategories, priceFromSymbol)
 import Vibe (Search (..))
 
 newtype YelpKey = YelpKey BS.ByteString
@@ -49,6 +49,7 @@ parseYelp = withObject "BusinessSearchResponse" $ \o ->
             <*> b .:? "rating"
             <*> ((>>= priceFromSymbol) <$> b .:? "price")
             <*> traverse (withObject "Category" (.: "title")) (listToMaybe categories)
+            <*> traverse (withObject "Category" (.: "title")) (take maxMoreCategories (drop 1 categories))
             <*> (maybe [] (pure . urlPhoto) . nonEmpty <$> b .:? "image_url")
             <*> pure Nothing
             <*> pure []

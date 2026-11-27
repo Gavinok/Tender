@@ -66,6 +66,8 @@ type Restaurant =
   , price :: Maybe String
   , rating :: Maybe Number
   , category :: Maybe String
+  -- | Other kinds of place it is, after `category`
+  , moreCategories :: Array String
   -- | The first is shown first
   , photos :: Array Photo
   -- | A few sentences about the place, with Google's disclosure for AI summaries

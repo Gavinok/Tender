@@ -7,7 +7,7 @@ import Restaurant
 
 -- | A restaurant with only the given name and position
 plain :: Source -> Text -> Loc -> Restaurant
-plain src n = Restaurant src (RestaurantId n) n Nothing Nothing Nothing Nothing [] Nothing [] []
+plain src n = Restaurant src (RestaurantId n) n Nothing Nothing Nothing Nothing [] [] Nothing [] []
 
 -- | Every field filled in
 pho :: Restaurant
@@ -20,6 +20,7 @@ pho =
         (Just 4.5)
         (Just Moderate)
         (Just "Vietnamese Restaurant")
+        ["Bar"]
         [ Photo (GooglePhoto "places/ChIJ1/photos/p1") (Just (Author "Sam" (Just "https://maps.google.com/contrib/1")))
         , Photo (PhotoUrl "https://example.com/pho.jpg") Nothing
         ]

@@ -64,6 +64,7 @@ searchResponse =
         , "   \"rating\": 4.5, \"priceLevel\": \"PRICE_LEVEL_MODERATE\","
         , "   \"googleMapsUri\": \"https://maps.google.com/?cid=1\","
         , "   \"primaryTypeDisplayName\": {\"text\": \"Vietnamese Restaurant\", \"languageCode\": \"en\"},"
+        , "   \"types\": [\"vietnamese_restaurant\", \"bar\", \"noodle_shop\", \"cafe\", \"restaurant\", \"food\", \"point_of_interest\", \"establishment\"],"
         , "   \"photos\": [{\"name\": \"places/ChIJ1/photos/AbC-1_x\", \"widthPx\": 800, \"heightPx\": 600,"
         , "     \"authorAttributions\": [{\"displayName\": \"Sam\", \"uri\": \"//maps.google.com/maps/contrib/1\", \"photoUri\": \"//lh3.googleusercontent.com/a\"}]}],"
         , "   \"generativeSummary\": {\"overview\": {\"text\": \"Bright noodle spot known for its broth.\", \"languageCode\": \"en\"}, \"disclosureText\": {\"text\": \"Summarized with Gemini\", \"languageCode\": \"en\"}},"
@@ -113,6 +114,7 @@ main = hspec $ do
                         (Just 4.5)
                         (Just Moderate)
                         (Just "Vietnamese Restaurant")
+                        ["Bar", "Noodle shop"]
                         [Photo (GooglePhoto "places/ChIJ1/photos/AbC-1_x") (Just (Author "Sam" (Just "https://maps.google.com/maps/contrib/1")))]
                         (Just (Summary "Bright noodle spot known for its broth." (Just "Summarized with Gemini")))
                         [Review (Author "Kai" (Just "https://maps.google.com/maps/contrib/2")) (Just 5) "Rich broth." (Just "a month ago")]
@@ -141,7 +143,7 @@ main = hspec $ do
             parseWith
                 parseYelp
                 "{\"businesses\": [{\"id\": \"y1\", \"name\": \"Jam Cafe\", \"url\": \"https://www.yelp.com/biz/jam\", \"image_url\": \"\", \"rating\": 4.5, \"price\": \"$$\", \"categories\": [{\"alias\": \"breakfast\", \"title\": \"Breakfast & Brunch\"}], \"coordinates\": {\"latitude\": 48.42, \"longitude\": -123.36}}]}"
-                `shouldBe` Right [Restaurant Yelp "y1" "Jam Cafe" (Just "https://www.yelp.com/biz/jam") (Just 4.5) (Just Moderate) (Just "Breakfast & Brunch") [] Nothing [] [] (Loc 48.42 (-123.36))]
+                `shouldBe` Right [Restaurant Yelp "y1" "Jam Cafe" (Just "https://www.yelp.com/biz/jam") (Just 4.5) (Just Moderate) (Just "Breakfast & Brunch") [] [] Nothing [] [] (Loc 48.42 (-123.36))]
 
     describe "rankFor" $ do
         let with ts name = (plain Google name (Loc 0 0)){traits = ts}
@@ -151,6 +153,11 @@ main = hspec $ do
                 `shouldBe` ["both", "silent", "one", "fails"]
         it "ignores chips Google has no attribute for, and keeps the order when none apply" $
             order [Cheap] [with [("patio", False)] "a", with [] "b"] `shouldBe` ["a", "b"]
+
+        it "keeps up to two more categories" $ do
+            let cat t = "{\"title\": \"" <> t <> "\"}"
+                body = "{\"businesses\": [{\"id\": \"y\", \"name\": \"N\", \"coordinates\": {\"latitude\": 1, \"longitude\": 2}, \"categories\": [" <> L8.intercalate "," (map cat ["A", "B", "C", "D"]) <> "]}]}"
+            map moreCategories <$> parseWith parseYelp body `shouldBe` Right [["B", "C"]]
 
     describe "parseOverpass" $ do
         it "reads nodes and ways, skipping places without a name" $
@@ -165,8 +172,8 @@ main = hspec $ do
                     ]
                 )
                 `shouldBe` Right
-                    [ Restaurant OpenStreetMap "osm:node/1" "Pho Real" (Just "https://www.openstreetmap.org/node/1") Nothing Nothing (Just "Vietnamese") [] Nothing [] [] (Loc 48.43 (-123.35))
-                    , Restaurant OpenStreetMap "osm:way/2" "Fish Store" (Just "https://www.openstreetmap.org/way/2") Nothing Nothing (Just "Fish and chips") [] Nothing [] [] (Loc 48.44 (-123.36))
+                    [ Restaurant OpenStreetMap "osm:node/1" "Pho Real" (Just "https://www.openstreetmap.org/node/1") Nothing Nothing (Just "Vietnamese") [] [] Nothing [] [] (Loc 48.43 (-123.35))
+                    , Restaurant OpenStreetMap "osm:way/2" "Fish Store" (Just "https://www.openstreetmap.org/way/2") Nothing Nothing (Just "Fish and chips") [] [] Nothing [] [] (Loc 48.44 (-123.36))
                     ]
         it "puts the nearest first" $
             map restaurantId (nearest (Loc 0 0) 2 [plain OpenStreetMap "far" (Loc 0.03 0), plain OpenStreetMap "near" (Loc 0.001 0), plain OpenStreetMap "mid" (Loc 0 0.01)])
