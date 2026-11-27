@@ -58,6 +58,8 @@ type Swiper =
   , heartbeatIn :: Int
   -- | Whether the list of matches is open
   , showMatches :: Boolean
+  -- | Whether they closed the warning that their location wasn't found
+  , warningDismissed :: Boolean
   -- | The session's vibe chips
   , vibe :: Array Chip
   }
@@ -161,6 +163,7 @@ data Message
   -- | Leave this session for a new one
   | NewSession
   | ToggleMatches
+  | DismissWarning
   | ShareInvite
   | LinkCopied
   | HideCopied
@@ -300,7 +303,7 @@ update model = case model, _ of
       -- Only reached when nobody else in the session has a location either
       noLocation problem e = LocationFailed session user problem (errorText e)
     in
-      Active { user, loc, radius: 0.0, maxRadius: 0.0, upcoming: [], photo: 0, summaryOpen: false, othersLiked: [], liked: [], matches: [], people: [], heartbeatIn: 10, showMatches: false, vibe: [] } Fetching
+      Active { user, loc, radius: 0.0, maxRadius: 0.0, upcoming: [], photo: 0, summaryOpen: false, othersLiked: [], liked: [], matches: [], people: [], heartbeatIn: 10, showMatches: false, warningDismissed: false, vibe: [] } Fetching
         /\
           [ Just <<< either (either noLocation (const failed) located) Loaded <$> getRestaurants user loc Nothing
           -- Soon after the search, so the server knows what the user was shown
@@ -408,6 +411,9 @@ update model = case model, _ of
       case head new of
         Just m -> Active next (Matched m) /\ [ liftEffect vibrate $> Nothing, again ]
         Nothing -> Active next screen /\ [ again ]
+
+  Active swiper screen, DismissWarning ->
+    Active swiper { warningDismissed = true } screen /\ []
 
   Active swiper screen, ToggleMatches ->
     Active swiper { showMatches = not swiper.showMatches } screen /\ []

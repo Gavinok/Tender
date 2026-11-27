@@ -52,7 +52,7 @@ bare :: String -> Restaurant
 bare id = (restaurant id) { url = Nothing, rating = Nothing, photos = [], summary = Nothing, reviews = [], confirmed = [] }
 
 swiper :: Swiper
-swiper = { user: UserId "u", loc: Just here, radius: 5000.0, maxRadius: 50000.0, upcoming: [], photo: 0, summaryOpen: false, othersLiked: [], liked: [], matches: [], people: [], heartbeatIn: 10, showMatches: false, vibe: [] }
+swiper = { user: UserId "u", loc: Just here, radius: 5000.0, maxRadius: 50000.0, upcoming: [], photo: 0, summaryOpen: false, othersLiked: [], liked: [], matches: [], people: [], heartbeatIn: 10, showMatches: false, warningDismissed: false, vibe: [] }
 
 here :: { latitude :: Number, longitude :: Number }
 here = { latitude: 1.0, longitude: 2.0 }
@@ -167,6 +167,10 @@ main = runSpecAndExitProcess [ consoleReporter ] do
         `shouldEqual` Active swiper (Swiping (restaurant "a"))
       fst (step (Active swiper { summaryOpen = true } (Swiping (restaurant "a"))) (KeyPressed "Escape"))
         `shouldEqual` Active swiper (Swiping (restaurant "a"))
+
+    it "stops showing the location warning once dismissed" do
+      step (Active swiper { loc = Nothing } (Swiping (restaurant "a"))) DismissWarning
+        `shouldEqual` Tuple (Active swiper { loc = Nothing, warningDismissed = true } (Swiping (restaurant "a"))) 0
 
     it "ignores other keys" do
       step (Active swiper (Swiping (restaurant "a"))) (KeyPressed "x")
@@ -332,6 +336,10 @@ main = runSpecAndExitProcess [ consoleReporter ] do
     it "shows how far away a place is, whether it's open, and where" do
       renders (Active swiper (Swiping (restaurant "a") { distance = Just 1440.0, openNow = Just true, address = Just "1 Main St" })) "1.4 km away · Open now · 1 Main St"
       renders (Active swiper (Swiping (restaurant "a") { distance = Just 850.0, openNow = Just false })) "850 m away · Closed now"
+    it "shows the location warning with a way to dismiss it, until it's dismissed" do
+      renders (Active swiper { loc = Nothing } (Swiping (restaurant "a"))) "aria-label=\"Dismiss\""
+      html <- liftEffect $ render (view (Active swiper { loc = Nothing, warningDismissed = true } (Swiping (restaurant "a"))))
+      html `shouldSatisfy` (not <<< contains (Pattern "get your location"))
     it "shows vibe chips in the lobby, marking the chosen ones" do
       renders (QR lobbyAt { vibe = { chips: [ "patio" ], choices: [ patio, veggie ], locked: false, place: Nothing } }) "aria-pressed=\"true\">☀️ Patio<"
       renders (QR lobbyAt { vibe = { chips: [ "patio" ], choices: [ patio, veggie ], locked: true, place: Nothing } }) "Locked in"
