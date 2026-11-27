@@ -143,7 +143,7 @@ view (Active swiper screen) =
                 ]
             Matched r -> celebration r Continue
         ]
-      <> maybe [] (\r -> [ toast r { open: ToggleMatches, dismiss: HideToast r.id } ]) swiper.toast
+      <> maybe [] (\t -> [ HE.div_ [ toast t { open: ToggleMatches, dismiss: HideToast t.match.id } ] ]) swiper.toast
       <> (if swiper.showMatches then [ matchesSheet swiper.matches ToggleMatches ] else [])
       <> (if swiper.showSession then [ sessionSheet swiper ] else [])
       <> case screen of
