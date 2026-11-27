@@ -30,7 +30,7 @@ import Data.Int (toNumber)
 import Tender.Vibe (Chip, Vibe)
 import Tender.Swipe (flyOut)
 import Tender.Swipe as Swipe
-import Tender.Browser (LocationProblem(..), Shared(..), existingSession, geolocation, reload, rememberSession, rememberUser, rememberedUser, shareLink, shareOrCopy, startNewSession, tabHidden, vibrate)
+import Tender.Browser (LocationProblem(..), Shared(..), confirmLeave, existingSession, geolocation, reload, rememberSession, rememberUser, rememberedUser, shareLink, shareOrCopy, startNewSession, tabHidden, vibrate)
 import Tender.Types (ErrorMessage, Found, Loc, Person, Place, Restaurant, RestaurantId, SessionId, Url, UserId)
 
 -- | What we know once the user has joined a session
@@ -286,7 +286,12 @@ update :: Update Model Message
 update model = case model, _ of
   _, FailedToLoad e -> ServerError e /\ []
   _, Retry -> model /\ [ liftEffect reload $> Nothing ]
-  _, NewSession -> model /\ [ liftEffect startNewSession $> Nothing ]
+  _, NewSession -> model /\
+    [ liftEffect do
+        leave <- confirmLeave
+        when leave startNewSession
+        pure Nothing
+    ]
 
   _, DetermineSession -> model /\
     [ Just <$> do

@@ -204,6 +204,11 @@ export const _rememberUser = (session) => (user) => () => {
   }
 };
 
+// The browser's own dialog is accessible and enough for a rare, one-line question
+/** @returns {boolean} */
+// eslint-disable-next-line no-alert
+export const confirmLeave = () => confirm("Leave this session and start a new one? Your group stays in it, and Back brings you here.");
+
 /** @returns {boolean} */
 export const tabHidden = () => document.visibilityState === "hidden";
 
