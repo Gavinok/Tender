@@ -340,6 +340,8 @@ main = runSpecAndExitProcess [ consoleReporter ] do
       renders (Active swiper { loc = Nothing } (Swiping (restaurant "a"))) "aria-label=\"Dismiss\""
       html <- liftEffect $ render (view (Active swiper { loc = Nothing, warningDismissed = true } (Swiping (restaurant "a"))))
       html `shouldSatisfy` (not <<< contains (Pattern "get your location"))
+    it "shows the rating and price of each match in the list" do
+      renders (Active swiper { showMatches = true, matches = [ (restaurant "a") { price = Just "$$" } ] } (Swiping (restaurant "b"))) "Rated 4.0 out of 5\">★ 4.0</span><span>$$"
     it "shows vibe chips in the lobby, marking the chosen ones" do
       renders (QR lobbyAt { vibe = { chips: [ "patio" ], choices: [ patio, veggie ], locked: false, place: Nothing } }) "aria-pressed=\"true\">☀️ Patio<"
       renders (QR lobbyAt { vibe = { chips: [ "patio" ], choices: [ patio, veggie ], locked: true, place: Nothing } }) "Locked in"
