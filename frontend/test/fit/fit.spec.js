@@ -49,7 +49,9 @@ const overflow = async (page) =>
 
 for (const phone of PHONES) {
   test.describe(`${phone.name} (${String(phone.width)}x${String(phone.height)})`, () => {
-    test.use({ viewport: { width: phone.width, height: phone.height } });
+    // A touch screen: with a mouse the lobby's vibe chips wrap instead of
+    // scrolling, which isn't what a phone shows
+    test.use({ viewport: { width: phone.width, height: phone.height }, hasTouch: true, isMobile: true });
 
     test.beforeEach(async ({ page }) => {
       await standIn(page);
