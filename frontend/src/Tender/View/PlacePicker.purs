@@ -64,7 +64,7 @@ searchingNear
   -> { open :: a, clear :: a | s }
   -> Html a
 searchingNear { place, locked } { open, clear } =
-  HE.p [ HA.class' "flex flex-wrap items-center justify-center gap-x-2 text-sm text-ink/70" ]
+  HE.p [ HA.class' "flex flex-wrap items-center gap-x-2 text-sm text-ink/70" ]
     ( [ HE.span_ [ HE.text "Searching near ", HE.strong [ HA.class' "text-ink" ] [ HE.text (maybe "your location" _.name place) ] ] ]
         <>
           if locked then []

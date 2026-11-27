@@ -45,6 +45,8 @@ export default defineConfig(
       "init-declarations": "off",
       "no-warning-comments": "off",
       "no-continue": "off",
+      // How to say a promise is left to run, for no-floating-promises
+      "no-void": ["error", { allowAsStatement: true }],
       "max-lines": ["error", 300],
       "@typescript-eslint/no-unnecessary-condition": "error",
       "@typescript-eslint/strict-boolean-expressions": "error",
@@ -78,7 +80,7 @@ export default defineConfig(
     languageOptions: { globals: globals.browser },
   },
   {
-    files: ["test/**/*.js", "tailwind.config.js", "eslint.config.mjs"],
+    files: ["test/**/*.js", "tailwind.config.js", "eslint.config.mjs", "playwright.config.js"],
     languageOptions: { globals: globals.node },
   },
   {

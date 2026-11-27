@@ -2,6 +2,8 @@ module Tender.View.Match (announcement, toast, celebration, matchesSheet) where
 
 import Prelude
 
+import Data.Foldable (foldMap)
+
 import Data.Array (length, range)
 import Data.Maybe (Maybe(..), maybe)
 import Flame (Html)
@@ -11,6 +13,7 @@ import Tender.Types (Restaurant)
 import Tender.View.Button (Variant(..), button, linkButton)
 import Tender.View.Icon (Icon(..), icon)
 import Tender.View.Photo (menuUrl, photoCredit, restaurantPhoto)
+import Tender.View.Sheet (sheet)
 import Tender.View.States (matchList)
 
 -- | Pieces of confetti falling across the screen. Positions are spread with
@@ -46,19 +49,24 @@ confetti =
 announcement :: forall a. Maybe Restaurant -> Html a
 announcement matched =
   HE.p [ HA.class' "sr-only", HA.createAttribute "role" "status", HA.createAttribute "aria-live" "polite" ]
-    [ HE.text (maybe "" (\r -> "It's a match! Everyone's hungry for " <> r.name) matched) ]
+    [ HE.text (foldMap (\r -> "It's a match! Everyone's hungry for " <> r.name) matched) ]
 
--- | A match after the first, over the cards so swiping carries on. Tapping it
--- | opens the list of matches.
-toast :: forall a. Restaurant -> a -> Html a
-toast r open =
-  HE.button
-    [ HA.type' "button"
-    , HA.class' "fixed inset-x-4 top-4 z-10 mx-auto flex max-w-md items-center justify-center gap-2 rounded-xl border-2 border-ink bg-star px-4 py-3 font-bold shadow-pop"
+-- | A match after the first, over the cards so swiping carries on, for a
+-- | few seconds. It drops in from the top and slides back up when it goes.
+-- | Tapping it opens the list of matches.
+toast :: forall a. { match :: Restaurant, leaving :: Boolean } -> { open :: a, dismiss :: a } -> Html a
+toast { match: r, leaving } { open, dismiss } =
+  HE.div
+    -- Keyed so the next match drops in again rather than reusing this one
+    [ HA.key (show r.id)
+    , HA.class' ("fixed inset-x-4 top-4 z-10 mx-auto flex max-w-md items-center rounded-xl border-2 border-ink bg-star font-bold shadow-pop " <> if leaving then "animate-toast-out" else "animate-toast-in")
     , HA.createAttribute "role" "status"
-    , HA.onClick open
     ]
-    [ HE.text ("It's a match: " <> r.name) ]
+    [ HE.button [ HA.type' "button", HA.class' "min-w-0 flex-1 truncate py-3 pl-4 text-left", HA.onClick open ]
+        [ HE.text ("It's a match: " <> r.name) ]
+    , HE.button [ HA.type' "button", HA.class' "grid h-11 w-11 shrink-0 place-items-center", HA.onClick dismiss, HA.createAttribute "aria-label" "Dismiss" ]
+        [ icon Close "h-5 w-5" ]
+    ]
 
 -- | Full screen "it's a match" over everything else
 celebration :: forall a. Restaurant -> a -> Html a
@@ -90,28 +98,10 @@ celebration r continue =
 -- | Matches so far, sliding up from the bottom
 matchesSheet :: forall a. Array Restaurant -> a -> Html a
 matchesSheet matches close =
-  HE.div [ HA.class' "fixed inset-0 z-10 flex flex-col justify-end" ]
-    [ HE.button
-        [ HA.class' "absolute inset-0 bg-ink/40"
-        , HA.onClick close
-        , HA.createAttribute "aria-label" "Close matches"
-        ]
-        []
-    , HE.section
-        [ HA.class' "relative mx-auto max-h-[80dvh] w-full max-w-md animate-card-in overflow-y-auto rounded-t-[2rem] border-x-[3px] border-t-[3px] border-ink bg-surface p-5 pb-8 shadow-2xl"
-        , HA.createAttribute "role" "dialog"
-        , HA.createAttribute "aria-modal" "true"
-        , HA.createAttribute "aria-label" "Matches"
-        ]
-        [ HE.div [ HA.class' "mb-4 flex items-center justify-between" ]
-            [ HE.h2 [ HA.class' "text-2xl font-display" ] [ HE.text (title (length matches)) ]
-            , HE.button [ HA.class' "rounded-lg p-2 text-ink/60 hover:bg-ink/5", HA.onClick close, HA.createAttribute "aria-label" "Close", HA.createAttribute "data-autofocus" "" ]
-                [ icon Close "h-6 w-6" ]
-            ]
-        , if length matches == 0 then
-            HE.p [ HA.class' "text-ink/70" ] [ HE.text "Nothing yet. When someone else likes a restaurant you liked, it shows up here." ]
-          else matchList matches
-        ]
+  sheet { title: title (length matches), close }
+    [ if length matches == 0 then
+        HE.p [ HA.class' "text-ink/70" ] [ HE.text "Nothing yet. When someone else likes a restaurant you liked, it shows up here." ]
+      else matchList matches
     ]
   where
   title 1 = "1 match"
