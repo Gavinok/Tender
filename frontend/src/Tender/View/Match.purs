@@ -52,11 +52,14 @@ announcement matched =
     [ HE.text (foldMap (\r -> "It's a match! Everyone's hungry for " <> r.name) matched) ]
 
 -- | A match after the first, over the cards so swiping carries on, for a
--- | few seconds. Tapping it opens the list of matches.
-toast :: forall a. Restaurant -> { open :: a, dismiss :: a } -> Html a
-toast r { open, dismiss } =
+-- | few seconds. It drops in from the top and slides back up when it goes.
+-- | Tapping it opens the list of matches.
+toast :: forall a. { match :: Restaurant, leaving :: Boolean } -> { open :: a, dismiss :: a } -> Html a
+toast { match: r, leaving } { open, dismiss } =
   HE.div
-    [ HA.class' "fixed inset-x-4 top-4 z-10 mx-auto flex max-w-md items-center rounded-xl border-2 border-ink bg-star font-bold shadow-pop"
+    -- Keyed so the next match drops in again rather than reusing this one
+    [ HA.key (show r.id)
+    , HA.class' ("fixed inset-x-4 top-4 z-10 mx-auto flex max-w-md items-center rounded-xl border-2 border-ink bg-star font-bold shadow-pop " <> if leaving then "animate-toast-out" else "animate-toast-in")
     , HA.createAttribute "role" "status"
     ]
     [ HE.button [ HA.type' "button", HA.class' "min-w-0 flex-1 truncate py-3 pl-4 text-left", HA.onClick open ]

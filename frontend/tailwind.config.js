@@ -46,6 +46,14 @@ module.exports = {
           from: { transform: "translateY(100%)" },
           to: { transform: "none" },
         },
+        "toast-in": {
+          from: { transform: "translateY(-150%)" },
+          to: { transform: "none" },
+        },
+        "toast-out": {
+          from: { transform: "none", opacity: "1" },
+          to: { transform: "translateY(-150%)", opacity: "0" },
+        },
         pop: {
           "0%": { transform: "scale(0.6) rotate(-8deg)", opacity: "0" },
           "60%": { transform: "scale(1.08) rotate(-3deg)", opacity: "1" },
@@ -63,6 +71,8 @@ module.exports = {
       animation: {
         "card-in": "card-in 0.35s cubic-bezier(0.2, 0.9, 0.3, 1.2) both",
         "sheet-up": "sheet-up 0.25s cubic-bezier(0.2, 0.9, 0.3, 1) both",
+        "toast-in": "toast-in 0.45s cubic-bezier(0.2, 0.9, 0.3, 1.25) both",
+        "toast-out": "toast-out 0.25s cubic-bezier(0.5, 0, 0.75, 0) both",
         pop: "pop 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.3) both",
         shimmer: "shimmer 1.6s linear infinite",
         confetti: "confetti 2.8s linear both",

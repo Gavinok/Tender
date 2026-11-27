@@ -106,10 +106,11 @@ maxPhotos :: Int
 maxPhotos = 5
 
 {- | Fields shown on the card. Google bills a request at the most expensive
-field asked for, and rating and priceLevel put this in the Enterprise SKU.
+field asked for, and rating, priceLevel and priceRange put this in the
+Enterprise SKU.
 -}
 fieldMask :: BS.ByteString
-fieldMask = "places.id,places.displayName,places.location,places.rating,places.priceLevel,places.googleMapsUri,places.shortFormattedAddress,places.currentOpeningHours.openNow,places.primaryTypeDisplayName,places.types,places.photos,places.generativeSummary,places.editorialSummary,places.reviews," <> attributeFields
+fieldMask = "places.id,places.displayName,places.location,places.rating,places.priceLevel,places.priceRange,places.googleMapsUri,places.shortFormattedAddress,places.currentOpeningHours.openNow,places.primaryTypeDisplayName,places.types,places.photos,places.generativeSummary,places.editorialSummary,places.reviews," <> attributeFields
 
 -- | The attributes the chips can be confirmed by, in the same billing tier as the summaries
 attributeFields :: BS.ByteString
@@ -249,6 +250,7 @@ parsePlaces = withObject "SearchNearbyResponse" $ \o ->
             <*> p .:? "googleMapsUri"
             <*> p .:? "rating"
             <*> ((>>= priceFromLevel) <$> p .:? "priceLevel")
+            <*> (p .:? "priceRange" >>= traverse parsePriceRange)
             <*> pure primary
             <*> (moreTypes primary <$> p .:? "types" .!= [])
             -- Each photo shown is a billed request, so only the first few
@@ -294,6 +296,25 @@ parsePlaces = withObject "SearchNearbyResponse" $ \o ->
         Author <$> a .: "displayName" <*> (fmap absolute <$> a .:? "uri")
     -- Author links come back without a scheme, e.g. //maps.google.com/...
     absolute u = if "//" `T.isPrefixOf` u then "https:" <> u else u
+
+{- | Google's range for a meal as Maps shows it, e.g. "$20–30", or "$100+"
+when there's no top end
+-}
+parsePriceRange :: Value -> AT.Parser Text
+parsePriceRange = withObject "PriceRange" $ \r -> do
+    start <- r .: "startPrice"
+    from <- start .: "units"
+    currency <- start .: "currencyCode"
+    to <- r .:? "endPrice" >>= traverse (.: "units")
+    pure (currencySymbol currency <> from <> maybe "+" ("–" <>) to)
+  where
+    currencySymbol :: Text -> Text
+    currencySymbol c
+        | c `elem` ["USD", "CAD", "AUD", "NZD", "MXN"] = "$"
+        | c == "EUR" = "€"
+        | c == "GBP" = "£"
+        | c == "JPY" = "¥"
+        | otherwise = c <> " "
 
 priceFromLevel :: Text -> Maybe Price
 priceFromLevel = \case

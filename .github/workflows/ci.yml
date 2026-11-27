@@ -202,5 +202,8 @@ jobs:
       - uses: google-github-actions/setup-gcloud@v2
       - run: gcloud auth configure-docker us-west1-docker.pkg.dev --quiet
       - uses: docker/setup-buildx-action@v3
+      # The gha cache needs the runtime token and cache URL, which GitHub
+      # only gives to actions, not to run steps like `make`
+      - uses: crazy-max/ghaction-github-runtime@v3
       - name: Deploy production
         run: make deploy TAG="${GITHUB_SHA::7}" REVISION="${GITHUB_SHA::7}-${GITHUB_RUN_NUMBER}"

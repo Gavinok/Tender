@@ -7,6 +7,7 @@ module Tender.App
   , Picker
   , Swiper
   , Decision
+  , Toast
   , init
   , update
   ) where
@@ -71,12 +72,15 @@ type Swiper =
   -- | Whether they closed the warning that their location wasn't found
   , warningDismissed :: Boolean
   -- | A match after the first, mentioned over the cards until the next swipe
-  , toast :: Maybe Restaurant
+  , toast :: Maybe Toast
   -- | Swipes the server hasn't heard yet, oldest first, sent again in the background
   , unsent :: Array Decision
   -- | The session's vibe chips
   , vibe :: Array Chip
   }
+
+-- | A match mentioned over the cards. `leaving` while it slides away.
+type Toast = { match :: Restaurant, leaving :: Boolean }
 
 -- | A swipe
 type Decision = { id :: RestaurantId, liked :: Boolean }
@@ -192,6 +196,8 @@ data Message
   | ToggleSession
   -- | Stop mentioning this match over the cards, if it's still the one shown
   | HideToast RestaurantId
+  -- | The toast has slid away
+  | ToastGone RestaurantId
   | ToggleQR
   | DismissWarning
   | ShareInvite
@@ -265,7 +271,7 @@ advance swiper = case uncons swiper.upcoming of
 -- | Mention a match over whatever screen follows
 withToast :: Restaurant -> Tuple Model (Array (Aff (Maybe Message))) -> Model
 withToast m (shown /\ _) = case shown of
-  Active s screen -> Active s { toast = Just m } screen
+  Active s screen -> Active s { toast = Just { match: m, leaving: false } } screen
   other -> other
 
 -- | How long until the next heartbeat. More often while out of cards, where
@@ -450,7 +456,7 @@ update model = case model, _ of
   Active swiper (Swiping r), Decided d | r.id == d.id ->
     let
       liked = if d.liked then cons r swiper.liked else swiper.liked
-      { new, swiper: next } = newMatches d.matches swiper { upcoming = likedFirst d.othersLiked swiper.upcoming, othersLiked = d.othersLiked, liked = liked, toast = Nothing }
+      { new, swiper: next } = newMatches d.matches swiper { upcoming = likedFirst d.othersLiked swiper.upcoming, othersLiked = d.othersLiked, liked = liked }
     in
       -- Celebrate the first match, newest first; later ones get a toast so
       -- swiping isn't interrupted. Any others are in the list of matches.
@@ -521,7 +527,10 @@ update model = case model, _ of
         Just m -> Active next (Matched m) /\ [ liftEffect vibrate $> Nothing, again ]
         Nothing -> Active next screen /\ [ again ]
 
-  Active swiper screen, HideToast id | map _.id swiper.toast == Just id ->
+  -- Slides away first, then goes; a newer toast is left alone
+  Active swiper screen, HideToast id | map (\t -> t.match.id) swiper.toast == Just id ->
+    Active swiper { toast = map _ { leaving = true } swiper.toast } screen /\ [ delay (Milliseconds 250.0) $> Just (ToastGone id) ]
+  Active swiper screen, ToastGone id | map (\t -> t.match.id) swiper.toast == Just id ->
     Active swiper { toast = Nothing } screen /\ []
   Active swiper screen, ToggleSession ->
     Active swiper { showSession = not swiper.showSession } screen /\ []
