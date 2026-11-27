@@ -138,7 +138,7 @@ main = runSpecAndExitProcess [ consoleReporter ] do
 
     it "only toasts a match after the first, so swiping isn't interrupted" do
       step (Active swiper { upcoming = [ restaurant "b" ], matches = [ restaurant "z" ], liked = [ restaurant "z" ] } (Swiping (restaurant "a"))) (likedWithMatches "a" [ "a", "z" ])
-        `shouldEqual` Tuple (Active swiper { liked = [ restaurant "a", restaurant "z" ], matches = [ restaurant "a", restaurant "z" ], toast = Just (restaurant "a") } (Swiping (restaurant "b"))) 1
+        `shouldEqual` Tuple (Active swiper { liked = [ restaurant "a", restaurant "z" ], matches = [ restaurant "a", restaurant "z" ], toast = Just (restaurant "a") } (Swiping (restaurant "b"))) 2
 
     it "keeps swiping when a swipe can't be sent, and sends it again later" do
       step (Active swiper { upcoming = [ restaurant "b" ] } (Swiping (restaurant "a"))) (NotSent { id: RestaurantId "a", liked: true })
@@ -403,8 +403,14 @@ main = runSpecAndExitProcess [ consoleReporter ] do
       renders (Active swiper { showSession = true } (Swiping (restaurant "a"))) ">Share invite<"
       renders (Active swiper { showSession = true, copied = true } (Swiping (restaurant "a"))) ">Link copied!<"
       renders (Active swiper { showSession = true } (Swiping (restaurant "a"))) ">Start a new session<"
+    it "hides the toast after a while or when dismissed, unless a newer one replaced it" do
+      step (Active swiper { toast = Just (restaurant "a") } (Swiping (restaurant "b"))) (HideToast (RestaurantId "a"))
+        `shouldEqual` Tuple (Active swiper (Swiping (restaurant "b"))) 0
+      step (Active swiper { toast = Just (restaurant "z") } (Swiping (restaurant "b"))) (HideToast (RestaurantId "a"))
+        `shouldEqual` Tuple (Active swiper { toast = Just (restaurant "z") } (Swiping (restaurant "b"))) 0
     it "shows a toast for a later match over the cards" do
       renders (Active swiper { toast = Just (restaurant "a") } (Swiping (restaurant "b"))) "It&#39;s a match: "
+      renders (Active swiper { toast = Just (restaurant "a") } (Swiping (restaurant "b"))) "aria-label=\"Dismiss\""
 
     it "points at the photo tap areas only when a card has more than one photo" do
       renders (Active swiper (Swiping (restaurant "a"))) "m9 18 6-6-6-6"
