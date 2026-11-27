@@ -31,11 +31,12 @@ vibeLine vibe =
     (map (HE.span_ <<< pure <<< HE.text <<< _.label) vibe)
 
 -- | Why the places might be far away, when the browser couldn't find the user
-locationWarning :: forall a. Html a
-locationWarning =
-  HE.p [ HA.class' "mb-4 flex items-center gap-2 rounded-xl border-2 border-ink bg-star/30 px-3 py-2 text-sm font-bold", HA.createAttribute "role" "status" ]
+locationWarning :: forall a. a -> Html a
+locationWarning dismiss =
+  HE.div [ HA.class' "mb-4 flex items-center gap-2 rounded-xl border-2 border-ink bg-star/30 px-3 py-2 text-sm font-bold", HA.createAttribute "role" "status" ]
     [ icon MapPin "h-5 w-5 shrink-0"
-    , HE.text "Couldn't get your location. Showing places near where your group started."
+    , HE.span [ HA.class' "flex-1" ] [ HE.text "Couldn't get your location. Showing places near where your group started." ]
+    , HE.button [ HA.class' "rounded-lg p-1 hover:bg-ink/10", HA.onClick dismiss, HA.createAttribute "aria-label" "Dismiss" ] [ icon Close "h-5 w-5" ]
     ]
 
 pickerMessages :: { open :: Message, clear :: Message, query :: String -> Message, find :: Message, choose :: Found -> Message, close :: Message }
@@ -65,7 +66,7 @@ view (Active swiper screen) =
         )
     , presenceStrip swiper.people
     ]
-      <> (if isNothing swiper.loc then [ locationWarning ] else [])
+      <> (if isNothing swiper.loc && not swiper.warningDismissed then [ locationWarning DismissWarning ] else [])
       <>
         [ case screen of
             Fetching -> cardSkeleton
