@@ -358,6 +358,9 @@ main = runSpecAndExitProcess [ consoleReporter ] do
       html `shouldSatisfy` (not <<< contains (Pattern "get your location"))
     it "shows the rating and price of each match in the list" do
       renders (Active swiper { showMatches = true, matches = [ (restaurant "a") { price = Just "$$" } ] } (Swiping (restaurant "b"))) "Rated 4.0 out of 5\">★ 4.0</span><span>$$"
+    it "opens matches in a modal sheet with a close button" do
+      renders (Active swiper { showMatches = true } (Swiping (restaurant "a"))) "role=\"dialog\" aria-modal=\"true\" aria-label=\"0 matches\""
+      renders (Active swiper { showMatches = true } (Swiping (restaurant "a"))) "h-11 w-11 place-items-center rounded-lg text-ink/60 hover:bg-ink/5\" aria-label=\"Close\""
     it "says how far the search reached and offers to widen it while swiping" do
       renders (Active swiper (Swiping (restaurant "a"))) "Within 5 km"
       renders (Active swiper (Swiping (restaurant "a"))) "Search further (up to 10 km)"

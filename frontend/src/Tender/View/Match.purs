@@ -9,8 +9,9 @@ import Flame.Html.Attribute as HA
 import Flame.Html.Element as HE
 import Tender.Types (Restaurant)
 import Tender.View.Button (Variant(..), button, linkButton)
-import Tender.View.Icon (Icon(..), icon)
+import Tender.View.Icon (Icon(..))
 import Tender.View.Photo (menuUrl, photoCredit, restaurantPhoto)
+import Tender.View.Sheet (sheet)
 import Tender.View.States (matchList)
 
 -- | Pieces of confetti falling across the screen. Positions are spread with
@@ -90,28 +91,10 @@ celebration r continue =
 -- | Matches so far, sliding up from the bottom
 matchesSheet :: forall a. Array Restaurant -> a -> Html a
 matchesSheet matches close =
-  HE.div [ HA.class' "fixed inset-0 z-10 flex flex-col justify-end" ]
-    [ HE.button
-        [ HA.class' "absolute inset-0 bg-ink/40"
-        , HA.onClick close
-        , HA.createAttribute "aria-label" "Close matches"
-        ]
-        []
-    , HE.section
-        [ HA.class' "relative mx-auto max-h-[80dvh] w-full max-w-md animate-card-in overflow-y-auto rounded-t-[2rem] border-x-[3px] border-t-[3px] border-ink bg-surface p-5 pb-8 shadow-2xl"
-        , HA.createAttribute "role" "dialog"
-        , HA.createAttribute "aria-modal" "true"
-        , HA.createAttribute "aria-label" "Matches"
-        ]
-        [ HE.div [ HA.class' "mb-4 flex items-center justify-between" ]
-            [ HE.h2 [ HA.class' "text-2xl font-display" ] [ HE.text (title (length matches)) ]
-            , HE.button [ HA.class' "rounded-lg p-2 text-ink/60 hover:bg-ink/5", HA.onClick close, HA.createAttribute "aria-label" "Close", HA.createAttribute "data-autofocus" "" ]
-                [ icon Close "h-6 w-6" ]
-            ]
-        , if length matches == 0 then
-            HE.p [ HA.class' "text-ink/70" ] [ HE.text "Nothing yet. When someone else likes a restaurant you liked, it shows up here." ]
-          else matchList matches
-        ]
+  sheet { title: title (length matches), close }
+    [ if length matches == 0 then
+        HE.p [ HA.class' "text-ink/70" ] [ HE.text "Nothing yet. When someone else likes a restaurant you liked, it shows up here." ]
+      else matchList matches
     ]
   where
   title 1 = "1 match"
