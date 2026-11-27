@@ -19,9 +19,11 @@ jobs:
   changes:
     runs-on: ubuntu-latest
     outputs:
-      backend: ${{ steps.filter.outputs.backend }}
-      frontend: ${{ steps.filter.outputs.frontend }}
-      app: ${{ steps.filter.outputs.app }}
+      # Everything on master: a newer push replaces a waiting run there, so
+      # comparing with the push before would miss what the replaced run changed
+      backend: ${{ github.ref == 'refs/heads/master' || steps.filter.outputs.backend == 'true' }}
+      frontend: ${{ github.ref == 'refs/heads/master' || steps.filter.outputs.frontend == 'true' }}
+      app: ${{ github.ref == 'refs/heads/master' || steps.filter.outputs.app == 'true' }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
@@ -169,7 +171,9 @@ jobs:
 
   deploy:
     needs: [changes, ci]
-    if: github.ref == 'refs/heads/master' && needs.changes.outputs.app == 'true'
+    # !cancelled() because a job downstream of a skipped one (the backend
+    # checks, on a frontend-only push) is otherwise skipped too
+    if: ${{ !cancelled() && github.ref == 'refs/heads/master' && needs.ci.result == 'success' }}
     runs-on: ubuntu-latest
     # Never cancelled halfway
     concurrency:
