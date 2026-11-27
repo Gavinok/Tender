@@ -1,6 +1,6 @@
 # Run the whole app from the repository root.
 #
-#   make         build and start the backend (port 5001) and frontend (port 1234)
+#   make         build and start the backend and frontend (ports below)
 #   make phone   the same, also served over https on your tailnet for phones
 #   make test    test both halves
 #   make format  format both halves, as CI checks
@@ -10,6 +10,12 @@
 #   make deploy         build, push and deploy the current checkout
 #
 # Ctrl+C stops both servers.
+
+# The dev ports, named once here and handed to both halves.
+# Override with e.g. `make BACKEND_PORT=5002`.
+BACKEND_PORT ?= 5001
+FRONTEND_PORT ?= 1234
+export BACKEND_PORT FRONTEND_PORT
 
 all: dev
 

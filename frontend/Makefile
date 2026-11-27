@@ -1,3 +1,7 @@
+# Ports come from the root Makefile
+BACKEND_PORT ?= 5001
+FRONTEND_PORT ?= 1234
+
 all: build serve
 
 build:
@@ -7,8 +11,10 @@ build:
 watch:
 	find src -name "*.purs" -o -name "*.js" | entr -r npx spago bundle
 
+# Parcel reads its /api proxy from .proxyrc.json, which is written here so it follows BACKEND_PORT
 serve:
-	npx parcel serve assets/index.html --port 1234
+	printf '{"/api": {"target": "http://localhost:%s"}}\n' $(BACKEND_PORT) > .proxyrc.json
+	npx parcel serve assets/index.html --port $(FRONTEND_PORT)
 
 test: lint
 	npx spago test
@@ -31,8 +37,8 @@ clean:
 SHARE_PORT ?= 8443
 
 share:
-	tailscale serve --bg --https=$(SHARE_PORT) http://localhost:1234 \
-	  || sudo tailscale serve --bg --https=$(SHARE_PORT) http://localhost:1234
+	tailscale serve --bg --https=$(SHARE_PORT) http://localhost:$(FRONTEND_PORT) \
+	  || sudo tailscale serve --bg --https=$(SHARE_PORT) http://localhost:$(FRONTEND_PORT)
 	@tailscale serve status
 
 unshare:

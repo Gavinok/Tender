@@ -60,7 +60,7 @@ foreign import _locate :: (Loc -> Either String Loc) -> (String -> Either String
 
 -- | The backend is reached through the same origin under /api, so it works
 -- | behind a tunnel or reverse proxy. In development parcel forwards /api to
--- | the backend on port 5001 (see .proxyrc.json).
+-- | the backend (see the serve target in frontend/Makefile).
 backendUrl :: String -> Effect Url
 backendUrl path = do
   o <- origin =<< location =<< window
