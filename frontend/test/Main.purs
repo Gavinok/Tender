@@ -31,6 +31,7 @@ restaurant id =
   , price: Nothing
   , rating: Just 4.0
   , category: Nothing
+  , moreCategories: []
   , photos:
       [ { name: Just ("places/" <> id <> "/photos/p1"), url: Nothing, author: Just { name: "Sam", uri: Just "https://maps.google.com/contrib/1" } }
       , { name: Just ("places/" <> id <> "/photos/p2"), url: Nothing, author: Just { name: "Kai", uri: Nothing } }
@@ -315,6 +316,8 @@ main = runSpecAndExitProcess [ consoleReporter ] do
       rendersNot model text = do
         html <- liftEffect $ render (view model)
         html `shouldSatisfy` (not <<< contains (Pattern text))
+    it "shows the category and the other kinds of place on a card" do
+      renders (Active swiper (Swiping (restaurant "a") { category = Just "Pub", moreCategories = [ "Bar", "Cafe" ] })) "Pub</span><span class=\"rounded-lg bg-white/20 px-3 py-1 text-sm font-bold text-white backdrop-blur\">Bar"
     it "shows vibe chips in the lobby, marking the chosen ones" do
       renders (QR lobbyAt { vibe = { chips: [ "patio" ], choices: [ patio, veggie ], locked: false, place: Nothing } }) "aria-pressed=\"true\">☀️ Patio<"
       renders (QR lobbyAt { vibe = { chips: [ "patio" ], choices: [ patio, veggie ], locked: true, place: Nothing } }) "Locked in"

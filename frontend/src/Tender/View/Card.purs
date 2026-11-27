@@ -131,7 +131,7 @@ restaurantCard { likedByOthers, vibe, photo, summaryOpen, toggleSummary } r =
         , HE.div [ HA.class' "flex items-center gap-2" ]
             (maybe [] (pure <<< ratingStars) r.rating <> maybe [] (pure <<< chip) r.price)
         , HE.div [ HA.class' "flex flex-wrap gap-2" ]
-            (maybe [] (pure <<< chip) r.category <> map (chip <<< _.label) (filter (\c -> elem c.id r.confirmed) vibe))
+            (map chip (maybe [] pure r.category <> r.moreCategories) <> map (chip <<< _.label) (filter (\c -> elem c.id r.confirmed) vibe))
         , case r.summary of
             Just s | not summaryOpen ->
               HE.button [ HA.class' "text-left text-sm text-white/90", HA.onClick toggleSummary ]

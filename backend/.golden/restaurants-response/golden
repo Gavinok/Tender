@@ -11,6 +11,9 @@
                 "patio"
             ],
             "id": "ChIJ1",
+            "moreCategories": [
+                "Bar"
+            ],
             "name": "Pho Real",
             "photos": [
                 {
@@ -58,6 +61,7 @@
             "category": null,
             "confirmed": [],
             "id": "osm:node/1",
+            "moreCategories": [],
             "name": "Fish Store",
             "photos": [],
             "price": null,

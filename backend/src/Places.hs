@@ -21,7 +21,7 @@ import Data.Aeson (Value, object, withObject, (.!=), (.:), (.:?), (.=))
 import Data.Aeson.Key qualified as Key
 import Data.Aeson.Types qualified as AT
 import Data.ByteString qualified as BS
-import Data.Char (isAlphaNum)
+import Data.Char (isAlphaNum, toUpper)
 import Data.Either (partitionEithers)
 import Data.List (nubBy, sortOn, transpose)
 import Data.Maybe (catMaybes, listToMaybe)
@@ -42,7 +42,7 @@ import Network.HTTP.Simple (
     setRequestQueryString,
  )
 import Provider (Provider (..))
-import Restaurant (Author (..), Loc (..), Photo (..), PhotoSource (..), Price (..), Restaurant (..), Review (..), Source (..), Summary (..), metres)
+import Restaurant (Author (..), Loc (..), Photo (..), PhotoSource (..), Price (..), Restaurant (..), Review (..), Source (..), Summary (..), maxMoreCategories, metres)
 import Vibe (Chip, Found (..), Place (..), Search (..), allChips, chipFields, chipId, priceLevels, queryTerms, wantsOpenNow)
 
 newtype PlacesKey = PlacesKey BS.ByteString
@@ -109,7 +109,7 @@ maxPhotos = 5
 field asked for, and rating and priceLevel put this in the Enterprise SKU.
 -}
 fieldMask :: BS.ByteString
-fieldMask = "places.id,places.displayName,places.location,places.rating,places.priceLevel,places.googleMapsUri,places.primaryTypeDisplayName,places.photos,places.generativeSummary,places.editorialSummary,places.reviews," <> attributeFields
+fieldMask = "places.id,places.displayName,places.location,places.rating,places.priceLevel,places.googleMapsUri,places.primaryTypeDisplayName,places.types,places.photos,places.generativeSummary,places.editorialSummary,places.reviews," <> attributeFields
 
 -- | The attributes the chips can be confirmed by, in the same billing tier as the summaries
 attributeFields :: BS.ByteString
@@ -216,6 +216,25 @@ isPhotoName t = case T.splitOn "/" t of
   where
     segment s = not (T.null s) && T.all (\c -> isAlphaNum c || c == '-' || c == '_') s
 
+{- | Google's types other than the generic ones and the one already shown,
+| e.g. "bar" becomes "Bar"
+-}
+moreTypes :: Maybe Text -> [Text] -> [Text]
+moreTypes primary types =
+    take
+        maxMoreCategories
+        [ label
+        | t <- types
+        , t `notElem` genericTypes
+        , let label = typeLabel t
+        , T.toLower label /= maybe "" T.toLower primary
+        ]
+  where
+    genericTypes = ["restaurant", "food", "point_of_interest", "establishment", "store", "meal_takeaway", "meal_delivery"]
+    typeLabel t = case T.uncons (T.replace "_" " " t) of
+        Just (c, rest) -> T.cons (toUpper c) rest
+        Nothing -> t
+
 parsePlaces :: Value -> AT.Parser [Restaurant]
 parsePlaces = withObject "SearchNearbyResponse" $ \o ->
     -- Google leaves the field out when nothing is found
@@ -223,13 +242,15 @@ parsePlaces = withObject "SearchNearbyResponse" $ \o ->
   where
     place = withObject "Place" $ \p -> do
         found <- p .:? "photos" .!= []
+        primary <- p .:? "primaryTypeDisplayName" >>= traverse (.: "text")
         Restaurant Google
             <$> p .: "id"
             <*> (p .: "displayName" >>= (.: "text"))
             <*> p .:? "googleMapsUri"
             <*> p .:? "rating"
             <*> ((>>= priceFromLevel) <$> p .:? "priceLevel")
-            <*> (p .:? "primaryTypeDisplayName" >>= traverse (.: "text"))
+            <*> pure primary
+            <*> (moreTypes primary <$> p .:? "types" .!= [])
             -- Each photo shown is a billed request, so only the first few
             <*> traverse parsePhoto (take maxPhotos found)
             <*> parseSummary p
