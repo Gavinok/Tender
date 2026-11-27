@@ -406,6 +406,7 @@ main = runSpecAndExitProcess [ consoleReporter ] do
       renders (QR lobbyAt { picker = Just blankPicker { results = Just [ kelowna ] } }) "Kelowna, BC, Canada"
       renders (QR lobbyAt { picker = Just blankPicker { results = Just [] } }) "Nothing matched"
       renders (Active swiper { people = [ me, friend, { you: false, status: Status.Away, swiped: 0, left: Nothing } ] } NoneLeft) "2 here · 1 done"
+      renders (Active swiper { people = [ me, { you: false, status: Status.Away, swiped: 0, left: Nothing } ] } NoneLeft) "border-dashed"
       renders (Active swiper { people = [ me, friend ] } NoneLeft) ">You<"
       renders (Active swiper { people = [ me, friend ] } NoneLeft) ">Friend 1<"
       renders (Active swiper { people = [ me, friend ] } NoneLeft) ">12 left<"

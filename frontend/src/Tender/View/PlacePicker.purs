@@ -53,7 +53,7 @@ result choose found =
         , HA.onClick (choose found)
         ]
         [ HE.span [ HA.class' "font-bold" ] [ HE.text found.name ]
-        , if found.address == "" then HE.text "" else HE.span [ HA.class' "text-sm text-ink/60" ] [ HE.text found.address ]
+        , if found.address == "" then HE.text "" else HE.span [ HA.class' "text-sm text-ink/70" ] [ HE.text found.address ]
         ]
     ]
 

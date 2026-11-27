@@ -77,7 +77,7 @@ summaryBox s reviews close =
         ]
     , HE.p [ HA.class' "leading-relaxed" ] [ HE.text s.text ]
     , case s.disclosure of
-        Just d -> HE.p [ HA.class' "text-xs italic text-ink/50" ] [ HE.text d ]
+        Just d -> HE.p [ HA.class' "text-xs italic text-ink/70" ] [ HE.text d ]
         Nothing -> HE.text ""
     , reviewList reviews
     ]
@@ -153,7 +153,7 @@ restaurantCard { likedByOthers, vibe, photo, summaryOpen, toggleSummary } r =
                 , HE.span [ HA.class' "font-bold underline" ] [ HE.text "More" ]
                 ]
             _ -> HE.text ""
-        , photoCredit r photo "text-white/70"
+        , photoCredit r photo "text-white/90"
         ]
     , case r.summary of
         Just s | summaryOpen -> summaryBox s r.reviews toggleSummary
