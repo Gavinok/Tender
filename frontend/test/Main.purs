@@ -335,9 +335,9 @@ main = runSpecAndExitProcess [ consoleReporter ] do
     it "shows vibe chips in the lobby, marking the chosen ones" do
       renders (QR lobbyAt { vibe = { chips: [ "patio" ], choices: [ patio, veggie ], locked: false, place: Nothing } }) "aria-pressed=\"true\">☀️ Patio<"
       renders (QR lobbyAt { vibe = { chips: [ "patio" ], choices: [ patio, veggie ], locked: true, place: Nothing } }) "Locked in"
-    it "shows a local QR code and the share link in the lobby" do
+    it "shows a local QR code in the lobby, without the unreadable link under it" do
       renders (QR lobbyAt) "src=\"data:image/svg+xml"
-      renders (QR lobbyAt) "http://example.com/s"
+      renders (QR lobbyAt) "Share invite"
     it "shows the restaurant while swiping" do
       renders (Active swiper (Swiping (restaurant "Pho Real"))) "Pho Real"
       renders (Active swiper (Swiping (restaurant "Pho Real"))) "aria-label=\"0 matches\""
