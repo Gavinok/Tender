@@ -1,0 +1,83 @@
+{
+  "verbosity": "Brief",
+  "ruleSets": [
+    {
+      "rules": {
+        "Applicative.UnlessAndWhen": null,
+        "AvoidSameComparison": null,
+        "ModuleExports.Required": null,
+        "ModuleImports.AvoidMultipleAliasesOfSameModule": null,
+        "ModuleImports.Forbid": [
+          "^Unsafe.Coerce(.*)$"
+        ],
+        "ModuleImports.RequireQualification": [
+          {
+            "qualifyAs": "$1",
+            "module": "^Data.(Array|Array.NonEmpty|Either|Lens|List|List.Lazy|Map|Maybe|Set)$",
+            "import": "fromFoldable|toUnfoldable|fromString|singleton|member|over|set|get"
+          }
+        ],
+        "Monoid.ReplaceIfThenElseMEmptyWithGuard": null,
+        "Monoid.ReplaceMaybeMemptyWithFoldMap": null,
+        "Monoid.ReplaceRepeatedMappendsWithFold": {
+          "maxAppendsWithParenthesis": 2,
+          "maxAppends": 5
+        },
+        "NoDuplicateTypeclassConstraints": null,
+        "NoUnnecessaryDo": null,
+        "NoUnnecessaryParenthesis": null,
+        "UseAnonymous.RecordCreation": null,
+        "UseAnonymous.RecordUpdates": null,
+        "UsePunning": null
+      },
+      "ignoreGlobs": [],
+      "globs": [
+        "./src/**/*.purs"
+      ]
+    },
+    {
+      "rules": {
+        "Applicative.UnlessAndWhen": null,
+        "AvoidSameComparison": null,
+        "ModuleExports.Required": null,
+        "ModuleImports.AvoidMultipleAliasesOfSameModule": null,
+        "ModuleImports.Forbid": [
+          "^Unsafe.Coerce(.*)$"
+        ],
+        "ModuleImports.RequireQualification": [
+          {
+            "qualifyAs": "$1",
+            "module": "^Data.(Array|Array.NonEmpty|Either|Lens|List|List.Lazy|Map|Maybe|Set)$",
+            "import": "fromFoldable|toUnfoldable|fromString|singleton|member|over|set|get"
+          }
+        ],
+        "Monoid.ReplaceIfThenElseMEmptyWithGuard": null,
+        "Monoid.ReplaceMaybeMemptyWithFoldMap": null,
+        "Monoid.ReplaceRepeatedMappendsWithFold": {
+          "maxAppendsWithParenthesis": 2,
+          "maxAppends": 5
+        },
+        "NoDuplicateTypeclassConstraints": null,
+        "NoUnnecessaryParenthesis": null,
+        "UseAnonymous.RecordCreation": null,
+        "UseAnonymous.RecordUpdates": null,
+        "UsePunning": null
+      },
+      "ignoreGlobs": [],
+      "globs": [
+        "./test/**/*.purs"
+      ]
+    }
+  ],
+  "projectRoots": [
+    {
+      "pathPrefix": "src",
+      "modulePrefix": ""
+    },
+    {
+      "pathPrefix": "test",
+      "modulePrefix": "Test."
+    }
+  ],
+  "indentSpaces": 2
+}

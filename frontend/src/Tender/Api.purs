@@ -23,9 +23,11 @@ module Tender.Api
 
 import Prelude
 
+import Data.Foldable (foldMap)
+
 import Data.Bifunctor (lmap)
 import Data.Either (Either(..))
-import Data.Maybe (Maybe, maybe)
+import Data.Maybe (Maybe)
 import Effect.Aff (Aff, Error, attempt, message)
 import Effect.Class (liftEffect)
 import Fetch (Method(..), Response, fetch)
@@ -75,12 +77,10 @@ decode
   => Either Error Response
   -> Aff (Either ApiError a)
 decode (Left e) = pure $ Left $ Failed $ "Could not reach the server: " <> message e
-decode (Right { status, text }) = do
-  body <- text
-  pure case status of
-    200 -> lmap (Failed <<< ("Unexpected response: " <> _) <<< show) (JSON.readJSON body)
-    404 -> Left $ NotFound $ errorMessage body
-    _ -> Left $ Failed $ errorMessage body
+decode (Right { status, text }) = text <#> \body -> case status of
+  200 -> lmap (Failed <<< ("Unexpected response: " <> _) <<< show) (JSON.readJSON body)
+  404 -> Left $ NotFound $ errorMessage body
+  _ -> Left $ Failed $ errorMessage body
   where
   errorMessage body = case JSON.readJSON body of
     Right ({ error } :: ErrorResponse) -> error
@@ -129,7 +129,7 @@ findPlaces q = get ("places?q=" <> encodeQuery q)
 -- | Join the session, keeping the given id if this browser was in it before
 joinSession :: SessionId -> Maybe UserId -> Aff (Either ApiError UserId)
 joinSession (SessionId s) returning =
-  get ("addtosession/" <> s <> maybe "" (\(UserId u) -> "?user=" <> u) returning)
+  get ("addtosession/" <> s <> foldMap (\(UserId u) -> "?user=" <> u) returning)
 
 -- | Record whether the user liked the restaurant. Says which restaurants the
 -- | user has matched on so far, and what others in the session have liked
