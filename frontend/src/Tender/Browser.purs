@@ -16,6 +16,7 @@ module Tender.Browser
   , startNewSession
   , tabHidden
   , encodeQuery
+  , keyOf
   ) where
 
 import Prelude
@@ -29,6 +30,7 @@ import Effect (Effect)
 import Effect.Aff (Aff)
 import Effect.Aff.Compat (EffectFnAff, fromEffectFnAff)
 import Tender.Types (Loc, SessionId(..), Url, UserId(..))
+import Web.Event.Event (Event)
 import Web.HTML (window)
 import Web.HTML.Location (assign, origin, pathname)
 import Web.HTML.Window (location)
@@ -112,6 +114,9 @@ foreign import encodeQuery :: String -> String
 foreign import reload :: Effect Unit
 
 foreign import vibrate :: Effect Unit
+
+-- | Flame's document keydown subscription hands over the whole event
+foreign import keyOf :: Event -> String
 
 foreign import _replacePath :: String -> Effect Unit
 

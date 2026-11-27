@@ -217,3 +217,10 @@ export const tabHidden = () => document.visibilityState === "hidden";
  * @returns {string}
  */
 export const encodeQuery = (text) => encodeURIComponent(text);
+
+/**
+ * The key pressed, or "" for any other event
+ * @param {Event} event
+ * @returns {string}
+ */
+export const keyOf = (event) => (event instanceof KeyboardEvent ? event.key : "");
