@@ -19,7 +19,7 @@ import Data.String (trim)
 import Data.Either (Either(..), either)
 import Data.Generic.Rep (class Generic)
 import Data.Show.Generic (genericShow)
-import Data.Maybe (Maybe(..), maybe)
+import Data.Maybe (Maybe(..), isJust, maybe)
 import Effect.Aff (Aff, Milliseconds(..), attempt, delay)
 import Effect.Class (liftEffect)
 import Data.Tuple (Tuple)
@@ -94,6 +94,10 @@ type Lobby =
   , vibe :: Vibe
   -- | Open while someone is choosing where the group is eating
   , picker :: Maybe Picker
+  -- | Whether the sheet for the vibe and where they're eating is open
+  , setup :: Boolean
+  -- | Whether the QR code is shown full screen, for scanning across a table
+  , bigQR :: Boolean
   }
 
 -- | Looking up where the group is eating. `results` is Nothing until the
@@ -186,6 +190,8 @@ data Message
   | NewSession
   | ToggleMatches
   | ToggleSession
+  | ToggleSetup
+  | ToggleQR
   | DismissWarning
   | ShareInvite
   | LinkCopied
@@ -314,7 +320,7 @@ update model = case model, _ of
             JoinSession s <$> shareLink s
     ]
   _, JoinSession session link ->
-    QR { session, link, copied: false, vibe: { chips: [], choices: [], locked: false, place: Nothing }, picker: Nothing } /\ [ pollVibe session ]
+    QR { session, link, copied: false, vibe: { chips: [], choices: [], locked: false, place: Nothing }, picker: Nothing, setup: false, bigQR: false } /\ [ pollVibe session ]
   -- Keeps checking while in the lobby so everyone sees the same chips; stops once swiping
   QR lobby, VibePolled v -> QR lobby { vibe = v } /\ [ delay (Milliseconds 3000.0) $> Just PollVibe ]
   QR { session }, PollVibe -> model /\ [ pollVibe session ]
@@ -333,6 +339,12 @@ update model = case model, _ of
   QR lobby, LinkCopied ->
     QR lobby { copied = true } /\ [ delay (Milliseconds 2000.0) $> Just HideCopied ]
   QR lobby, HideCopied -> QR lobby { copied = false } /\ []
+  QR lobby, ToggleSetup -> QR lobby { setup = not lobby.setup, picker = Nothing } /\ []
+  QR lobby, ToggleQR -> QR lobby { bigQR = not lobby.bigQR } /\ []
+  -- Escape closes whatever is on top: the big QR code, the place lookup, then the sheet
+  QR lobby, KeyPressed "Escape" | lobby.bigQR -> update model ToggleQR
+  QR lobby, KeyPressed "Escape" | isJust lobby.picker -> update model ClosePicker
+  QR lobby, KeyPressed "Escape" | lobby.setup -> update model ToggleSetup
   -- Inviting more people from the session sheet once swiping
   Active { session } _, ShareInvite -> model /\
     [ attempt (liftEffect (shareLink session) >>= shareOrCopy) <#> case _ of

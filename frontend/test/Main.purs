@@ -58,7 +58,7 @@ here :: { latitude :: Number, longitude :: Number }
 here = { latitude: 1.0, longitude: 2.0 }
 
 lobbyAt :: Lobby
-lobbyAt = { session: SessionId "s", link: "http://example.com/s", copied: false, vibe: { chips: [], choices: [ patio, veggie ], locked: false, place: Nothing }, picker: Nothing }
+lobbyAt = { session: SessionId "s", link: "http://example.com/s", copied: false, vibe: { chips: [], choices: [ patio, veggie ], locked: false, place: Nothing }, picker: Nothing, setup: false, bigQR: false }
 
 patio :: Chip
 patio = { id: "patio", label: "☀️ Patio" }
@@ -177,6 +177,13 @@ main = runSpecAndExitProcess [ consoleReporter ] do
         `shouldEqual` Active swiper (Swiping (restaurant "a"))
       fst (step (Active swiper { showSession = true } (Swiping (restaurant "a"))) (KeyPressed "Escape"))
         `shouldEqual` Active swiper (Swiping (restaurant "a"))
+
+    it "opens the lobby's setup and big QR code, and closes them with Escape" do
+      step (QR lobbyAt) ToggleSetup `shouldEqual` Tuple (QR lobbyAt { setup = true }) 0
+      step (QR lobbyAt) ToggleQR `shouldEqual` Tuple (QR lobbyAt { bigQR = true }) 0
+      fst (step (QR lobbyAt { setup = true, bigQR = true }) (KeyPressed "Escape")) `shouldEqual` QR lobbyAt { setup = true }
+      fst (step (QR lobbyAt { setup = true, picker = Just blankPicker }) (KeyPressed "Escape")) `shouldEqual` QR lobbyAt { setup = true }
+      fst (step (QR lobbyAt { setup = true }) (KeyPressed "Escape")) `shouldEqual` QR lobbyAt
 
     it "opens and closes the session sheet" do
       step (Active swiper (Swiping (restaurant "a"))) ToggleSession
@@ -410,11 +417,18 @@ main = runSpecAndExitProcess [ consoleReporter ] do
     it "tells people their swipes are waiting while some are unsent" do
       renders (Active swiper { unsent = [ { id: RestaurantId "a", liked: true } ] } (Swiping (restaurant "b"))) "Your swipes are saved"
     it "shows vibe chips in the lobby, marking the chosen ones" do
-      renders (QR lobbyAt { vibe = { chips: [ "patio" ], choices: [ patio, veggie ], locked: false, place: Nothing } }) "aria-pressed=\"true\">☀️ Patio<"
-      renders (QR lobbyAt { vibe = { chips: [ "patio" ], choices: [ patio, veggie ], locked: true, place: Nothing } }) "Locked in"
+      renders (QR lobbyAt { vibe = { chips: [ "patio" ], choices: [ patio, veggie ], locked: false, place: Nothing }, setup = true }) "aria-pressed=\"true\">☀️ Patio<"
+      renders (QR lobbyAt { vibe = { chips: [ "patio" ], choices: [ patio, veggie ], locked: true, place: Nothing }, setup = true }) "Locked in"
     it "shows a local QR code in the lobby, without the unreadable link under it" do
       renders (QR lobbyAt) "src=\"data:image/svg+xml"
       renders (QR lobbyAt) "Share invite"
+    it "sums up the lobby's setup in one row, and opens it in a sheet" do
+      renders (QR lobbyAt { vibe = { chips: [ "patio" ], choices: [ patio, veggie ], locked: false, place: Just kelownaPlace } }) "Near: </strong>Kelowna</span><span class=\"truncate\"><strong>Vibe: </strong>☀️ Patio<"
+      renders (QR lobbyAt) "Vibe: </strong>anything"
+      rendersNot (QR lobbyAt) "What&#39;s the vibe?"
+      renders (QR lobbyAt { setup = true }) "What&#39;s the vibe?"
+    it "shows the QR code full screen when tapped" do
+      renders (QR lobbyAt { bigQR = true }) "Tap to close"
     it "shows the restaurant while swiping" do
       renders (Active swiper (Swiping (restaurant "Pho Real"))) "Pho Real"
       renders (Active swiper (Swiping (restaurant "Pho Real"))) "aria-label=\"0 matches\""
@@ -476,12 +490,12 @@ main = runSpecAndExitProcess [ consoleReporter ] do
       renders (NeedLocation { session: SessionId "s", user: UserId "u", message: "x", picker: Nothing }) ">Try again<"
       renders (NeedLocation { session: SessionId "s", user: UserId "u", message: "x", picker: Nothing }) "Tell us where you&#39;re eating"
       renders (QR lobbyAt) "your location"
-      renders (QR lobbyAt) ">Somewhere else?<"
+      renders (QR lobbyAt { setup = true }) ">Somewhere else?<"
       renders (QR lobbyAt { vibe { place = Just kelownaPlace } }) ">Kelowna<"
-      renders (QR lobbyAt { vibe { place = Just kelownaPlace } }) ">Use our locations<"
-      renders (QR lobbyAt { picker = Just blankPicker { results = Just [ kelowna ] } }) "Where are you eating?"
-      renders (QR lobbyAt { picker = Just blankPicker { results = Just [ kelowna ] } }) "Kelowna, BC, Canada"
-      renders (QR lobbyAt { picker = Just blankPicker { results = Just [] } }) "Nothing matched"
+      renders (QR lobbyAt { vibe { place = Just kelownaPlace }, setup = true }) ">Use our locations<"
+      renders (QR lobbyAt { setup = true, picker = Just blankPicker { results = Just [ kelowna ] } }) "Where are you eating?"
+      renders (QR lobbyAt { setup = true, picker = Just blankPicker { results = Just [ kelowna ] } }) "Kelowna, BC, Canada"
+      renders (QR lobbyAt { setup = true, picker = Just blankPicker { results = Just [] } }) "Nothing matched"
       renders (Active swiper { showSession = true, people = [ me, friend, { you: false, status: Status.Away, swiped: 0, left: Nothing } ] } NoneLeft) "2 here · 1 done"
       renders (Active swiper { showSession = true, people = [ me, { you: false, status: Status.Away, swiped: 0, left: Nothing } ] } NoneLeft) "border-dashed"
       renders (Active swiper { showSession = true, people = [ me, friend ] } NoneLeft) ">You<"

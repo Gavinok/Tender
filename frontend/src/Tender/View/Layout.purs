@@ -2,7 +2,7 @@ module Tender.View.Layout (page, centred) where
 
 import Prelude
 
-import Data.Maybe (Maybe, isJust, maybe)
+import Data.Maybe (Maybe, maybe)
 import Flame (Html)
 import Flame.Html.Attribute as HA
 import Flame.Html.Element as HE
@@ -37,10 +37,11 @@ newSessionButton start =
     [ icon Plus "w-4 h-4", HE.text "New" ]
 
 -- | Full height page with the wordmark at the top, and either a button for
--- | a new session or, once swiping, who's here and the match count. While
--- | swiping it's exactly the screen's height, so the card fills what's left.
-page :: forall a. { matches :: Maybe { count :: Int, open :: a }, newSession :: Maybe a, session :: Maybe (Html a) } -> Array (Html a) -> Html a
-page { matches, newSession, session } content =
+-- | a new session or, once swiping, who's here and the match count. With
+-- | `fill` it's exactly the screen's height, so the content can share out
+-- | what's left, as the lobby and swiping do.
+page :: forall a. { matches :: Maybe { count :: Int, open :: a }, newSession :: Maybe a, session :: Maybe (Html a), fill :: Boolean } -> Array (Html a) -> Html a
+page { matches, newSession, session, fill } content =
   HE.main [ HA.id "main", HA.class' ("mx-auto flex max-w-md flex-col px-4 " <> if fill then "h-[100dvh]" else "min-h-[100dvh]") ]
     [ HE.header [ HA.class' "flex items-center justify-between gap-2 py-3" ]
         [ wordmark
@@ -52,8 +53,6 @@ page { matches, newSession, session } content =
         ]
     , HE.div [ HA.class' ("flex flex-1 flex-col " <> if fill then "min-h-0 pb-3" else "pb-6") ] content
     ]
-  where
-  fill = isJust session
 
 -- | Content centred in the remaining space
 centred :: forall a. Array (Html a) -> Html a

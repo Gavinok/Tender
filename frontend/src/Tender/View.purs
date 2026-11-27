@@ -97,21 +97,21 @@ pickerMessages = { open: OpenPicker, clear: ClearPlace, query: PlaceQuery, find:
 
 -- | `view` updates the app markup whenever the model is updated
 view :: Model -> Html Message
-view (ServerError e) = page { matches: Nothing, newSession: Just NewSession, session: Nothing } [ problem e Retry ]
+view (ServerError e) = page { matches: Nothing, newSession: Just NewSession, session: Nothing, fill: false } [ problem e Retry ]
 
 view (NeedLocation { message, picker }) =
-  page { matches: Nothing, newSession: Just NewSession, session: Nothing }
+  page { matches: Nothing, newSession: Just NewSession, session: Nothing, fill: false }
     [ case picker of
         Just p -> HE.div [ HA.class' "flex flex-1 flex-col justify-center" ] [ placePicker p pickerMessages ]
         Nothing -> needLocation message { retry: RetryLocation, choose: OpenPicker }
     ]
 
-view Loading = page { matches: Nothing, newSession: Nothing, session: Nothing } [ setting ]
+view Loading = page { matches: Nothing, newSession: Nothing, session: Nothing, fill: false } [ setting ]
 
-view (QR l) = page { matches: Nothing, newSession: Just NewSession, session: Nothing } [ lobby l { share: ShareInvite, start: StartSwiping, toggle: ToggleChip, picker: pickerMessages } ]
+view (QR l) = page { matches: Nothing, newSession: Just NewSession, session: Nothing, fill: true } [ lobby l { share: ShareInvite, start: StartSwiping, toggle: ToggleChip, setup: ToggleSetup, bigQR: ToggleQR, picker: pickerMessages } ]
 
 view (Active swiper screen) =
-  page { matches: Just { count: length swiper.matches, open: ToggleMatches }, newSession: Nothing, session: Just (sessionButton swiper.people ToggleSession) } $
+  page { matches: Just { count: length swiper.matches, open: ToggleMatches }, newSession: Nothing, session: Just (sessionButton swiper.people ToggleSession), fill: true } $
     [ announcement
         ( case screen of
             Matched r -> Just r
