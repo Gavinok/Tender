@@ -76,13 +76,14 @@ bigCode link close =
 -- | chip shows there are more. Roomy screens show them all.
 vibeChips :: forall a. Vibe -> (String -> a) -> Html a
 vibeChips vibe toggle =
-  HE.section [ HA.class' "-mx-4 w-[calc(100%+2rem)] roomy:mx-0 roomy:w-full", HA.createAttribute "aria-label" "Vibe" ]
-    [ HE.div [ HA.class' "flex gap-2 overflow-x-auto px-4 pb-1.5 roomy:flex-wrap roomy:justify-center roomy:overflow-visible roomy:px-0" ] (map chip vibe.choices)
-    , HE.p [ HA.class' "text-sm text-ink/70" ]
+  HE.section [ HA.class' "-mx-4 flex w-[calc(100%+2rem)] flex-col gap-1 roomy:mx-0 roomy:w-full", HA.createAttribute "aria-label" "Vibe" ]
+    [ HE.p [ HA.class' "text-sm text-ink/70" ]
         [ HE.text
             if vibe.locked then "Locked in: someone has started swiping."
             else "Pick a vibe. Everyone sees the same picks."
         ]
+    -- Padded so the chips' taller tap areas aren't clipped by the scrolling row
+    , HE.div [ HA.class' "flex gap-2 overflow-x-auto px-4 py-1 roomy:flex-wrap roomy:justify-center roomy:overflow-visible roomy:px-0" ] (map chip vibe.choices)
     ]
   where
   chip c =
@@ -90,8 +91,9 @@ vibeChips vibe toggle =
       on = elem c.id vibe.chips
     in
       HE.button
-        [ HA.class' $ "min-h-[2.75rem] shrink-0 whitespace-nowrap rounded-lg border-2 border-ink px-3 text-sm font-bold transition disabled:opacity-60 "
-            <> if on then "bg-brand-500 text-white shadow-pop" else "bg-white text-ink hover:bg-brand-50"
+        -- 36px to look at, with a 44px tap area that just meets the next row's
+        [ HA.class' $ "relative h-9 shrink-0 whitespace-nowrap rounded-full border-[1.5px] border-ink px-3 text-sm font-bold transition before:absolute before:-inset-y-1 before:inset-x-0 before:content-[''] disabled:opacity-60 "
+            <> if on then "bg-brand-500 text-white" else "bg-white text-ink hover:bg-brand-50"
         , HA.onClick (toggle c.id)
         , HA.disabled vibe.locked
         , HA.createAttribute "aria-pressed" (if on then "true" else "false")
