@@ -34,13 +34,17 @@ lobby l@{ link, copied, vibe, picker, bigQR, placeChanged } on =
       , vibeBox l on.vibe
       -- Tapping it shows it full screen, easier to scan from across a table.
       -- With a mouse a short window can scroll, so it keeps a scannable size.
-      , HE.button
-          [ HA.class' "flex min-h-0 flex-1 items-center justify-center pb-4 mouse:min-h-[14rem]"
-          , HA.onClick on.bigQR
-          , HA.createAttribute "aria-label" "Show the QR code bigger"
-          ]
-          [ HE.span [ HA.class' "block h-full max-h-72 -rotate-2 rounded-3xl border-[3px] border-ink bg-white p-3 shadow-card" ]
-              [ HE.img [ HA.src (qrDataUrl link), HA.alt "QR code to join this session", HA.class' "block aspect-square h-full max-w-full" ] ]
+      -- The code is placed in the space left rather than sized from its
+      -- contents: iOS Safari sized it from the image's natural width, which
+      -- an SVG doesn't have, and squashed it into a thin bar. Its bottom
+      -- 1rem is left for the card's tilt and shadow.
+      , HE.div [ HA.class' "relative min-h-0 w-full flex-1 mouse:min-h-[14rem]" ]
+          [ HE.button
+              [ HA.class' "absolute left-1/2 top-[calc(50%-0.5rem)] aspect-square h-[min(calc(100%-1rem),18rem)] -translate-x-1/2 -translate-y-1/2 -rotate-2 rounded-3xl border-[3px] border-ink bg-white p-3 shadow-card"
+              , HA.onClick on.bigQR
+              , HA.createAttribute "aria-label" "Show the QR code bigger"
+              ]
+              [ HE.img [ HA.src (qrDataUrl link), HA.alt "QR code to join this session", HA.class' "block h-full w-full" ] ]
           ]
       , HE.div [ HA.class' "flex w-full flex-col gap-3 pb-[env(safe-area-inset-bottom)]" ]
           [ if copied then button Secondary (Just Check) "Link copied!" on.share
