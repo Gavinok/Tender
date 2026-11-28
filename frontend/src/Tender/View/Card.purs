@@ -2,6 +2,8 @@ module Tender.View.Card (restaurantCard, detailsSheet, ratingStars, actionBar) w
 
 import Prelude
 
+import Data.Foldable (foldMap)
+
 import Data.Array (catMaybes, elem, filter, length, range, take)
 import Data.Int (round, toNumber)
 import Data.Maybe (Maybe(..), maybe)
@@ -59,7 +61,7 @@ facts r = joinWith " · " $ catMaybes
 
 -- | The vibes it's confirmed for, then the other kinds of place it is
 chips :: Array Chip -> Restaurant -> Array String
-chips vibe r = map _.label (filter (\c -> elem c.id r.confirmed) vibe) <> maybe [] pure r.category <> r.moreCategories
+chips vibe r = map _.label (filter (\c -> elem c.id r.confirmed) vibe) <> foldMap pure r.category <> r.moreCategories
 
 chip :: forall a. String -> Html a
 chip text =
@@ -92,8 +94,8 @@ reviewList reviews =
                 Just uri -> HE.a [ HA.href uri, HA.target "_blank", HA.rel "noopener", HA.class' "font-bold underline" ] [ HE.text r.author.name ]
                 Nothing -> HE.span [ HA.class' "font-bold" ] [ HE.text r.author.name ]
             ]
-              <> maybe [] (\n -> [ HE.text (" · " <> show n <> " out of 5") ]) r.rating
-              <> maybe [] (\w -> [ HE.text (" · " <> w) ]) r.when
+              <> foldMap (\n -> [ HE.text (" · " <> show n <> " out of 5") ]) r.rating
+              <> foldMap (\w -> [ HE.text (" · " <> w) ]) r.when
           )
       ]
 

@@ -99,14 +99,18 @@ instance ToJSON RestaurantsResponse where
             , "maxRadius" .= rrMaxRadius r
             ]
 
--- | POST /api/decision: the user's matches, and what others liked that they haven't decided on
+{- | POST /api/decision: the user's matches, what others liked that they
+haven't decided on, and everyone in the session, so progress shows on each
+swipe rather than at the next heartbeat
+-}
 data DecisionResponse = DecisionResponse
     { drMatches :: [RestaurantId]
     , drOthersLiked :: [RestaurantId]
+    , drPeople :: [Person]
     }
 
 instance ToJSON DecisionResponse where
-    toJSON r = object ["matches" .= drMatches r, "othersLiked" .= drOthersLiked r]
+    toJSON r = object ["matches" .= drMatches r, "othersLiked" .= drOthersLiked r, "people" .= drPeople r]
 
 -- | POST /api/presence: everyone in the session, and the user's matches
 data PresenceResponse = PresenceResponse

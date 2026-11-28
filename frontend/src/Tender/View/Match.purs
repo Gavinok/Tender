@@ -2,6 +2,8 @@ module Tender.View.Match (announcement, toast, celebration, matchesSheet) where
 
 import Prelude
 
+import Data.Foldable (foldMap)
+
 import Data.Array (length, range)
 import Data.Maybe (Maybe(..), maybe)
 import Flame (Html)
@@ -47,7 +49,7 @@ confetti =
 announcement :: forall a. Maybe Restaurant -> Html a
 announcement matched =
   HE.p [ HA.class' "sr-only", HA.createAttribute "role" "status", HA.createAttribute "aria-live" "polite" ]
-    [ HE.text (maybe "" (\r -> "It's a match! Everyone's hungry for " <> r.name) matched) ]
+    [ HE.text (foldMap (\r -> "It's a match! Everyone's hungry for " <> r.name) matched) ]
 
 -- | A match after the first, over the cards so swiping carries on, for a
 -- | few seconds. It drops in from the top and slides back up when it goes.

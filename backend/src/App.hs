@@ -50,7 +50,7 @@ import Data.Text (Text)
 import Data.Text.Encoding qualified as TE
 import Data.Text.Lazy qualified as TL
 import Network.HTTP.Types (Status, status200, status400, status404, status409, status413, status429, status502, status503)
-import Network.Mime (defaultMimeLookup)
+import Network.Mime (MimeMap, defaultMimeMap, defaultMimeType, mimeByExt)
 import Network.Wai (Application, rawPathInfo, remoteHost)
 import Network.Wai.Middleware.AddHeaders (addHeaders)
 import Network.Wai.Middleware.RequestLogger (logStdout)
@@ -58,10 +58,11 @@ import Network.Wai.Middleware.RequestSizeLimit (defaultRequestSizeLimitSettings,
 import Network.Wai.Request (RequestSizeException)
 import System.Directory (doesFileExist)
 import System.Exit (die)
-import System.FilePath ((</>))
+import System.FilePath (takeExtension, (</>))
 import Text.Read (readMaybe)
 
 import Data.List (partition)
+import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
 import Db
 import Fetch (FetchError)
@@ -471,11 +472,12 @@ app env = do
             Just _ | let RestaurantId t = r in T.length t > maxIdLength -> errorResponse status400 "Invalid restaurant"
             Just u -> do
                 spendWrite env
-                (matches, others) <- liftIO $ db $ \c -> do
+                (matches, others, members) <- liftIO $ db $ \c -> do
                     seenNow (envPresence env) (U.userId u)
                     recordDecision c (Decision (U.userId u) r l)
-                    (,) <$> matchesFor c u <*> othersLiked c u
-                json (DecisionResponse matches others)
+                    (,,) <$> matchesFor c u <*> othersLiked c u <*> sessionMembers c (U.session u)
+                (now, seenBy) <- liftIO $ lookupAll (envPresence env)
+                json (DecisionResponse matches others (people now (U.userId u) members seenBy))
 
     -- Anything else: the frontend's files, and its page for every other path
     -- (such as /<session>) so links work. Only when a frontend is configured.
@@ -504,14 +506,26 @@ serveFrontend dir path = do
     if isFile
         then do
             setHeader "Content-Type" (contentType candidate)
-            -- Parcel puts a hash in every file name but index.html
-            setHeader "Cache-Control" "public, max-age=31536000, immutable"
+            setHeader "Cache-Control" (cacheControl candidate)
             file candidate
         else do
             setHeader "Content-Type" "text/html; charset=utf-8"
             setHeader "Cache-Control" "no-cache"
             file (dir </> "index.html")
 
--- | From the file's extension, by mime-types' table of the common ones
+{- | Parcel puts a hash in every file name but index.html and the web app
+manifest, whose links have to stay put. Those are checked on every use; the
+rest never change.
+-}
+cacheControl :: FilePath -> TL.Text
+cacheControl candidate
+    | takeExtension candidate == ".webmanifest" = "no-cache"
+    | otherwise = "public, max-age=31536000, immutable"
+
+-- | From the file's extension, by 'mimeTypes'
 contentType :: FilePath -> TL.Text
-contentType = TL.fromStrict . TE.decodeUtf8 . defaultMimeLookup . T.pack
+contentType = TL.fromStrict . TE.decodeUtf8 . mimeByExt mimeTypes defaultMimeType . T.pack
+
+-- | mime-types' table of the common ones, plus the web app manifest it lacks
+mimeTypes :: MimeMap
+mimeTypes = Map.insert "webmanifest" "application/manifest+json" defaultMimeMap

@@ -2,7 +2,9 @@ module Tender.View.Layout (page, centred) where
 
 import Prelude
 
-import Data.Maybe (Maybe, maybe)
+import Data.Foldable (foldMap)
+
+import Data.Maybe (Maybe)
 import Flame (Html)
 import Flame.Html.Attribute as HA
 import Flame.Html.Element as HE
@@ -46,9 +48,9 @@ page { matches, newSession, session, fill } content =
     [ HE.header [ HA.class' "flex items-center justify-between gap-2 py-3" ]
         [ wordmark
         , HE.div [ HA.class' "flex items-center gap-2" ]
-            ( maybe [] (pure <<< newSessionButton) newSession
-                <> maybe [] pure session
-                <> maybe [] (\{ count, open } -> [ matchBadge count open ]) matches
+            ( foldMap (pure <<< newSessionButton) newSession
+                <> foldMap pure session
+                <> foldMap (\{ count, open } -> [ matchBadge count open ]) matches
             )
         ]
     , HE.div [ HA.class' ("flex flex-1 flex-col " <> if fill then "min-h-0 pb-3" else "pb-6") ] content

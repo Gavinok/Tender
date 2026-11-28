@@ -153,6 +153,8 @@ jobs:
             frontend/output
           key: spago-${{ hashFiles('frontend/spago.lock') }}
       - run: npx purs-tidy check "src/**/*.purs" "test/**/*.purs"
+      # ESLint and tsc for the JavaScript, purescript-linter for the PureScript
+      - run: npm run lint
       - run: npx spago test
       - run: npx spago bundle
       # Whether each screen fits on a phone, in a real browser (make fit)

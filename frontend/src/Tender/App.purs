@@ -14,6 +14,8 @@ module Tender.App
 
 import Prelude
 
+import Data.Monoid (guard)
+
 import Data.Array (cons, drop, elem, filter, head, length, null, snoc, uncons)
 import Data.Bifunctor (lmap)
 import Data.String (trim)
@@ -195,7 +197,7 @@ data Message
   | PollVibe
   -- | The decision on this restaurant is saved. Brings the session's matches
   -- | this person is part of, including ones others completed since.
-  | Decided { id :: RestaurantId, liked :: Boolean, matches :: Array RestaurantId, othersLiked :: Array RestaurantId }
+  | Decided { id :: RestaurantId, liked :: Boolean, matches :: Array RestaurantId, othersLiked :: Array RestaurantId, people :: Array Person }
   -- | Time to tell the server the user is still here
   | Heartbeat
   -- | Who is in the session and the user's matches, or Nothing if the
@@ -504,18 +506,18 @@ update model = case model, _ of
   Active swiper (Swiping r), Like -> model /\
     [ do
         liftEffect $ flyOut Swipe.Right
-        decide swiper.user r.id true <#> Just <<< either (swipeFailed { id: r.id, liked: true }) \d -> Decided { id: r.id, liked: true, matches: d.matches, othersLiked: d.othersLiked }
+        decide swiper.user r.id true <#> Just <<< either (swipeFailed { id: r.id, liked: true }) \d -> Decided { id: r.id, liked: true, matches: d.matches, othersLiked: d.othersLiked, people: d.people }
     ]
   Active swiper (Swiping r), Dislike -> model /\
     [ do
         liftEffect $ flyOut Swipe.Left
-        decide swiper.user r.id false <#> Just <<< either (swipeFailed { id: r.id, liked: false }) \d -> Decided { id: r.id, liked: false, matches: d.matches, othersLiked: d.othersLiked }
+        decide swiper.user r.id false <#> Just <<< either (swipeFailed { id: r.id, liked: false }) \d -> Decided { id: r.id, liked: false, matches: d.matches, othersLiked: d.othersLiked, people: d.people }
     ]
   -- Ignored if it's late and the card has already gone, so a doubled response can't skip one
   Active swiper (Swiping r), Decided d | r.id == d.id ->
     let
       liked = if d.liked then cons r swiper.liked else swiper.liked
-      { new, swiper: next } = newMatches d.matches swiper { upcoming = likedFirst d.othersLiked swiper.upcoming, othersLiked = d.othersLiked, liked = liked }
+      { new, swiper: next } = newMatches d.matches swiper { upcoming = likedFirst d.othersLiked swiper.upcoming, othersLiked = d.othersLiked, liked = liked, people = d.people }
     in
       -- Celebrate the first match, newest first; later ones get a toast so
       -- swiping isn't interrupted. Any others are in the list of matches.
@@ -524,12 +526,14 @@ update model = case model, _ of
           | null swiper.matches -> Active next (Matched m) /\ [ liftEffect vibrate $> Nothing ]
           | otherwise -> withToast m (advance next) /\ [ liftEffect vibrate $> Nothing, delay (Milliseconds 5000.0) $> Just (HideToast m.id) ]
         Nothing -> advance next
+  -- Late, but who's here and how far along is still news
+  Active swiper screen, Decided d -> Active swiper { people = d.people } screen /\ []
   -- The card has already flown off, so carry on with the next and keep trying
   -- quietly. Only a vanished session is worth stopping for.
   Active swiper screen, NotSent d ->
     let
       queued = swiper { unsent = snoc swiper.unsent d }
-      retry = if null swiper.unsent then [ retryLater ] else []
+      retry = guard (null swiper.unsent) [ retryLater ]
     in
       case screen of
         Swiping r | r.id == d.id ->

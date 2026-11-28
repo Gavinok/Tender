@@ -45,7 +45,7 @@ unshare:
 	tailscale serve --https=$(SHARE_PORT) off \
 	  || sudo tailscale serve --https=$(SHARE_PORT) off
 
-.PHONY: all build watch serve test lint format clean share unshare dist fit
+.PHONY: all build watch serve test lint format clean share unshare dist fit icons
 
 # Production build into dist/, as the Dockerfile does
 dist:
@@ -56,3 +56,12 @@ dist:
 # Needs the browser once: npx playwright install chromium
 fit: dist
 	npx playwright test
+
+# The app's PNG icons, from the SVGs beside them. Needs rsvg-convert (librsvg).
+ICONS = assets/icons
+
+icons:
+	rsvg-convert -w 192 $(ICONS)/icon.svg -o $(ICONS)/icon-192.png
+	rsvg-convert -w 512 $(ICONS)/icon.svg -o $(ICONS)/icon-512.png
+	rsvg-convert -w 512 $(ICONS)/icon-maskable.svg -o $(ICONS)/icon-maskable-512.png
+	rsvg-convert -w 180 $(ICONS)/icon-maskable.svg -o $(ICONS)/apple-touch-icon.png
