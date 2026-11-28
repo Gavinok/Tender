@@ -52,13 +52,13 @@ bare :: String -> Restaurant
 bare id = (restaurant id) { url = Nothing, rating = Nothing, photos = [], summary = Nothing, reviews = [], confirmed = [] }
 
 swiper :: Swiper
-swiper = { session: SessionId "s", user: UserId "u", loc: Just here, radius: 5000.0, maxRadius: 50000.0, widening: false, upcoming: [], photo: 0, detailsOpen: false, othersLiked: [], liked: [], matches: [], people: [], heartbeatIn: 10, showMatches: false, showSession: false, copied: false, toast: Nothing, unsent: [], warningDismissed: false, vibe: [] }
+swiper = { session: SessionId "s", user: UserId "u", loc: Just here, radius: 5000.0, maxRadius: 50000.0, widening: false, upcoming: [], photo: 0, detailsOpen: false, othersLiked: [], liked: [], matches: [], people: [], heartbeatIn: 10, showMatches: false, showSession: false, copied: false, toast: Nothing, unsent: [], warningDismissed: false, vibe: [], craving: Nothing }
 
 here :: { latitude :: Number, longitude :: Number }
 here = { latitude: 1.0, longitude: 2.0 }
 
 lobbyAt :: Lobby
-lobbyAt = { session: SessionId "s", link: "http://example.com/s", copied: false, vibe: { chips: [], choices: [ patio, veggie ], locked: false, place: Nothing }, picker: Nothing, bigQR: false, placeChanged: false }
+lobbyAt = { session: SessionId "s", link: "http://example.com/s", copied: false, vibe: { chips: [], choices: [ patio, veggie ], locked: false, place: Nothing, craving: Nothing }, picker: Nothing, bigQR: false, placeChanged: false, vibeOpen: false, draft: "" }
 
 patio :: Chip
 patio = { id: "patio", label: "☀️ Patio" }
@@ -110,15 +110,15 @@ main = runSpecAndExitProcess [ consoleReporter ] do
         `shouldEqual` Tuple (Active swiper { radius = 0.0, maxRadius = 0.0 } Fetching) 2
 
     it "shows the first restaurant and keeps the rest" do
-      step (Active swiper Fetching) (Loaded { restaurants: [ restaurant "a", restaurant "b" ], othersLiked: [], vibe: [], radius: 5000.0, maxRadius: 50000.0 })
+      step (Active swiper Fetching) (Loaded { restaurants: [ restaurant "a", restaurant "b" ], othersLiked: [], vibe: [], craving: Nothing, radius: 5000.0, maxRadius: 50000.0 })
         `shouldEqual` Tuple (Active swiper { upcoming = [ restaurant "b" ] } (Swiping (restaurant "a"))) 0
 
     it "starts with what others already liked" do
-      step (Active swiper Fetching) (Loaded { restaurants: [ restaurant "a", restaurant "b", restaurant "c" ], othersLiked: [ RestaurantId "c" ], vibe: [], radius: 5000.0, maxRadius: 50000.0 })
+      step (Active swiper Fetching) (Loaded { restaurants: [ restaurant "a", restaurant "b", restaurant "c" ], othersLiked: [ RestaurantId "c" ], vibe: [], craving: Nothing, radius: 5000.0, maxRadius: 50000.0 })
         `shouldEqual` Tuple (Active swiper { upcoming = [ restaurant "a", restaurant "b" ], othersLiked = [ RestaurantId "c" ] } (Swiping (restaurant "c"))) 0
 
     it "says there are none when the search finds nothing" do
-      step (Active swiper Fetching) (Loaded { restaurants: [], othersLiked: [], vibe: [], radius: 5000.0, maxRadius: 50000.0 }) `shouldEqual` Tuple (Active swiper NoneLeft) 0
+      step (Active swiper Fetching) (Loaded { restaurants: [], othersLiked: [], vibe: [], craving: Nothing, radius: 5000.0, maxRadius: 50000.0 }) `shouldEqual` Tuple (Active swiper NoneLeft) 0
 
     it "moves to the next restaurant without asking the server" do
       step (Active swiper { upcoming = [ restaurant "b" ] } (Swiping (restaurant "a"))) (decided "a" false [])
@@ -293,23 +293,47 @@ main = runSpecAndExitProcess [ consoleReporter ] do
       step (Active swiper { photo = 1, upcoming = [ restaurant "b" ] } (Swiping (restaurant "a"))) (decided "a" false [])
         `shouldEqual` Tuple (Active swiper (Swiping (restaurant "b"))) 0
 
+    it "opens the vibe box with the saved craving to edit, and saves what's typed" do
+      step (QR lobbyAt { vibe { craving = Just "ramen" } }) OpenVibe
+        `shouldEqual` Tuple (QR lobbyAt { vibe { craving = Just "ramen" }, vibeOpen = true, draft = "ramen" }) 0
+      step (QR lobbyAt { vibeOpen = true }) (DraftCraving "tacos")
+        `shouldEqual` Tuple (QR lobbyAt { vibeOpen = true, draft = "tacos" }) 0
+      step (QR lobbyAt { vibeOpen = true, draft = " tacos " }) SaveCraving
+        `shouldEqual` Tuple (QR lobbyAt { vibe { craving = Just "tacos" }, vibeOpen = true, draft = " tacos " }) 1
+      step (QR lobbyAt { vibe { craving = Just "tacos" }, vibeOpen = true, draft = "tacos" }) SaveCraving
+        `shouldEqual` Tuple (QR lobbyAt { vibe { craving = Just "tacos" }, vibeOpen = true, draft = "tacos" }) 0
+      step (QR lobbyAt { vibe { locked = true } }) OpenVibe `shouldEqual` Tuple (QR lobbyAt { vibe { locked = true } }) 0
+
+    it "closes the vibe box with Done or Escape, saving what's typed" do
+      step (QR lobbyAt { vibeOpen = true, draft = "tacos" }) CloseVibe
+        `shouldEqual` Tuple (QR lobbyAt { vibe { craving = Just "tacos" }, draft = "tacos" }) 2
+      fst (step (QR lobbyAt { vibeOpen = true }) (KeyPressed "Escape")) `shouldEqual` QR lobbyAt
+
+    it "takes a picked suggestion in place of what was typed" do
+      step (QR lobbyAt { vibeOpen = true, draft = "pat" }) (PickChip "patio")
+        `shouldEqual` Tuple (QR lobbyAt { vibe { chips = [ "patio" ] }, vibeOpen = true }) 2
+
+    it "keeps what's being typed when the lobby checks the vibe again" do
+      step (QR lobbyAt { vibeOpen = true, draft = "tac" }) (VibePolled lobbyAt.vibe { craving = Just "sushi" })
+        `shouldEqual` Tuple (QR lobbyAt { vibe { craving = Just "sushi" }, vibeOpen = true, draft = "tac" }) 1
+
     it "toggles a vibe chip and saves it" do
-      step (QR lobbyAt) (ToggleChip "patio") `shouldEqual` Tuple (QR lobbyAt { vibe = { chips: [ "patio" ], choices: [ patio, veggie ], locked: false, place: Nothing } }) 1
-      step (QR lobbyAt { vibe = { chips: [ "patio" ], choices: [ patio, veggie ], locked: false, place: Nothing } }) (ToggleChip "patio") `shouldEqual` Tuple (QR lobbyAt) 1
+      step (QR lobbyAt) (ToggleChip "patio") `shouldEqual` Tuple (QR lobbyAt { vibe = { chips: [ "patio" ], choices: [ patio, veggie ], locked: false, place: Nothing, craving: Nothing } }) 1
+      step (QR lobbyAt { vibe = { chips: [ "patio" ], choices: [ patio, veggie ], locked: false, place: Nothing, craving: Nothing } }) (ToggleChip "patio") `shouldEqual` Tuple (QR lobbyAt) 1
 
     it "doesn't change chips once swiping has started" do
-      let locked = lobbyAt { vibe = { chips: [ "patio" ], choices: [ patio, veggie ], locked: true, place: Nothing } }
+      let locked = lobbyAt { vibe = { chips: [ "patio" ], choices: [ patio, veggie ], locked: true, place: Nothing, craving: Nothing } }
       step (QR locked) (ToggleChip "drinks") `shouldEqual` Tuple (QR locked) 0
 
     it "shows the vibe others picked and checks again later" do
-      step (QR lobbyAt) (VibePolled { chips: [ "drinks" ], choices: [ patio, veggie ], locked: false, place: Nothing })
-        `shouldEqual` Tuple (QR lobbyAt { vibe = { chips: [ "drinks" ], choices: [ patio, veggie ], locked: false, place: Nothing } }) 1
+      step (QR lobbyAt) (VibePolled { chips: [ "drinks" ], choices: [ patio, veggie ], locked: false, place: Nothing, craving: Nothing })
+        `shouldEqual` Tuple (QR lobbyAt { vibe = { chips: [ "drinks" ], choices: [ patio, veggie ], locked: false, place: Nothing, craving: Nothing } }) 1
 
     it "stops checking the vibe once swiping" do
       step (Active swiper Fetching) PollVibe `shouldEqual` Tuple (Active swiper Fetching) 0
 
     it "keeps the session's vibe for the swiping screen" do
-      step (Active swiper Fetching) (Loaded { restaurants: [ restaurant "a" ], othersLiked: [], vibe: [ patio ], radius: 5000.0, maxRadius: 50000.0 })
+      step (Active swiper Fetching) (Loaded { restaurants: [ restaurant "a" ], othersLiked: [], vibe: [ patio ], craving: Nothing, radius: 5000.0, maxRadius: 50000.0 })
         `shouldEqual` Tuple (Active swiper { vibe = [ patio ] } (Swiping (restaurant "a"))) 0
 
     it "searches further from the out of restaurants screen" do
@@ -320,14 +344,14 @@ main = runSpecAndExitProcess [ consoleReporter ] do
         `shouldEqual` Tuple (Active swiper { widening = true } (Swiping (restaurant "a"))) 1
 
     it "adds the new ring after the cards still to come" do
-      step (Active swiper { widening = true, upcoming = [ restaurant "b" ] } (Swiping (restaurant "a"))) (Widened { restaurants: [ restaurant "z" ], othersLiked: [], vibe: [], radius: 10000.0, maxRadius: 50000.0 })
+      step (Active swiper { widening = true, upcoming = [ restaurant "b" ] } (Swiping (restaurant "a"))) (Widened { restaurants: [ restaurant "z" ], othersLiked: [], vibe: [], craving: Nothing, radius: 10000.0, maxRadius: 50000.0 })
         `shouldEqual` Tuple (Active swiper { radius = 10000.0, upcoming = [ restaurant "b", restaurant "z" ] } (Swiping (restaurant "a"))) 0
 
     it "doesn't search further than the furthest Google goes" do
       step (Active swiper { radius = 50000.0 } NoneLeft) SearchFurther `shouldEqual` Tuple (Active swiper { radius = 50000.0 } NoneLeft) 0
 
     it "keeps the wider radius it was given" do
-      step (Active swiper Fetching) (Loaded { restaurants: [ restaurant "z" ], othersLiked: [], vibe: [], radius: 10000.0, maxRadius: 50000.0 })
+      step (Active swiper Fetching) (Loaded { restaurants: [ restaurant "z" ], othersLiked: [], vibe: [], craving: Nothing, radius: 10000.0, maxRadius: 50000.0 })
         `shouldEqual` Tuple (Active swiper { radius = 10000.0 } (Swiping (restaurant "z"))) 0
 
     it "opens and closes the list of matches" do
@@ -412,6 +436,8 @@ main = runSpecAndExitProcess [ consoleReporter ] do
     it "shows one notice at a time, unsent swipes before the location warning" do
       renders (Active swiper { loc = Nothing, unsent = [ { id: RestaurantId "a", liked: true } ] } (Swiping (restaurant "b"))) "Your swipes are saved"
       rendersNot (Active swiper { loc = Nothing, unsent = [ { id: RestaurantId "a", liked: true } ] } (Swiping (restaurant "b"))) "get your location"
+    it "shows the craving with the vibe in the session sheet" do
+      renders (Active swiper { showSession = true, vibe = [ patio ], craving = Just "ramen" } (Swiping (restaurant "a"))) ">“ramen”<"
     it "offers the invite and a new session in the session sheet" do
       renders (Active swiper { showSession = true } (Swiping (restaurant "a"))) ">Share invite<"
       renders (Active swiper { showSession = true, copied = true } (Swiping (restaurant "a"))) ">Link copied!<"
@@ -443,17 +469,26 @@ main = runSpecAndExitProcess [ consoleReporter ] do
       renders (Active swiper { people = [ { you: true, status: Status.Swiping, swiped: 5, left: Just 0 }, { you: false, status: Status.Swiping, swiped: 3, left: Just 12 }, { you: false, status: Status.Done, swiped: 9, left: Just 0 } ] } NoneLeft) "Waiting on Friend 1 (12 left)"
     it "tells people their swipes are waiting while some are unsent" do
       renders (Active swiper { unsent = [ { id: RestaurantId "a", liked: true } ] } (Swiping (restaurant "b"))) "Your swipes are saved"
-    it "shows vibe chips in the lobby, marking the chosen ones" do
-      renders (QR lobbyAt { vibe = { chips: [ "patio" ], choices: [ patio, veggie ], locked: false, place: Nothing } }) "aria-pressed=\"true\">☀️ Patio<"
-      renders (QR lobbyAt { vibe = { chips: [ "patio" ], choices: [ patio, veggie ], locked: true, place: Nothing } }) "Locked in"
     it "shows a local QR code in the lobby, without the unreadable link under it" do
       renders (QR lobbyAt) "src=\"data:image/svg+xml"
       renders (QR lobbyAt) "Share invite"
-    it "says how many vibe chips are picked, for ones scrolled out of view" do
-      renders (QR lobbyAt { vibe = { chips: [ "patio", "veggie" ], choices: [ patio, veggie ], locked: false, place: Nothing } }) ">2 picked. Everyone sees the same picks.<"
-    it "shows every vibe chip in the lobby, with how to use them" do
-      renders (QR lobbyAt) ">🥦 Veggie<"
-      renders (QR lobbyAt) "Pick a vibe."
+    it "puts the chosen chips in the vibe box as tokens, and the rest as suggestions" do
+      let picked = lobbyAt { vibe { chips = [ "patio" ] } }
+      renders (QR picked) "aria-label=\"Remove ☀️ Patio\""
+      rendersNot (QR picked) ">☀️ Patio</button>"
+      renders (QR picked) ">🥦 Veggie</button>"
+      renders (QR lobbyAt) "placeholder=\"What are you in the mood for?\""
+      renders (QR picked) "placeholder=\"Anything else?\""
+    it "shows the saved craving in the box first, or what's being typed while it's open" do
+      renders (QR lobbyAt { vibe { craving = Just "ramen" } }) ">“ramen”<"
+      renders (QR lobbyAt { vibe { craving = Just "ramen" }, vibeOpen = true, draft = "tac" }) "value=\"tac\""
+    it "filters the suggestions by what's typed while the box is open" do
+      renders (QR lobbyAt { vibeOpen = true, draft = "veg" }) ">🥦 Veggie</button>"
+      rendersNot (QR lobbyAt { vibeOpen = true, draft = "veg" }) ">☀️ Patio</button>"
+      renders (QR lobbyAt { vibeOpen = true, draft = "veg" }) ">Done<"
+    it "locks the vibe box once someone starts swiping" do
+      renders (QR lobbyAt { vibe { chips = [ "patio" ], locked = true } }) "Locked in"
+      rendersNot (QR lobbyAt { vibe { chips = [ "patio" ], locked = true } }) "aria-label=\"Suggestions\""
     it "shows the QR code full screen when tapped" do
       renders (QR lobbyAt { bigQR = true }) "Tap to close"
     it "shows the restaurant while swiping" do

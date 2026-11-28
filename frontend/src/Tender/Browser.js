@@ -224,3 +224,32 @@ export const encodeQuery = (text) => encodeURIComponent(text);
  * @returns {string}
  */
 export const keyOf = (event) => (event instanceof KeyboardEvent ? event.key : "");
+
+/**
+ * Put the cursor in the element with this id, if there is one
+ * @param {string} id
+ * @returns {() => void}
+ */
+export const focusOn = (id) => () => {
+  const element = document.querySelector(`#${id}`);
+  if (element instanceof HTMLElement) {
+    element.focus();
+  }
+};
+
+/**
+ * Done with a field: let go of its focus, which puts a phone's keyboard
+ * away, and scroll it back to its start
+ * @param {string} id
+ * @returns {() => void}
+ */
+export const leaveField = (id) => () => {
+  const field = document.querySelector(`#${id}`);
+  if (!(field instanceof HTMLElement)) {
+    return;
+  }
+  if (document.activeElement instanceof HTMLElement && field.contains(document.activeElement)) {
+    document.activeElement.blur();
+  }
+  field.scrollLeft = 0;
+};

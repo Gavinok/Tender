@@ -20,18 +20,18 @@ import Data.String (trim)
 import Data.Either (Either(..), either)
 import Data.Generic.Rep (class Generic)
 import Data.Show.Generic (genericShow)
-import Data.Maybe (Maybe(..), isJust, maybe)
+import Data.Maybe (Maybe(..), fromMaybe, isJust, maybe)
 import Effect.Aff (Aff, Milliseconds(..), attempt, delay)
 import Effect.Class (liftEffect)
 import Data.Tuple (Tuple)
 import Data.Tuple.Nested ((/\))
 import Flame (Update)
-import Tender.Api (ApiError(..), PresenceResponse, createSession, decide, findPlaces, getRestaurants, getVibe, heartbeat, joinSession, setPlace, setVibe)
+import Tender.Api (ApiError(..), PresenceResponse, createSession, decide, findPlaces, getRestaurants, getVibe, heartbeat, joinSession, setCraving, setPlace, setVibe)
 import Data.Int (toNumber)
 import Tender.Vibe (Chip, Vibe)
 import Tender.Swipe (flyOut)
 import Tender.Swipe as Swipe
-import Tender.Browser (LocationProblem(..), Shared(..), confirmLeave, existingSession, geolocation, reload, rememberSession, rememberUser, rememberedUser, shareLink, shareOrCopy, startNewSession, tabHidden, vibrate)
+import Tender.Browser (LocationProblem(..), Shared(..), confirmLeave, existingSession, focusOn, leaveField, geolocation, reload, rememberSession, rememberUser, rememberedUser, shareLink, shareOrCopy, startNewSession, tabHidden, vibrate)
 import Tender.Types (ErrorMessage, Found, Loc, Person, Place, Restaurant, RestaurantId, SessionId, Url, UserId)
 
 -- | What we know once the user has joined a session
@@ -75,6 +75,8 @@ type Swiper =
   , unsent :: Array Decision
   -- | The session's vibe chips
   , vibe :: Array Chip
+  -- | What the group typed it's craving
+  , craving :: Maybe String
   }
 
 -- | A match mentioned over the cards. `leaving` while it slides away.
@@ -102,6 +104,10 @@ type Lobby =
   , bigQR :: Boolean
   -- | Someone else just changed where the group is eating, so it's pointed out
   , placeChanged :: Boolean
+  -- | Whether the vibe box is open, showing the chips as suggestions
+  , vibeOpen :: Boolean
+  -- | The craving as it's being typed, saved on Enter, Done or leaving the box
+  , draft :: String
   }
 
 -- | Looking up where the group is eating. `results` is Nothing until the
@@ -167,13 +173,21 @@ data Message
   -- | Skip past the current match and keep swiping
   | Continue
   -- | The restaurants in the new ring after searching further while swiping
-  | Widened { restaurants :: Array Restaurant, othersLiked :: Array RestaurantId, vibe :: Array Chip, radius :: Number, maxRadius :: Number }
-  | Loaded { restaurants :: Array Restaurant, othersLiked :: Array RestaurantId, vibe :: Array Chip, radius :: Number, maxRadius :: Number }
+  | Widened { restaurants :: Array Restaurant, othersLiked :: Array RestaurantId, vibe :: Array Chip, craving :: Maybe String, radius :: Number, maxRadius :: Number }
+  | Loaded { restaurants :: Array Restaurant, othersLiked :: Array RestaurantId, vibe :: Array Chip, craving :: Maybe String, radius :: Number, maxRadius :: Number }
   | SearchFurther
   | NextPhoto
   | PreviousPhoto
   | ToggleDetails
   | ToggleChip String
+  -- | A chip picked from the suggestions, which stands in for typing
+  | PickChip String
+  -- | The vibe box was tapped into
+  | OpenVibe
+  -- | Done with the vibe box
+  | CloseVibe
+  | DraftCraving String
+  | SaveCraving
   -- | The vibe as saved after this person changed it
   | VibeSaved Vibe
   -- | The vibe as fetched by the lobby's regular check, which then schedules the next one
@@ -215,6 +229,14 @@ swipeFailed d = case _ of
 -- | Wait a few seconds, then send the unsent swipes again
 retryLater :: Aff (Maybe Message)
 retryLater = delay (Milliseconds 5000.0) $> Just RetryUnsent
+
+-- | A typed craving, or Nothing for blank
+tidy :: String -> Maybe String
+tidy typed = if trim typed == "" then Nothing else Just (trim typed)
+
+-- | Whether the vibe box has a craving typed that isn't saved yet
+unsaved :: Lobby -> Boolean
+unsaved lobby = lobby.vibeOpen && tidy lobby.draft /= lobby.vibe.craving
 
 -- | Whether a sheet is covering the cards
 sheetOpen :: Swiper -> Boolean
@@ -329,7 +351,7 @@ update model = case model, _ of
             JoinSession s <$> shareLink s
     ]
   _, JoinSession session link ->
-    QR { session, link, copied: false, vibe: { chips: [], choices: [], locked: false, place: Nothing }, picker: Nothing, bigQR: false, placeChanged: false } /\ [ pollVibe session ]
+    QR { session, link, copied: false, vibe: { chips: [], choices: [], locked: false, place: Nothing, craving: Nothing }, picker: Nothing, bigQR: false, placeChanged: false, vibeOpen: false, draft: "" } /\ [ pollVibe session ]
   -- Keeps checking while in the lobby so everyone sees the same chips; stops once swiping
   -- A place someone else changed is pointed out for a few seconds. Not on
   -- the first check, which only brings what the lobby already had.
@@ -348,6 +370,29 @@ update model = case model, _ of
     in
       QR lobby { vibe = lobby.vibe { chips = chosen } }
         /\ [ setVibe lobby.session chosen <#> either (const Nothing) (Just <<< VibeSaved) ]
+  -- The vibe box: tapping in shows the chips as suggestions, and picking
+  -- one stands in for typing it, so what was typed goes. The craving is
+  -- saved on Enter, Done or Start swiping, not on every keystroke, and
+  -- the lobby's regular check leaves what's being typed alone.
+  QR lobby, PickChip id | not lobby.vibe.locked ->
+    let
+      picked /\ effects = update (QR lobby { draft = "" }) (ToggleChip id)
+    in
+      -- Back to typing, so the keyboard stays up
+      picked /\ (effects <> [ liftEffect (focusOn "craving") $> Nothing ])
+  QR lobby, OpenVibe | not lobby.vibe.locked && not lobby.vibeOpen ->
+    QR lobby { vibeOpen = true, draft = fromMaybe "" lobby.vibe.craving } /\ []
+  QR lobby, DraftCraving typed -> QR lobby { draft = typed } /\ []
+  QR lobby, SaveCraving | unsaved lobby ->
+    QR lobby { vibe = lobby.vibe { craving = tidy lobby.draft } }
+      /\ [ setCraving lobby.session lobby.draft <#> either (const Nothing) (Just <<< VibeSaved) ]
+  QR _, CloseVibe ->
+    let
+      saved /\ effects = update model SaveCraving
+    in
+      case saved of
+        QR l -> QR l { vibeOpen = false } /\ (effects <> [ liftEffect (leaveField "vibe-box") $> Nothing ])
+        other -> other /\ effects
   QR { link }, ShareInvite -> model /\
     [ attempt (shareOrCopy link) <#> case _ of
         Right Copied -> Just LinkCopied
@@ -357,9 +402,10 @@ update model = case model, _ of
     QR lobby { copied = true } /\ [ delay (Milliseconds 2000.0) $> Just HideCopied ]
   QR lobby, HideCopied -> QR lobby { copied = false } /\ []
   QR lobby, ToggleQR -> QR lobby { bigQR = not lobby.bigQR } /\ []
-  -- Escape closes whatever is on top: the big QR code, then the place lookup
+  -- Escape closes whatever is on top: the big QR code, the place lookup, then the vibe box
   QR lobby, KeyPressed "Escape" | lobby.bigQR -> update model ToggleQR
   QR lobby, KeyPressed "Escape" | isJust lobby.picker -> update model ClosePicker
+  QR lobby, KeyPressed "Escape" | lobby.vibeOpen -> update model CloseVibe
   -- Inviting more people from the session sheet once swiping
   Active { session } _, ShareInvite -> model /\
     [ attempt (liftEffect (shareLink session) >>= shareOrCopy) <#> case _ of
@@ -372,8 +418,10 @@ update model = case model, _ of
 
   -- Without a location the user can still join, and gets the session's
   -- With a place chosen, nobody needs their location
-  QR { session, vibe }, StartSwiping -> model /\
+  -- A craving still being typed is saved first, so the search uses it
+  QR lobby@{ session, vibe }, StartSwiping -> model /\
     [ do
+        when (unsaved lobby) $ void $ setCraving session lobby.draft
         located <- maybe geolocation (pure <<< Right <<< locOf) vibe.place
         returning <- liftEffect $ rememberedUser session
         joined <- joinSession session returning
@@ -387,7 +435,7 @@ update model = case model, _ of
       -- Only reached when nobody else in the session has a location either
       noLocation problem e = LocationFailed session user problem (errorText e)
     in
-      Active { session, user, loc, radius: 0.0, maxRadius: 0.0, widening: false, upcoming: [], photo: 0, detailsOpen: false, othersLiked: [], liked: [], matches: [], people: [], heartbeatIn: 10, showMatches: false, showSession: false, copied: false, toast: Nothing, unsent: [], warningDismissed: false, vibe: [] } Fetching
+      Active { session, user, loc, radius: 0.0, maxRadius: 0.0, widening: false, upcoming: [], photo: 0, detailsOpen: false, othersLiked: [], liked: [], matches: [], people: [], heartbeatIn: 10, showMatches: false, showSession: false, copied: false, toast: Nothing, unsent: [], warningDismissed: false, vibe: [], craving: Nothing } Fetching
         /\
           [ Just <<< either (either noLocation (const failed) located) Loaded <$> getRestaurants user loc Nothing
           -- Soon after the search, so the server knows what the user was shown
@@ -431,6 +479,7 @@ update model = case model, _ of
       { upcoming = likedFirst found.othersLiked found.restaurants
       , othersLiked = found.othersLiked
       , vibe = found.vibe
+      , craving = found.craving
       , radius = found.radius
       , maxRadius = found.maxRadius
       }

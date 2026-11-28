@@ -7,6 +7,7 @@ module Tender.Api
   , getVibe
   , setVibe
   , setPlace
+  , setCraving
   , findPlaces
   , joinSession
   -- * The JSON sent and received, shared with the contract tests
@@ -51,12 +52,15 @@ type VibeRequest = { chips :: Array String }
 
 type PlaceRequest = { place :: Maybe Place }
 
+type CravingRequest = { craving :: String }
+
 -- | Bodies the backend sends, beyond the shared types (Vibe, Found, ids).
 -- | The contract tests decode the backend's pinned examples as these.
 type RestaurantsResponse =
   { restaurants :: Array Restaurant
   , othersLiked :: Array RestaurantId
   , vibe :: Array Chip
+  , craving :: Maybe String
   , radius :: Number
   , maxRadius :: Number
   }
@@ -121,6 +125,11 @@ setVibe (SessionId s) chosen = post ("vibe/" <> s) ({ chips: chosen } :: VibeReq
 -- | own locations. Ignored once someone has started swiping.
 setPlace :: SessionId -> Maybe Place -> Aff (Either ApiError Vibe)
 setPlace (SessionId s) place = post ("place/" <> s) ({ place } :: PlaceRequest)
+
+-- | Set what the session is craving, "" to clear it. Ignored once someone
+-- | has started swiping.
+setCraving :: SessionId -> String -> Aff (Either ApiError Vibe)
+setCraving (SessionId s) craving = post ("craving/" <> s) ({ craving } :: CravingRequest)
 
 -- | Places matching what the user typed, e.g. a neighbourhood or address
 findPlaces :: String -> Aff (Either ApiError (Array Found))
