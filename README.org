@@ -105,9 +105,10 @@ on the Places API before sharing the link.
 ** How it works
 1. Open the app to start a session, and get everyone to scan the QR
    code or tap "Share invite".
-2. Pick the vibe together (patio, cheap eats, drinks, ...).
+2. Pick the vibe together (patio, cheap eats, drinks, ...), or type
+   what you're craving, like "pho".
 3. Swipe right on restaurants you'd go to and left on the rest. Tap a
-   card to flip through its photos, or its summary to read more.
+   card to flip through its photos, or Details to read more.
 4. Anything two people like is a match. Restaurants others liked come
    up first, and "Search further" looks wider when you run out.
 
@@ -115,4 +116,5 @@ on the Places API before sharing the link.
 [[./docs/screenshots.jpg]]
 
 The restaurants in the screenshots are made up; the food illustrations
-are [[https://github.com/jdecked/twemoji][Twemoji]] (CC-BY 4.0).
+are [[https://github.com/jdecked/twemoji][Twemoji]] (CC-BY 4.0). =make screenshots= in =frontend= redraws
+them from the current UI.
