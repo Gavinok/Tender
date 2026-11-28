@@ -24,7 +24,7 @@ import Data.ByteString qualified as BS
 import Data.Char (isAlphaNum, toUpper)
 import Data.Either (partitionEithers)
 import Data.List (nubBy, sortOn, transpose)
-import Data.Maybe (catMaybes, listToMaybe)
+import Data.Maybe (catMaybes, isNothing, listToMaybe)
 import Data.Set qualified as Set
 import Data.Text (Text)
 import Data.Text qualified as T
@@ -49,8 +49,8 @@ newtype PlacesKey = PlacesKey BS.ByteString
 
 -- | The most popular places nearby, or a text search when the group picked a vibe
 googlePlaces :: PlacesKey -> Provider
-googlePlaces key = Provider "Google Places" $ \(Search l chips radius inner) ->
-    let search centre r = if null chips then searchNearby key centre r else searchText key centre chips r
+googlePlaces key = Provider "Google Places" $ \(Search l chips radius inner wanted) ->
+    let search centre r = if null chips && isNothing wanted then searchNearby key centre r else searchText key centre wanted chips r
      in fmap (rankFor chips)
             <$> if inner <= 0
                 then search l radius
@@ -148,8 +148,8 @@ searchNearby key l radius =
             ]
 
 -- | Up to 20 places matching the vibe within the radius in metres
-searchText :: PlacesKey -> Loc -> [Chip] -> Double -> IO (Either FetchError [Restaurant])
-searchText key l chips radius =
+searchText :: PlacesKey -> Loc -> Maybe Text -> [Chip] -> Double -> IO (Either FetchError [Restaurant])
+searchText key l wanted chips radius =
     fetchJSON searchTimeout parsePlaces
         $ withKey key [("X-Goog-FieldMask", fieldMask)]
         $ setRequestBodyJSON body
@@ -157,7 +157,7 @@ searchText key l chips radius =
   where
     body =
         object $
-            [ "textQuery" .= queryTerms chips
+            [ "textQuery" .= queryTerms wanted chips
             , "pageSize" .= (20 :: Int)
             , -- Text search can only be restricted to a rectangle: the box around the circle
               "locationRestriction" .= object ["rectangle" .= boxAround l radius]

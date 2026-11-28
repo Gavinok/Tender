@@ -26,7 +26,8 @@ sheet { title, close } body =
         , HA.createAttribute "aria-modal" "true"
         , HA.createAttribute "aria-label" title
         ]
-        [ HE.div [ HA.class' "mb-4 flex items-center justify-between" ]
+        -- The close button stays top right beside a title of several lines
+        [ HE.div [ HA.class' "mb-4 flex items-start justify-between gap-2" ]
             [ HE.h2 [ HA.class' "text-2xl font-display" ] [ HE.text title ]
             , HE.button
                 [ HA.class' "grid h-11 w-11 place-items-center rounded-lg text-ink/60 hover:bg-ink/5"

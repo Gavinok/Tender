@@ -6,6 +6,7 @@ import Data.Aeson (ToJSON, encode, object, (.=))
 import Data.ByteString.Char8 qualified as S8
 import Data.ByteString.Lazy.Char8 qualified as L8
 import Data.Text (Text)
+import Data.Text qualified as T
 import Data.Text.Encoding qualified as TE
 import Network.HTTP.Types (methodGet, methodPost, status413)
 import Network.Wai (Application, RequestBodyLength (..), defaultRequest, requestBodyLength, requestMethod)
@@ -15,7 +16,7 @@ import System.FilePath ((</>))
 import System.IO (hClose, openTempFile)
 import Test.Hspec
 import Test.Hspec.Wai
-import Test.Hspec.Wai.Matcher (bodyEquals)
+import Test.Hspec.Wai.Matcher (MatchBody (..), bodyEquals)
 
 import App (Env (..), application, newLimitsWith, noLocationYet, sessionFull, siteLimitReached, visitorLimitReached)
 import Db (initDb, openPool)
@@ -25,7 +26,7 @@ import Places (PlacesKey (..))
 import Presence (Activity (..), Person (..), newPresence)
 import Provider (Provider (..))
 import Restaurant
-import Vibe (Found (..), Place (..))
+import Vibe (Chip (..), Found (..), Place (..))
 import Wire (DecisionResponse (..), ErrorResponse (..), Lobby (..), PresenceResponse (..))
 
 -- | Always finds the same two places, without calling anyone
@@ -147,14 +148,35 @@ spec = do
                 decide b "p1" True `respondsWith` DecisionResponse [p1] [] [Person False Swiping 1 Nothing, Person True Swiping 1 Nothing]
                 decide a "p2" False `respondsWith` DecisionResponse [p1] [] [Person True Swiping 2 Nothing, Person False Swiping 1 Nothing]
 
+        describe "what the group is craving" $ do
+            let crave s t = postJSON ("/api/craving/" <> encodeText s) (encode (object ["craving" .= (t :: Text)]))
+            it "is shared in the lobby, tidied, and cleared when blank" $ do
+                s <- newSession
+                crave s "  spicy   ramen " `respondsWith` Lobby [] False Nothing (Just "spicy ramen")
+                get ("/api/vibe/" <> encodeText s) `respondsWith` Lobby [] False Nothing (Just "spicy ramen")
+                crave s " " `respondsWith` Lobby [] False Nothing Nothing
+            it "leaves the chips alone, and the chips leave it alone" $ do
+                s <- newSession
+                _ <- postJSON ("/api/vibe/" <> encodeText s) "{\"chips\":[\"patio\"]}"
+                crave s "tacos" `respondsWith` Lobby [Patio] False Nothing (Just "tacos")
+                postJSON ("/api/vibe/" <> encodeText s) "{\"chips\":[]}" `respondsWith` Lobby [] False Nothing (Just "tacos")
+            it "refuses a craving that's too long" $ do
+                s <- newSession
+                crave s (T.replicate 61 "a") `shouldRespondWith` 400
+            it "goes with the restaurants, and locks once someone starts swiping" $ do
+                (s, u) <- joined
+                _ <- crave s "ramen"
+                search u `shouldRespondWith` 200{matchBody = MatchBody (\_ body -> if "\"craving\":\"ramen\"" `S8.isInfixOf` L8.toStrict body then Nothing else Just "no craving in the response")}
+                crave s "tacos" `respondsWith` Lobby [] True Nothing (Just "ramen")
+
         describe "where the group is eating" $ do
             let choose s place = postJSON ("/api/place/" <> encodeText s) (encode (object ["place" .= place]))
             it "is shared in the lobby and can be cleared" $ do
                 s <- newSession
-                get ("/api/vibe/" <> encodeText s) `respondsWith` Lobby [] False Nothing
-                choose s (Just kelowna) `respondsWith` Lobby [] False (Just kelowna)
-                get ("/api/vibe/" <> encodeText s) `respondsWith` Lobby [] False (Just kelowna)
-                choose s (Nothing :: Maybe Place) `respondsWith` Lobby [] False Nothing
+                get ("/api/vibe/" <> encodeText s) `respondsWith` Lobby [] False Nothing Nothing
+                choose s (Just kelowna) `respondsWith` Lobby [] False (Just kelowna) Nothing
+                get ("/api/vibe/" <> encodeText s) `respondsWith` Lobby [] False (Just kelowna) Nothing
+                choose s (Nothing :: Maybe Place) `respondsWith` Lobby [] False Nothing Nothing
             it "is searched from without anyone's location" $ do
                 (s, u) <- joined
                 _ <- choose s (Just kelowna)
@@ -162,7 +184,7 @@ spec = do
             it "locks once someone starts swiping" $ do
                 (s, u) <- joined
                 _ <- search u
-                choose s (Just kelowna) `respondsWith` Lobby [] True Nothing
+                choose s (Just kelowna) `respondsWith` Lobby [] True Nothing Nothing
             it "refuses a place off the globe or without a name" $ do
                 s <- newSession
                 postJSON ("/api/place/" <> encodeText s) "{\"place\":{\"name\":\"Nowhere\",\"latitude\":500,\"longitude\":0}}" `shouldRespondWith` 422

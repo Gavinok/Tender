@@ -75,7 +75,7 @@ import Provider (Provider (..), searchWithFallback)
 import Restaurant (Restaurant, RestaurantId (..))
 import Restaurant qualified as R
 import User qualified as U
-import Vibe (Found, Search (..), chipFromId, maxRadius)
+import Vibe (Found, Search (..), chipFromId, craving, maxRadius)
 import Wire
 import Yelp (YelpKey (..), yelp)
 
@@ -172,7 +172,7 @@ visitorOf = do
 
 -- | The lobby's shared choices for the session
 lobbyState :: Connection -> U.SessionId -> IO Lobby
-lobbyState c s = (\(chips, locked) place -> Lobby chips locked place) <$> getVibe c s <*> getPlace c s
+lobbyState c s = uncurry Lobby <$> getVibe c s <*> getPlace c s <*> getCraving c s
 
 {- | Restaurant sources in the order given by TENDER_SOURCES (default
 google,yelp,openstreetmap), leaving out the ones without a key
@@ -366,6 +366,15 @@ app env = do
             (_, Nothing) -> errorResponse status400 "Unknown vibe"
             (Just s, Just chips) -> spendWrite env >> liftIO (db $ \c -> setVibe c s chips >> lobbyState c s) >>= json
 
+    -- What the group typed they're in the mood for, shared and locked like the chips
+    post "/api/craving/:session" $ do
+        sessionText <- pathParam "session"
+        CravingRequest typed <- jsonData
+        case (U.sessionFromText sessionText, craving typed) of
+            (Nothing, _) -> errorResponse status400 "Invalid session"
+            (_, Left why) -> errorResponse status400 why
+            (Just s, Right wanted) -> spendWrite env >> liftIO (db $ \c -> setCraving c s wanted >> lobbyState c s) >>= json
+
     -- Where the group is eating, shared and locked like the vibe
     post "/api/place/:session" $ do
         sessionText <- pathParam "session"
@@ -403,11 +412,11 @@ app env = do
             Just u -> do
                 -- One transaction, so these all come from the same moment. It writes
                 -- (the location, a wider radius), so it takes the write lock up front.
-                (located, (chips, _), radius, decided) <- liftIO $ db $ \c -> withImmediateTransaction c $ do
+                (located, (chips, _), wanted, radius, decided) <- liftIO $ db $ \c -> withImmediateTransaction c $ do
                     let s = U.session u
                     l <- sessionLocation c s here
                     radius <- maybe (sessionRadius c s) (widenSearch c s) wider
-                    (l,,radius,) <$> getVibe c s <*> decidedBy c uid
+                    (l,,,radius,) <$> getVibe c s <*> getCraving c s <*> decidedBy c uid
                 l <- maybe (errorResponse status409 noLocationYet >> finish) pure located
                 -- Searching further only needs the ring outside what the person saw
                 let inner = maybe 0 (min radius) wider
@@ -418,7 +427,7 @@ app env = do
                 refused <- liftIO $ allowed (searchesPerVisitor limits) (searchesToday limits) visitor cost
                 found <- case refused of
                     Just why -> errorResponse status429 why >> finish
-                    Nothing -> liftIO $ searchWithFallback (envLog env Warning) (envProviders env) (Search l chips radius inner)
+                    Nothing -> liftIO $ searchWithFallback (envLog env Warning) (envProviders env) (Search l chips radius inner wanted)
                 case found of
                     Nothing -> errorResponse status502 "Couldn't get restaurants from any source"
                     Just rs -> do
@@ -427,7 +436,7 @@ app env = do
                         -- Leaving out ones this person already decided on, e.g. before a reload
                         let shown = likedFirst (Set.fromList others) (filter ((`Set.notMember` Set.fromList decided) . R.restaurantId) rs)
                         liftIO $ dealtNow (envPresence env) uid (map R.restaurantId shown)
-                        json (RestaurantsResponse shown others chips radius maxRadius)
+                        json (RestaurantsResponse shown others chips wanted radius maxRadius)
 
     -- Redirects to the photo with the given resource name, so the key stays here
     get "/api/photo" $ do

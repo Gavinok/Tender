@@ -39,10 +39,10 @@ spec :: Spec
 spec = do
     describe "responses the frontend reads" $ do
         it "the session and user ids" $ goldenJSON "ids-response" (SessionId UUID.nil, someone)
-        it "restaurants" $ goldenJSON "restaurants-response" (RestaurantsResponse [pho, fishStore] [restaurantId pho] [Patio, Veggie] 5000 50000)
+        it "restaurants" $ goldenJSON "restaurants-response" (RestaurantsResponse [pho, fishStore] [restaurantId pho] [Patio, Veggie] (Just "ramen") 5000 50000)
         it "a decision" $ goldenJSON "decision-response" (DecisionResponse [restaurantId pho] [restaurantId fishStore] everyStatus)
         it "who's in the session" $ goldenJSON "presence-response" (PresenceResponse everyStatus [restaurantId pho] 10)
-        it "the lobby" $ goldenJSON "lobby-response" [Lobby [] False Nothing, Lobby allChips True (Just fernwood)]
+        it "the lobby" $ goldenJSON "lobby-response" [Lobby [] False Nothing Nothing, Lobby allChips True (Just fernwood) (Just "ramen")]
         it "place lookups" $ goldenJSON "places-response" [Found fernwood "Fernwood, Victoria, BC, Canada"]
         it "errors" $ goldenJSON "error-response" (ErrorResponse "Unknown user")
 

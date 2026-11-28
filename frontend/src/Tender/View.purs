@@ -39,14 +39,16 @@ reach swiper =
           else []
     )
 
--- | The session's vibe, when it has one
-vibeLine :: forall a. Array Chip -> Html a
-vibeLine [] = HE.text ""
-vibeLine vibe =
+-- | The session's vibe and craving, when it has either
+vibeLine :: forall a. Array Chip -> Maybe String -> Html a
+vibeLine [] Nothing = HE.text ""
+vibeLine vibe craving =
   sheetSection "Vibe"
     [ HE.ul [ HA.class' "flex flex-wrap gap-2" ]
-        (map (\c -> HE.li [ HA.class' "rounded-lg border-2 border-ink bg-white px-3 py-1 text-sm font-bold" ] [ HE.text c.label ]) vibe)
+        (map (item <<< _.label) vibe <> foldMap (pure <<< item <<< \c -> "“" <> c <> "”") craving)
     ]
+  where
+  item text = HE.li [ HA.class' "rounded-lg border-2 border-ink bg-white px-3 py-1 text-sm font-bold" ] [ HE.text text ]
 
 sheetSection :: forall a. String -> Array (Html a) -> Html a
 sheetSection title body =
@@ -60,7 +62,7 @@ sessionSheet swiper =
   sheet { title: "Your session", close: ToggleSession }
     [ HE.div [ HA.class' "flex flex-col gap-4" ]
         [ presenceStrip swiper.people
-        , vibeLine swiper.vibe
+        , vibeLine swiper.vibe swiper.craving
         , reach swiper
         , sheetSection "Invite"
             [ if swiper.copied then button Secondary (Just Check) "Link copied!" ShareInvite
@@ -110,7 +112,7 @@ view (NeedLocation { message, picker }) =
 
 view Loading = page { matches: Nothing, newSession: Nothing, session: Nothing, fill: false } [ setting ]
 
-view (QR l) = page { matches: Nothing, newSession: Just NewSession, session: Nothing, fill: true } [ lobby l { share: ShareInvite, start: StartSwiping, toggle: ToggleChip, bigQR: ToggleQR, picker: pickerMessages } ]
+view (QR l) = page { matches: Nothing, newSession: Just NewSession, session: Nothing, fill: true } [ lobby l { share: ShareInvite, start: StartSwiping, bigQR: ToggleQR, vibe: { toggle: ToggleChip, pick: PickChip, open: OpenVibe, close: CloseVibe, draft: DraftCraving, save: SaveCraving }, picker: pickerMessages } ]
 
 view (Active swiper screen) =
   page { matches: Just { count: length swiper.matches, open: ToggleMatches }, newSession: Nothing, session: Just (sessionButton swiper.people ToggleSession), fill: true } $

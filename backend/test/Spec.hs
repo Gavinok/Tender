@@ -197,13 +197,13 @@ main = hspec $ do
     describe "searchWithFallback" $ do
         let here = Loc 48.43 (-123.35)
             found = [plain OpenStreetMap "a" here]
-            search ps = searchWithFallback (const (pure ())) ps (Search here [] defaultRadius 0)
+            search ps = searchWithFallback (const (pure ())) ps (Search here [] defaultRadius 0 Nothing)
         it "uses the first source that finds something" $
             search [provider "down" (Left (ParseError "boom")), provider "empty" (Right []), provider "osm" (Right found)]
                 `shouldReturn` Just [r{distance = Just 0} | r <- found]
         it "says how far each place is from the search" $ do
             let there = Loc 48.44 (-123.35)
-            result <- searchWithFallback (const (pure ())) [provider "osm" (Right [plain OpenStreetMap "a" there])] (Search here [] defaultRadius 0)
+            result <- searchWithFallback (const (pure ())) [provider "osm" (Right [plain OpenStreetMap "a" there])] (Search here [] defaultRadius 0 Nothing)
             fmap (map (fmap round . distance)) result `shouldBe` Just [Just (1113 :: Int)]
         it "says nothing was found when a source answered with nothing" $
             search [provider "down" (Left (ParseError "boom")), provider "empty" (Right [])] `shouldReturn` Just []
@@ -441,8 +441,13 @@ main = hspec $ do
             othersLiked conn (User me s) `shouldReturn` ["a"]
 
     describe "Vibe" $ do
-        it "turns chips into a text query" $
-            queryTerms [Patio, Drinks, Cheap] `shouldBe` "patio cocktails restaurant"
+        it "turns the craving and chips into a text query" $ do
+            queryTerms Nothing [Patio, Drinks, Cheap] `shouldBe` "patio cocktails restaurant"
+            queryTerms (Just "ramen") [Patio] `shouldBe` "ramen patio restaurant"
+        it "tidies a craving, treating blank as none and refusing long ones" $ do
+            craving "  spicy   ramen " `shouldBe` Right (Just "spicy ramen")
+            craving "   " `shouldBe` Right Nothing
+            craving (T.replicate 61 "a") `shouldSatisfy` either (const True) (const False)
         it "allows the price levels of every price chip picked" $ do
             priceLevels [Cheap] `shouldBe` ["PRICE_LEVEL_INEXPENSIVE", "PRICE_LEVEL_MODERATE"]
             priceLevels [Patio] `shouldBe` []

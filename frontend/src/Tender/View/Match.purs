@@ -71,27 +71,36 @@ toast { match: r, leaving } { open, dismiss } =
 -- | Full screen "it's a match" over everything else
 celebration :: forall a. Restaurant -> a -> Html a
 celebration r continue =
+  -- Scrolls if it must, and is centred only when it fits (m-auto below):
+  -- centring with justify-center pushed the heading off the top, out of
+  -- reach, on a phone with Safari's bars showing
   HE.div
-    [ HA.class' "fixed inset-0 z-20 flex flex-col items-center justify-center gap-6 overflow-hidden bg-gradient-to-b from-brand-400 to-brand-600 px-6 text-center text-white"
+    [ HA.class' "fixed inset-0 z-20 flex overflow-y-auto overflow-x-hidden bg-gradient-to-b from-brand-400 to-brand-600 px-6 text-center text-white"
     , HA.createAttribute "role" "dialog"
     , HA.createAttribute "aria-modal" "true"
     , HA.createAttribute "aria-label" "It's a match"
     ]
     [ confetti
-    , HE.p [ HA.class' "animate-pop text-6xl font-display drop-shadow-lg" ] [ HE.text "It's a match!" ]
-    , HE.p [ HA.class' "text-lg font-bold text-white/90" ] [ HE.text "Everyone's hungry for" ]
-    -- The tilt is on a wrapper since the entrance animation ends at no transform
-    , HE.div [ HA.class' "rotate-2" ]
-        [ HE.div [ HA.class' "w-64 animate-card-in rounded-3xl border-[3px] border-ink bg-white p-3 text-ink shadow-card" ]
-            [ restaurantPhoto r 0 "aspect-square w-full rounded-2xl"
-            , HE.p [ HA.class' "pt-3 text-2xl font-display" ] [ HE.text r.name ]
-            , photoCredit r 0 "text-ink/70"
+    , HE.div [ HA.class' "m-auto flex flex-col items-center gap-5 py-6 pb-[max(1.5rem,env(safe-area-inset-bottom))]" ]
+        -- One line, as big as the width allows
+        [ HE.p [ HA.class' "animate-pop whitespace-nowrap text-[min(3.75rem,13vw)] leading-none font-display drop-shadow-lg" ] [ HE.text "It's a match!" ]
+        , HE.p [ HA.class' "text-lg font-bold text-white/90" ] [ HE.text "Everyone's hungry for" ]
+        -- The tilt is on a wrapper since the entrance animation ends at no transform
+        , HE.div [ HA.class' "rotate-2" ]
+            [ HE.div [ HA.class' "w-64 animate-card-in rounded-3xl border-[3px] border-ink bg-white p-3 text-ink shadow-card" ]
+                -- Shorter on short screens, so it all fits without scrolling
+                [ restaurantPhoto r 0 "aspect-[4/3] w-full rounded-2xl tall:aspect-square"
+                , HE.p [ HA.class' "line-clamp-2 pt-3 text-xl leading-tight font-display" ] [ HE.text r.name ]
+                , photoCredit r 0 "text-ink/70"
+                ]
             ]
-        ]
-    , HE.div [ HA.class' "flex flex-col items-center gap-3" ]
-        [ maybe (HE.text "") (linkButton Secondary (Just ExternalLink) "Let's go") r.url
-        , linkButton OnColour (Just ExternalLink) "See the menu" (menuUrl r)
-        , HE.div [ HA.class' "contents", HA.createAttribute "data-autofocus" "" ] [ button OnColour Nothing "Keep swiping" continue ]
+        , HE.div [ HA.class' "flex flex-col items-center gap-3" ]
+            [ HE.div [ HA.class' "flex flex-wrap justify-center gap-3" ]
+                [ maybe (HE.text "") (linkButton Secondary (Just ExternalLink) "Let's go") r.url
+                , linkButton OnColour (Just ExternalLink) "See the menu" (menuUrl r)
+                ]
+            , HE.div [ HA.class' "contents", HA.createAttribute "data-autofocus" "" ] [ button OnColour Nothing "Keep swiping" continue ]
+            ]
         ]
     ]
 
