@@ -143,9 +143,9 @@ spec = do
                 a <- unquote . simpleBody <$> get path
                 b <- unquote . simpleBody <$> get path
                 let decide u r l = postJSON "/api/decision" (encode (object ["user" .= u, "restaurant" .= (r :: Text), "liked" .= l]))
-                decide a "p1" True `respondsWith` DecisionResponse [] []
-                decide b "p1" True `respondsWith` DecisionResponse [p1] []
-                decide a "p2" False `respondsWith` DecisionResponse [p1] []
+                decide a "p1" True `respondsWith` DecisionResponse [] [] [Person True Swiping 1 Nothing, Person False Away 0 Nothing]
+                decide b "p1" True `respondsWith` DecisionResponse [p1] [] [Person False Swiping 1 Nothing, Person True Swiping 1 Nothing]
+                decide a "p2" False `respondsWith` DecisionResponse [p1] [] [Person True Swiping 2 Nothing, Person False Swiping 1 Nothing]
 
         describe "where the group is eating" $ do
             let choose s place = postJSON ("/api/place/" <> encodeText s) (encode (object ["place" .= place]))
@@ -244,7 +244,9 @@ spec = do
     with frontend $
         describe "the frontend" $ do
             it "serves its files" $
-                get "/app.js" `shouldRespondWith` "console.log(1)"{matchHeaders = ["Content-Type" <:> "text/javascript"]}
+                get "/app.js" `shouldRespondWith` "console.log(1)"{matchHeaders = ["Content-Type" <:> "text/javascript", "Cache-Control" <:> "public, max-age=31536000, immutable"]}
+            it "serves the web app manifest as one" $
+                get "/manifest.webmanifest" `shouldRespondWith` "{}"{matchHeaders = ["Content-Type" <:> "application/manifest+json", "Cache-Control" <:> "no-cache"]}
             it "serves the app for a session link" $
                 get "/0b3f" `shouldRespondWith` "<html></html>"
             it "never serves anything outside its directory" $
@@ -261,4 +263,5 @@ spec = do
         writeFile (root </> "secret.txt") "secret"
         writeFile (root </> "static" </> "index.html") "<html></html>"
         writeFile (root </> "static" </> "app.js") "console.log(1)"
+        writeFile (root </> "static" </> "manifest.webmanifest") "{}"
         appWith 1000 1000 (Just (root </> "static"))

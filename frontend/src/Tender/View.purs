@@ -2,9 +2,11 @@ module Tender.View (view) where
 
 import Prelude
 
+import Data.Foldable (foldMap)
+
 import Data.Array (elem, head, length, null)
 import Data.Int (round)
-import Data.Maybe (Maybe(..), isNothing, maybe)
+import Data.Maybe (Maybe(..), isNothing)
 import Flame (Html)
 import Flame.Html.Attribute as HA
 import Flame.Html.Element as HE
@@ -139,11 +141,11 @@ view (Active swiper screen) =
                 , actionBar { nope: Dislike, like: Like }
                 -- Start loading the next photo so it's there when this card goes
                 , HE.div [ HA.class' "hidden" ]
-                    (map (\url -> HE.img [ HA.src url, HA.alt "" ]) (maybe [] pure (head swiper.upcoming >>= (_.photos >>> head) >>= photoUrl)))
+                    (map (\url -> HE.img [ HA.src url, HA.alt "" ]) (foldMap pure (head swiper.upcoming >>= (_.photos >>> head) >>= photoUrl)))
                 ]
             Matched r -> celebration r Continue
         ]
-      <> maybe [] (\t -> [ HE.div_ [ toast t { open: ToggleMatches, dismiss: HideToast t.match.id } ] ]) swiper.toast
+      <> foldMap (\t -> [ HE.div_ [ toast t { open: ToggleMatches, dismiss: HideToast t.match.id } ] ]) swiper.toast
       <> (if swiper.showMatches then [ matchesSheet swiper.matches ToggleMatches ] else [])
       <> (if swiper.showSession then [ sessionSheet swiper ] else [])
       <> case screen of

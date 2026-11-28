@@ -58,6 +58,12 @@ phone, serve it over https on your tailnet while =make= is running:
 #+end_src
 Only devices on your tailnet can reach it. =SHARE_PORT= changes the port.
 
+Tender can also be installed to the home screen ("Add to Home Screen" on
+iOS, "Install app" on Android and desktop Chrome), from
+=frontend/assets/manifest.webmanifest=. Its PNG icons are drawn from the
+SVGs in =frontend/assets/icons=; after changing those, run =make icons= in
+=frontend= (needs =rsvg-convert=).
+
 ** Running the tests
 #+begin_src sh
   cd backend && make test
