@@ -45,7 +45,7 @@ unshare:
 	tailscale serve --https=$(SHARE_PORT) off \
 	  || sudo tailscale serve --https=$(SHARE_PORT) off
 
-.PHONY: all build watch serve test lint format clean share unshare dist fit icons
+.PHONY: all build watch serve test lint format clean share unshare dist fit screenshots icons
 
 # Production build into dist/, as the Dockerfile does
 dist:
@@ -56,6 +56,10 @@ dist:
 # Needs the browser once: npx playwright install chromium
 fit: dist
 	npx playwright test
+
+# The README's screenshots, docs/screenshots.jpg, from the current UI
+screenshots: dist
+	README_SHOTS=1 npx playwright test readme
 
 # The app's PNG icons, from the SVGs beside them. Needs rsvg-convert (librsvg).
 ICONS = assets/icons
