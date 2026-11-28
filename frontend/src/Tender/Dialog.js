@@ -17,8 +17,10 @@ const openDialog = () => document.querySelector(MODAL);
 const moveInto = (dialog) => {
   const marked = dialog.querySelector("[data-autofocus]");
   const start = marked?.matches(FOCUSABLE) === true ? marked : (marked ?? dialog).querySelector(FOCUSABLE);
+  // Without scrolling to it, which could push a dialog's heading out of
+  // view, as it did the match screen's on iPhones
   if (start instanceof HTMLElement) {
-    start.focus();
+    start.focus({ preventScroll: true });
   }
 };
 
