@@ -2,6 +2,8 @@ module Tender.View.Lobby (lobby) where
 
 import Prelude
 
+import Data.Monoid (guard)
+
 import Data.Maybe (Maybe(..), isJust)
 import Data.String (Pattern(..), contains, toLower, trim)
 import Flame (Html)
@@ -122,7 +124,7 @@ vibeBox { vibe, vibeOpen, draft } on =
               <> if vibeOpen then "flex" else "hidden tall:flex mouse:flex"
           , HA.createAttribute "aria-label" "Suggestions"
           ]
-          (map suggestion suggested <> if vibeOpen then [ done ] else [])
+          (map suggestion suggested <> guard vibeOpen [ done ])
     ]
   where
   chosen = filter (\c -> elem c.id vibe.chips) vibe.choices
@@ -153,7 +155,7 @@ vibeBox { vibe, vibeOpen, draft } on =
       , HA.id "craving"
       , HA.class' "h-8 min-w-[8rem] flex-1 bg-transparent px-1 text-sm outline-none placeholder:text-ink/50 disabled:text-ink/70"
       , HA.placeholder (if null chosen && not (isJust vibe.craving) then "What are you in the mood for?" else "Anything else?")
-      , HA.value (if vibeOpen then draft else "")
+      , HA.value (guard vibeOpen draft)
       , HA.onFocus on.open
       , HA.onInput on.draft
       , HA.maxlength 60

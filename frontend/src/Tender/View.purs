@@ -45,7 +45,7 @@ vibeLine [] Nothing = HE.text ""
 vibeLine vibe craving =
   sheetSection "Vibe"
     [ HE.ul [ HA.class' "flex flex-wrap gap-2" ]
-        (map (item <<< _.label) vibe <> maybe [] (pure <<< item <<< \c -> "“" <> c <> "”") craving)
+        (map (item <<< _.label) vibe <> foldMap (pure <<< item <<< \c -> "“" <> c <> "”") craving)
     ]
   where
   item text = HE.li [ HA.class' "rounded-lg border-2 border-ink bg-white px-3 py-1 text-sm font-bold" ] [ HE.text text ]
