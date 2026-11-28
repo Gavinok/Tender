@@ -376,8 +376,14 @@ update model = case model, _ of
   -- one stands in for typing it, so what was typed goes. The craving is
   -- saved on Enter, Done or Start swiping, not on every keystroke, and
   -- the lobby's regular check leaves what's being typed alone.
-  -- Just added to the box: the cursor and keyboard are left as they were
-  QR lobby, PickChip id | not lobby.vibe.locked -> update (QR lobby { draft = "" }) (ToggleChip id)
+  -- Just added to the box. The typed text was only filtering the
+  -- suggestions, so it goes, and so does the keyboard: on iPhones tapping
+  -- a button leaves the cursor in the box.
+  QR lobby, PickChip id | not lobby.vibe.locked ->
+    let
+      picked /\ effects = update (QR lobby { draft = "" }) (ToggleChip id)
+    in
+      picked /\ (effects <> [ liftEffect (leaveField "vibe-box") $> Nothing ])
   QR lobby, OpenVibe | not lobby.vibe.locked && not lobby.vibeOpen ->
     QR lobby { vibeOpen = true, draft = fromMaybe "" lobby.vibe.craving } /\ []
   QR lobby, DraftCraving typed -> QR lobby { draft = typed } /\ []
