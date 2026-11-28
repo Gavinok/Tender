@@ -5,6 +5,7 @@ module Wire (
     -- * Requests
     RestaurantsRequest (..),
     VibeRequest (..),
+    CravingRequest (..),
     PlaceRequest (..),
     PresenceRequest (..),
     DecisionRequest (..),
@@ -46,6 +47,13 @@ newtype VibeRequest = VibeRequest [Text]
 instance FromJSON VibeRequest where
     parseJSON = withObject "VibeRequest" $ \o -> VibeRequest <$> o .: "chips"
 
+-- | POST /api/craving/:session: what the group is in the mood for, "" to clear it
+newtype CravingRequest = CravingRequest Text
+    deriving stock (Eq, Show)
+
+instance FromJSON CravingRequest where
+    parseJSON = withObject "CravingRequest" $ \o -> CravingRequest <$> o .: "craving"
+
 -- | POST /api/place/:session: where they're eating, or null for their own locations
 newtype PlaceRequest = PlaceRequest (Maybe Place)
     deriving stock (Eq, Show)
@@ -75,6 +83,7 @@ data RestaurantsResponse = RestaurantsResponse
     { rrRestaurants :: [Restaurant]
     , rrOthersLiked :: [RestaurantId]
     , rrVibe :: [Chip]
+    , rrCraving :: Maybe Text
     , rrRadius :: Double
     , rrMaxRadius :: Double
     }
@@ -85,6 +94,7 @@ instance ToJSON RestaurantsResponse where
             [ "restaurants" .= rrRestaurants r
             , "othersLiked" .= rrOthersLiked r
             , "vibe" .= rrVibe r
+            , "craving" .= rrCraving r
             , "radius" .= rrRadius r
             , "maxRadius" .= rrMaxRadius r
             ]
@@ -117,6 +127,7 @@ data Lobby = Lobby
     { lobbyChips :: [Chip]
     , lobbyLocked :: Bool
     , lobbyPlace :: Maybe Place
+    , lobbyCraving :: Maybe Text
     }
 
 instance ToJSON Lobby where
@@ -127,6 +138,7 @@ instance ToJSON Lobby where
               "choices" .= allChips
             , "locked" .= lobbyLocked l
             , "place" .= lobbyPlace l
+            , "craving" .= lobbyCraving l
             ]
 
 -- | Any error, with a message the frontend can show

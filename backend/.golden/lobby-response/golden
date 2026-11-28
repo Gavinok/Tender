@@ -43,6 +43,7 @@
                 "label": "🕐 Open now"
             }
         ],
+        "craving": null,
         "locked": false,
         "place": null
     },
@@ -101,6 +102,7 @@
                 "label": "🕐 Open now"
             }
         ],
+        "craving": "ramen",
         "locked": true,
         "place": {
             "latitude": 48.43,

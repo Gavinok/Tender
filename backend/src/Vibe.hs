@@ -1,5 +1,5 @@
 -- | Vibe chips a group picks in the lobby, and what each means for the search
-module Vibe (Chip (..), Search (..), Place (..), Found (..), defaultRadius, maxRadius, allChips, chipId, chipLabel, chipFromId, queryTerms, chipFields, priceLevels, wantsOpenNow) where
+module Vibe (Chip (..), Search (..), Place (..), Found (..), defaultRadius, maxRadius, allChips, chipId, chipLabel, chipFromId, queryTerms, chipFields, priceLevels, wantsOpenNow, craving, maxCraving) where
 
 import Data.Aeson (FromJSON (parseJSON), ToJSON (toJSON), object, withObject, (.:), (.=))
 import Data.List (nub)
@@ -60,6 +60,8 @@ data Search = Search
     {- ^ Metres already searched when searching further, so only the ring
     between this and the radius is new. 0 for a first search.
     -}
+    , searchCraving :: Maybe Text
+    -- ^ What the group typed they're in the mood for, e.g. "ramen"
     }
     deriving stock (Show)
 
@@ -112,9 +114,24 @@ chipId = \case
 chipFromId :: Text -> Maybe Chip
 chipFromId t = lookup t [(chipId c, c) | c <- allChips]
 
--- | Words for a text search, e.g. "patio cocktails restaurant"
-queryTerms :: [Chip] -> Text
-queryTerms chips = T.unwords (mapMaybe term chips <> ["restaurant"])
+-- | The longest craving kept, in characters
+maxCraving :: Int
+maxCraving = 60
+
+{- | What someone typed they're in the mood for, with spacing tidied, or
+Nothing for blank. Left when it's too long.
+-}
+craving :: Text -> Either Text (Maybe Text)
+craving t
+    | T.length tidied > maxCraving = Left ("Keep it under " <> T.pack (show maxCraving) <> " characters")
+    | T.null tidied = Right Nothing
+    | otherwise = Right (Just tidied)
+  where
+    tidied = T.unwords (T.words t)
+
+-- | Words for a text search, the craving first, e.g. "ramen patio cocktails restaurant"
+queryTerms :: Maybe Text -> [Chip] -> Text
+queryTerms wanted chips = T.unwords (maybe [] pure wanted <> mapMaybe term chips <> ["restaurant"])
   where
     term = \case
         Patio -> Just "patio"

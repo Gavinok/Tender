@@ -1,6 +1,6 @@
 {-# LANGUAGE DeriveAnyClass #-}
 
-module Db (initDb, initSchema, DbPool, openPool, withConn, addUserToDb, joinSession, maxPerSession, pruneOlderThan, sessionLocation, getPlace, setPlace, sessionRadius, widenSearch, decidedBy, getVibe, setVibe, recordDecision, isMatch, matchesFor, othersLiked, sessionMembers, Decision (..), getUser) where
+module Db (initDb, initSchema, DbPool, openPool, withConn, addUserToDb, joinSession, maxPerSession, pruneOlderThan, sessionLocation, getPlace, setPlace, getCraving, setCraving, sessionRadius, widenSearch, decidedBy, getVibe, setVibe, recordDecision, isMatch, matchesFor, othersLiked, sessionMembers, Decision (..), getUser) where
 
 import Control.Applicative ((<|>))
 import Control.Exception (bracket)
@@ -10,6 +10,7 @@ import Data.Maybe (listToMaybe, mapMaybe)
 import Data.Pool (Pool, defaultPoolConfig, newPool, setNumStripes, withResource)
 import Data.Set qualified as Set
 import Data.String (fromString)
+import Data.Text (Text)
 import Data.Text qualified as T
 import Database.SQLite.Simple (
     Connection,
@@ -109,6 +110,8 @@ migrations =
         ]
     , -- 8: where the group said they're eating, used instead of their locations
       ["CREATE TABLE session_places (session TEXT PRIMARY KEY, name TEXT NOT NULL, latitude REAL NOT NULL, longitude REAL NOT NULL, updated INTEGER NOT NULL DEFAULT 0)"]
+    , -- 9: what the group typed they're in the mood for, beside the chips
+      ["ALTER TABLE session_vibes ADD COLUMN craving TEXT"]
     ]
 
 addUserToDb :: Connection -> U.User -> IO ()
@@ -189,6 +192,24 @@ setPlace conn s place = withTransaction conn $ do
                 conn
                 "INSERT INTO session_places (session, name, latitude, longitude, updated) VALUES (?, ?, ?, ?, strftime('%s', 'now')) ON CONFLICT (session) DO UPDATE SET name = excluded.name, latitude = excluded.latitude, longitude = excluded.longitude, updated = excluded.updated"
                 (s, n, lat, lon)
+
+-- | What the group typed they're in the mood for, if anything
+getCraving :: Connection -> U.SessionId -> IO (Maybe Text)
+getCraving conn s = do
+    found <- query conn "SELECT craving FROM session_vibes WHERE session = ?" (Only s)
+    pure $ case found of
+        [Only wanted] -> wanted
+        _ -> Nothing
+
+-- | Set or clear the craving. Like the chips, it locks once someone starts swiping.
+setCraving :: Connection -> U.SessionId -> Maybe Text -> IO ()
+setCraving conn s wanted = withImmediateTransaction conn $ do
+    (_, locked) <- getVibe conn s
+    unless locked $
+        execute
+            conn
+            "INSERT INTO session_vibes (session, chips, craving, updated) VALUES (?, '', ?, strftime('%s', 'now')) ON CONFLICT (session) DO UPDATE SET craving = excluded.craving, updated = excluded.updated"
+            (s, wanted)
 
 -- | How far the session searches, in metres
 sessionRadius :: Connection -> U.SessionId -> IO Double
