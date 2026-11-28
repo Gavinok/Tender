@@ -86,9 +86,10 @@ bigCode link close =
 -- | below as suggestions, filtered by what's typed, as shortcuts for typing.
 -- | Closed, the box is one line on short phones and wraps on tall ones, so
 -- | every pick shows where there's room. Tall phones also show the
--- | suggestions as one row that scrolls sideways to the screen's edges,
--- | snapping to chips; short ones open them on tap, so the lobby keeps its
--- | room. Mice, which can't swipe a row, see them all.
+-- | suggestions, as one row that scrolls sideways to the screen's edges,
+-- | snapping to chips, and roomy phones (iPhone 12 and up, Pixels) show
+-- | them all; short ones open them on tap, so the lobby keeps its room.
+-- | Mice, which can't swipe a row, see them all.
 vibeBox
   :: forall a
    . Lobby
@@ -117,7 +118,7 @@ vibeBox { vibe, vibeOpen, draft } on =
         -- Padded so the chips' taller tap areas and shadows aren't clipped by
         -- the scrolling row
         HE.div
-          [ HA.class' $ "snap-x snap-mandatory scroll-px-4 gap-2 overflow-x-auto px-4 pb-2 pt-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden mouse:flex-wrap mouse:justify-center mouse:overflow-visible mouse:px-0 "
+          [ HA.class' $ "snap-x snap-mandatory scroll-px-4 gap-2 overflow-x-auto px-4 pb-2 pt-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden roomy:flex-wrap roomy:justify-center roomy:overflow-visible mouse:flex-wrap mouse:justify-center mouse:overflow-visible mouse:px-0 "
               <> if vibeOpen then "flex" else "hidden tall:flex mouse:flex"
           , HA.createAttribute "aria-label" "Suggestions"
           ]

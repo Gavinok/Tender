@@ -6,10 +6,12 @@ module.exports = {
     extend: {
       // Phones with room to spare, by height rather than width: tall ones
       // preview the summary on the card and show the lobby's vibe
-      // suggestions. Mice can't swipe a row sideways, so they get every
-      // suggestion at once.
+      // suggestions, and roomy ones show every suggestion at once, which
+      // still leaves a QR code over 220px. Mice can't swipe a row sideways,
+      // so they get every suggestion too.
       screens: {
         tall: { raw: "(min-height: 700px)" },
+        roomy: { raw: "(min-height: 840px)" },
         mouse: { raw: "(hover: hover) and (pointer: fine)" },
       },
       colors: {
