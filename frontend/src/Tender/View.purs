@@ -112,7 +112,7 @@ view (NeedLocation { message, picker }) =
 
 view Loading = page { matches: Nothing, newSession: Nothing, session: Nothing, fill: false } [ setting ]
 
-view (QR l) = page { matches: Nothing, newSession: Just NewSession, session: Nothing, fill: true } [ lobby l { share: ShareInvite, start: StartSwiping, bigQR: ToggleQR, vibe: { toggle: ToggleChip, pick: PickChip, open: OpenVibe, close: CloseVibe, draft: DraftCraving, save: SaveCraving }, picker: pickerMessages } ]
+view (QR l) = page { matches: Nothing, newSession: Just NewSession, session: Nothing, fill: true } [ lobby l { share: ShareInvite, start: StartSwiping, bigQR: ToggleQR, vibe: { toggle: ToggleChip, pick: PickChip, open: OpenVibe, close: CloseVibe, draft: DraftCraving }, picker: pickerMessages } ]
 
 view (Active swiper screen) =
   page { matches: Just { count: length swiper.matches, open: ToggleMatches }, newSession: Nothing, session: Just (sessionButton swiper.people ToggleSession), fill: true } $

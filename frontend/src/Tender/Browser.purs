@@ -17,7 +17,6 @@ module Tender.Browser
   , tabHidden
   , encodeQuery
   , keyOf
-  , focusOn
   , leaveField
   ) where
 
@@ -119,9 +118,6 @@ foreign import vibrate :: Effect Unit
 
 -- | Flame's document keydown subscription hands over the whole event
 foreign import keyOf :: Event -> String
-
--- | Put the cursor in the element with this id
-foreign import focusOn :: String -> Effect Unit
 
 -- | Done with the field with this id: unfocus it, which puts a phone's
 -- | keyboard away, and scroll it back to its start

@@ -24,7 +24,7 @@ import Tender.View.Sheet (sheet)
 lobby
   :: forall a
    . Lobby
-  -> { share :: a, start :: a, bigQR :: a, vibe :: { toggle :: String -> a, pick :: String -> a, open :: a, close :: a, draft :: String -> a, save :: a }, picker :: { open :: a, clear :: a, query :: String -> a, find :: a, choose :: Found -> a, close :: a } }
+  -> { share :: a, start :: a, bigQR :: a, vibe :: { toggle :: String -> a, pick :: String -> a, open :: a, close :: a, draft :: String -> a }, picker :: { open :: a, clear :: a, query :: String -> a, find :: a, choose :: Found -> a, close :: a } }
   -> Html a
 lobby l@{ link, copied, vibe, picker, bigQR, placeChanged } on =
   HE.div [ HA.class' "flex min-h-0 flex-1 flex-col items-center gap-3 text-center" ]
@@ -95,11 +95,11 @@ bigCode link close =
 vibeBox
   :: forall a
    . Lobby
-  -> { toggle :: String -> a, pick :: String -> a, open :: a, close :: a, draft :: String -> a, save :: a }
+  -> { toggle :: String -> a, pick :: String -> a, open :: a, close :: a, draft :: String -> a }
   -> Html a
 vibeBox { vibe, vibeOpen, draft } on =
   HE.section [ HA.class' "-mx-4 flex w-[calc(100%+2rem)] flex-col gap-1 mouse:mx-0 mouse:w-full", HA.createAttribute "aria-label" "Vibe" ]
-    [ HE.form [ HA.class' "mx-4 mouse:mx-0", HA.onSubmit on.save ]
+    [ HE.form [ HA.class' "mx-4 mouse:mx-0", HA.onSubmit on.close ]
         -- One line while closed, scrolling sideways if it's full, so the
         -- lobby keeps its room; it wraps while open, when the keyboard is up
         -- A label for the input, so a tap anywhere in it, such as on the
