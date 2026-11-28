@@ -102,6 +102,8 @@ type Lobby =
   , picker :: Maybe Picker
   -- | Whether the QR code is shown full screen, for scanning across a table
   , bigQR :: Boolean
+  -- | Someone else just changed where the group is eating, so it's pointed out
+  , placeChanged :: Boolean
   }
 
 -- | Looking up where the group is eating. `results` is Nothing until the
@@ -199,6 +201,8 @@ data Message
   -- | The toast has slid away
   | ToastGone RestaurantId
   | ToggleQR
+  -- | Stop pointing out that the place changed
+  | PlaceSeen
   | DismissWarning
   | ShareInvite
   | LinkCopied
@@ -327,9 +331,17 @@ update model = case model, _ of
             JoinSession s <$> shareLink s
     ]
   _, JoinSession session link ->
-    QR { session, link, copied: false, vibe: { chips: [], choices: [], locked: false, place: Nothing }, picker: Nothing, bigQR: false } /\ [ pollVibe session ]
+    QR { session, link, copied: false, vibe: { chips: [], choices: [], locked: false, place: Nothing }, picker: Nothing, bigQR: false, placeChanged: false } /\ [ pollVibe session ]
   -- Keeps checking while in the lobby so everyone sees the same chips; stops once swiping
-  QR lobby, VibePolled v -> QR lobby { vibe = v } /\ [ delay (Milliseconds 3000.0) $> Just PollVibe ]
+  -- A place someone else changed is pointed out for a few seconds. Not on
+  -- the first check, which only brings what the lobby already had.
+  QR lobby, VibePolled v ->
+    let
+      changed = not (null lobby.vibe.choices) && v.place /= lobby.vibe.place
+    in
+      QR lobby { vibe = v, placeChanged = changed || lobby.placeChanged }
+        /\ ([ delay (Milliseconds 3000.0) $> Just PollVibe ] <> if changed then [ delay (Milliseconds 3000.0) $> Just PlaceSeen ] else [])
+  QR lobby, PlaceSeen -> QR lobby { placeChanged = false } /\ []
   QR { session }, PollVibe -> model /\ [ pollVibe session ]
   QR lobby, VibeSaved v -> QR lobby { vibe = v } /\ []
   QR lobby, ToggleChip id | not lobby.vibe.locked ->
@@ -408,7 +420,7 @@ update model = case model, _ of
       QR lobby { picker = Nothing, vibe = lobby.vibe { place = Just place } }
         /\ [ setPlace lobby.session (Just place) <#> either (const Nothing) (Just <<< VibeSaved) ]
   QR lobby, ClearPlace | not lobby.vibe.locked ->
-    QR lobby { vibe = lobby.vibe { place = Nothing } }
+    QR lobby { picker = Nothing, vibe = lobby.vibe { place = Nothing } }
       /\ [ setPlace lobby.session Nothing <#> either (const Nothing) (Just <<< VibeSaved) ]
   -- Nobody has a location yet, so the session isn't locked and this sticks
   NeedLocation { session, user }, ChoosePlace f ->
