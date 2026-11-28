@@ -9,8 +9,11 @@ import { standIn } from "./api.js";
 const PHONES = [
   { name: "older Android", width: 360, height: 640 },
   { name: "Android", width: 360, height: 740 },
+  { name: "Galaxy S", width: 360, height: 800 },
   { name: "iPhone SE", width: 375, height: 667 },
   { name: "recent iPhone", width: 393, height: 852 },
+  { name: "Pixel", width: 412, height: 915 },
+  { name: "iPhone Pro Max", width: 430, height: 932 },
 ];
 
 // The smallest comfortable tap target, in CSS pixels

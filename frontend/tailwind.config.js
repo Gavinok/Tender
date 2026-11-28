@@ -5,11 +5,11 @@ module.exports = {
   theme: {
     extend: {
       // Phones with room to spare, by height rather than width: tall ones
-      // preview the summary on the card, roomy ones show every vibe chip.
-      // Mice can't swipe a row sideways, so they get every chip too.
+      // preview the summary on the card and show the lobby's vibe
+      // suggestions. Mice can't swipe a row sideways, so they get every
+      // suggestion at once.
       screens: {
         tall: { raw: "(min-height: 700px)" },
-        roomy: { raw: "(min-height: 800px)" },
         mouse: { raw: "(hover: hover) and (pointer: fine)" },
       },
       colors: {

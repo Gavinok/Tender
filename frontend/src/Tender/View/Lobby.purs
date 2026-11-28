@@ -80,17 +80,19 @@ bigCode link close =
 -- | What the group is in the mood for: a box with the chosen chips in it as
 -- | tokens and a craving typed after them. Tapping in shows the other chips
 -- | below as suggestions, filtered by what's typed, as shortcuts for typing.
--- | Roomy screens and mice show the suggestions all the time; a phone opens
--- | them on tap, so the lobby keeps its room. The suggestions are a row that
--- | scrolls sideways to the screen's edges, snapping to chips.
+-- | Closed, the box is one line on short phones and wraps on tall ones, so
+-- | every pick shows where there's room. Tall phones also show the
+-- | suggestions as one row that scrolls sideways to the screen's edges,
+-- | snapping to chips; short ones open them on tap, so the lobby keeps its
+-- | room. Mice, which can't swipe a row, see them all.
 vibeBox
   :: forall a
    . Lobby
   -> { toggle :: String -> a, pick :: String -> a, open :: a, close :: a, draft :: String -> a, save :: a }
   -> Html a
 vibeBox { vibe, vibeOpen, draft } on =
-  HE.section [ HA.class' "-mx-4 flex w-[calc(100%+2rem)] flex-col gap-1 roomy:mx-0 roomy:w-full mouse:mx-0 mouse:w-full", HA.createAttribute "aria-label" "Vibe" ]
-    [ HE.form [ HA.class' "mx-4 roomy:mx-0 mouse:mx-0", HA.onSubmit on.save ]
+  HE.section [ HA.class' "-mx-4 flex w-[calc(100%+2rem)] flex-col gap-1 mouse:mx-0 mouse:w-full", HA.createAttribute "aria-label" "Vibe" ]
+    [ HE.form [ HA.class' "mx-4 mouse:mx-0", HA.onSubmit on.save ]
         -- One line while closed, scrolling sideways if it's full, so the
         -- lobby keeps its room; it wraps while open, when the keyboard is up
         -- A label for the input, so a tap anywhere in it, such as on the
@@ -100,19 +102,19 @@ vibeBox { vibe, vibeOpen, draft } on =
             [ HA.id "vibe-box"
             , HA.createAttribute "for" "craving"
             , HA.class' $ "flex min-h-[2.75rem] cursor-text items-center gap-1.5 rounded-xl border-2 border-ink bg-white px-2 py-1.5 text-left shadow-pop focus-within:ring-4 focus-within:ring-star "
-                <> if vibeOpen then "flex-wrap" else "overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+                <> if vibeOpen then "flex-wrap" else "overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden tall:flex-wrap tall:overflow-visible"
             ]
             ([ cravingToken ] <> map token chosen <> [ input ])
         ]
-    , if vibe.locked then HE.p [ HA.class' "px-4 text-sm text-ink/70 roomy:px-0 mouse:px-0" ] [ HE.text "Locked in: someone has started swiping." ]
+    , if vibe.locked then HE.p [ HA.class' "px-4 text-sm text-ink/70 mouse:px-0" ] [ HE.text "Locked in: someone has started swiping." ]
       else HE.text ""
     , if vibe.locked then HE.text ""
       else
         -- Padded so the chips' taller tap areas and shadows aren't clipped by
         -- the scrolling row
         HE.div
-          [ HA.class' $ "snap-x snap-mandatory scroll-px-4 gap-2 overflow-x-auto px-4 pb-2 pt-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden roomy:flex-wrap roomy:justify-center roomy:overflow-visible roomy:px-0 mouse:flex-wrap mouse:justify-center mouse:overflow-visible mouse:px-0 "
-              <> if vibeOpen then "flex" else "hidden roomy:flex mouse:flex"
+          [ HA.class' $ "snap-x snap-mandatory scroll-px-4 gap-2 overflow-x-auto px-4 pb-2 pt-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden mouse:flex-wrap mouse:justify-center mouse:overflow-visible mouse:px-0 "
+              <> if vibeOpen then "flex" else "hidden tall:flex mouse:flex"
           , HA.createAttribute "aria-label" "Suggestions"
           ]
           (map suggestion suggested <> if vibeOpen then [ done ] else [])
