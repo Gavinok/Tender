@@ -322,7 +322,7 @@ main = runSpecAndExitProcess [ consoleReporter ] do
 
     it "takes a picked suggestion in place of what was typed" do
       step (QR lobbyAt { vibeOpen = true, draft = "pat" }) (PickChip "patio")
-        `shouldEqual` Tuple (QR lobbyAt { vibe { chips = [ "patio" ] }, vibeOpen = true }) 2
+        `shouldEqual` Tuple (QR lobbyAt { vibe { chips = [ "patio" ] }, vibeOpen = true }) 1
 
     it "keeps what's being typed when the lobby checks the vibe again" do
       step (QR lobbyAt { vibeOpen = true, draft = "tac" }) (VibePolled lobbyAt.vibe { craving = Just "sushi" })

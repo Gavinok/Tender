@@ -33,7 +33,7 @@ import Data.Int (toNumber)
 import Tender.Vibe (Chip, Vibe)
 import Tender.Swipe (flyOut)
 import Tender.Swipe as Swipe
-import Tender.Browser (LocationProblem(..), Shared(..), confirmLeave, existingSession, focusOn, leaveField, geolocation, reload, rememberSession, rememberUser, rememberedUser, shareLink, shareOrCopy, startNewSession, tabHidden, vibrate)
+import Tender.Browser (LocationProblem(..), Shared(..), confirmLeave, existingSession, leaveField, geolocation, reload, rememberSession, rememberUser, rememberedUser, shareLink, shareOrCopy, startNewSession, tabHidden, vibrate)
 import Tender.Types (ErrorMessage, Found, Loc, Person, Place, Restaurant, RestaurantId, SessionId, Url, UserId)
 
 -- | What we know once the user has joined a session
@@ -376,12 +376,8 @@ update model = case model, _ of
   -- one stands in for typing it, so what was typed goes. The craving is
   -- saved on Enter, Done or Start swiping, not on every keystroke, and
   -- the lobby's regular check leaves what's being typed alone.
-  QR lobby, PickChip id | not lobby.vibe.locked ->
-    let
-      picked /\ effects = update (QR lobby { draft = "" }) (ToggleChip id)
-    in
-      -- Back to typing, so the keyboard stays up
-      picked /\ (effects <> [ liftEffect (focusOn "craving") $> Nothing ])
+  -- Just added to the box: the cursor and keyboard are left as they were
+  QR lobby, PickChip id | not lobby.vibe.locked -> update (QR lobby { draft = "" }) (ToggleChip id)
   QR lobby, OpenVibe | not lobby.vibe.locked && not lobby.vibeOpen ->
     QR lobby { vibeOpen = true, draft = fromMaybe "" lobby.vibe.craving } /\ []
   QR lobby, DraftCraving typed -> QR lobby { draft = typed } /\ []
